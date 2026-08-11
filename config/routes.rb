@@ -15,7 +15,9 @@ Rails.application.routes.draw do
         get "me", to: "sessions#show"
       end
 
-      resources :products, only: %i[index show]
+      resources :products, only: %i[index show create update]
+      resources :orders, only: %i[index show create update]
+      resources :invoices, only: %i[index create]
       get "dashboard", to: "dashboard#show"
       resources :client_accounts, only: %i[index create]
       resources :staff, only: :index, controller: "staff"

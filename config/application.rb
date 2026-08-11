@@ -30,6 +30,8 @@ module ProjectRedCrm
     config.api_only = true
     config.time_zone = "Pacific Time (US & Canada)"
     config.active_job.queue_adapter = :resque
+    config.autoload_paths << Rails.root.join("app/services")
+    config.eager_load_paths << Rails.root.join("app/services")
 
     # The separate Next portal authenticates with an HttpOnly Rails session.
     config.middleware.use ActionDispatch::Cookies

@@ -1,6 +1,7 @@
 class Product < ApplicationRecord
   belongs_to :organization
   has_many :product_variants, dependent: :destroy
+  accepts_nested_attributes_for :product_variants, allow_destroy: false
 
   enum :kind, { package: "package", service: "service", addon: "addon" }, validate: true
 
