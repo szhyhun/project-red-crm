@@ -1,0 +1,12 @@
+/.bundle
+/.env
+/log/*
+/tmp/*
+/storage/*
+/coverage
+/vendor/bundle
+/config/master.key
+
+!/log/.keep
+!/tmp/.keep
+!/storage/.keep
