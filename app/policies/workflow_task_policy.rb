@@ -10,4 +10,8 @@ class WorkflowTaskPolicy < OrganizationRecordPolicy
   def update?
     belongs_to_current_organization? && (user.organization_admin? || user.manager? || record.assignee_id == user.id)
   end
+
+  def destroy?
+    belongs_to_current_organization? && (user.organization_admin? || user.manager?)
+  end
 end

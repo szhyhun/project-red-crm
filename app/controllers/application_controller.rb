@@ -5,6 +5,7 @@ class ApplicationController < ActionController::API
   include Pundit::Authorization
 
   protect_from_forgery with: :exception
+  self.allow_forgery_protection = false if Rails.env.test?
 
   rescue_from Pundit::NotAuthorizedError do
     render json: { error: "forbidden" }, status: :forbidden

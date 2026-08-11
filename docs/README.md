@@ -15,8 +15,9 @@ local vertical slice for a production-ready external integration.
 
 The local API supports organization sign-up/sign-in, internal production work,
 client accounts, listings, task and appointment assignment, catalog orders,
-invoice drafts, final-delivery records, property-site publishing, conversations,
-staff invitations, and a restricted customer portal response.
+invoice drafting and sending, asynchronous local final-media uploads, property-site
+publishing, conversations, staff invitations, branded lifecycle emails, and a
+restricted customer portal response.
 
-Direct browser-to-S3 uploads, asynchronous media processing, Stripe payment
-links, Aryeo import, and smart-order recommendations remain planned work.
+Direct browser-to-S3 uploads, media transcoding, Stripe payment links, Aryeo
+import, and smart-order recommendations remain planned work.

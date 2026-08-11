@@ -19,7 +19,9 @@ class Api::V1::ConversationsController < Api::V1::BaseController
 
     Conversation.transaction do
       conversation.save!
-      member_ids = [current_user.id, *Array(create_params[:member_ids]).map(&:to_i)].uniq
+      member_ids = [current_user.id, *Array(create_params[:member_ids]).map(&:to_i)]
+      member_ids.concat(conversation.client_account.users.active.ids) if conversation.client? && conversation.client_account.present?
+      member_ids.uniq!
       users = Current.organization.users.where(id: member_ids)
       raise ActiveRecord::RecordInvalid.new(conversation) unless users.size == member_ids.size
 

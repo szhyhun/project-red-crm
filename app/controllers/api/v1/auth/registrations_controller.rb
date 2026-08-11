@@ -9,6 +9,7 @@ class Api::V1::Auth::RegistrationsController < ApplicationController
     end
 
     sign_in(user)
+    CustomerNotifications.workspace_welcome(user)
     render json: {
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
       organization: { id: organization.id, name: organization.name, slug: organization.slug },

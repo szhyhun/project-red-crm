@@ -1,0 +1,5 @@
+<p class="eyebrow">Payment received</p>
+<h1>Thank you. Your payment is complete.</h1>
+<p>We received <strong><%= number_to_currency(@payment.amount_cents / 100.0, unit: "$", precision: 2) %></strong> for invoice <strong><%= @invoice.number %></strong>.</p>
+<p>Your invoice balance is now <strong><%= number_to_currency(@invoice.balance_due_cents / 100.0, unit: "$", precision: 2) %></strong>.</p>
+<p><a class="button" href="<%= @portal_url %>">Open client portal</a></p>

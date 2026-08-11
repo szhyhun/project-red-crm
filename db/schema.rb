@@ -10,8 +10,9 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_11_080000) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_12_091000) do
   # These are extensions that must be enabled in order to support this database
+  enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
 
   create_table "activity_events", force: :cascade do |t|
@@ -39,10 +40,12 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_080000) do
     t.text "notes"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "calendar_color"
     t.index ["assigned_user_id"], name: "index_appointments_on_assigned_user_id"
     t.index ["listing_id"], name: "index_appointments_on_listing_id"
     t.index ["organization_id", "starts_at"], name: "index_appointments_on_organization_id_and_starts_at"
     t.index ["organization_id"], name: "index_appointments_on_organization_id"
+    t.exclusion_constraint "organization_id WITH =, assigned_user_id WITH =, tsrange(starts_at, ends_at, '[)'::text) WITH &&", where: "(assigned_user_id IS NOT NULL) AND ((status)::text <> 'cancelled'::text)", using: :gist, name: "no_overlapping_staff_appointments"
   end
 
   create_table "catalog_sync_runs", force: :cascade do |t|
@@ -213,6 +216,25 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_080000) do
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
   end
 
+  create_table "notification_deliveries", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "notifiable_type", null: false
+    t.bigint "notifiable_id", null: false
+    t.string "kind", null: false
+    t.string "recipient", null: false
+    t.string "deduplication_key", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "attempts", default: 0, null: false
+    t.text "last_error"
+    t.datetime "delivered_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["deduplication_key"], name: "index_notification_deliveries_on_deduplication_key", unique: true
+    t.index ["notifiable_type", "notifiable_id"], name: "index_notification_deliveries_on_notifiable"
+    t.index ["organization_id"], name: "index_notification_deliveries_on_organization_id"
+    t.index ["status", "created_at"], name: "index_notification_deliveries_on_status_and_created_at"
+  end
+
   create_table "order_items", force: :cascade do |t|
     t.bigint "order_id", null: false
     t.bigint "product_id"
@@ -272,6 +294,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_080000) do
     t.jsonb "provider_payload", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["invoice_id", "status"], name: "index_payments_on_invoice_id_and_status"
     t.index ["invoice_id"], name: "index_payments_on_invoice_id"
     t.index ["organization_id"], name: "index_payments_on_organization_id"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_provider_and_provider_payment_id", unique: true
@@ -373,8 +396,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_080000) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.text "description"
+    t.string "priority", default: "normal", null: false
     t.index ["assignee_id"], name: "index_workflow_tasks_on_assignee_id"
     t.index ["listing_id"], name: "index_workflow_tasks_on_listing_id"
+    t.index ["organization_id", "status", "position"], name: "idx_on_organization_id_status_position_3a4fef4137"
     t.index ["organization_id", "status", "stage"], name: "index_workflow_tasks_on_organization_id_and_status_and_stage"
     t.index ["organization_id"], name: "index_workflow_tasks_on_organization_id"
   end
@@ -406,6 +432,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_080000) do
   add_foreign_key "media_assets", "users", column: "uploaded_by_id"
   add_foreign_key "messages", "conversations"
   add_foreign_key "messages", "users", column: "author_id"
+  add_foreign_key "notification_deliveries", "organizations"
   add_foreign_key "order_items", "orders"
   add_foreign_key "order_items", "product_variants"
   add_foreign_key "order_items", "products"

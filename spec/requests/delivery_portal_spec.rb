@@ -33,4 +33,32 @@ RSpec.describe "Delivery portal", type: :request do
     expect(response).to have_http_status(:ok)
     expect(JSON.parse(response.body).dig("conversation", "messages").map { |message| message.fetch("body") }).to eq(["Client-visible update"])
   end
+
+  it "adds every client account user to a new client conversation" do
+    manager = User.create!(organization: organization, name: "Morgan Manager", email: "manager-conversation@example.test", password: "long-enough-password", role: :manager)
+    client_user = User.create!(organization: organization, name: "Avery Client", email: "client-conversation@example.test", password: "long-enough-password", role: :client_admin)
+    ClientMembership.create!(client_account: client_account, user: client_user, role: :admin)
+
+    sign_in manager
+    post "/api/v1/conversations", params: { conversation: { listing_id: listing.id, kind: "client", subject: "Shoot update", body: "We are booked." } }
+
+    expect(response).to have_http_status(:created)
+    conversation = Conversation.order(:id).last
+    expect(conversation.conversation_memberships.where(user: client_user)).to exist
+  end
+
+  it "allows a client participant to reply to a client conversation" do
+    client_user = User.create!(organization: organization, name: "Avery Client", email: "reply-client@example.test", password: "long-enough-password", role: :client_admin)
+    ClientMembership.create!(client_account: client_account, user: client_user, role: :admin)
+    manager = User.create!(organization: organization, name: "Morgan Manager", email: "reply-manager@example.test", password: "long-enough-password", role: :manager)
+    conversation = Conversation.create!(organization: organization, listing: listing, client_account: client_account, kind: :client, subject: "Delivery")
+    ConversationMembership.create!(conversation: conversation, user: client_user)
+    ConversationMembership.create!(conversation: conversation, user: manager, role: :manager)
+
+    sign_in client_user
+    post "/api/v1/conversations/#{conversation.id}/messages", params: { message: { body: "Thank you." } }
+
+    expect(response).to have_http_status(:created)
+    expect(conversation.messages.last).to have_attributes(author: client_user, body: "Thank you.", visibility: "participants")
+  end
 end

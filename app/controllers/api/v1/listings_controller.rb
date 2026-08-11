@@ -27,6 +27,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
     authorize listing
 
     if listing.update(listing_params)
+      CustomerNotifications.listing_ready(listing) if listing.saved_change_to_status? && listing.delivered?
       ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: listing, event_type: "listing.updated")
       render json: { listing: serialize_listing(listing) }
     else
@@ -72,7 +73,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
 
   def serialize_appointment(appointment)
     appointment.slice(:id, :status, :starts_at, :ends_at, :notes).merge(
-      assigned_user: appointment.assigned_user && appointment.assigned_user.slice(:id, :name, :role)
+      assigned_user: appointment.assigned_user && appointment.assigned_user.slice(:id, :name, :email, :role)
     )
   end
 

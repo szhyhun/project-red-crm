@@ -43,8 +43,7 @@ All application endpoints are under `/api/v1`.
 
 ## Background work
 
-Rails uses the Resque Active Job adapter. Jobs are intended for media
-processing, external catalog imports, notification delivery, and future
-integration work. The current local delivery flow registers final-media records
-after a file has been placed in storage; it does not yet upload or process bytes
-through Resque.
+Rails uses the Resque Active Job adapter. The current local delivery flow writes
+an uploaded file into the local delivery store, then queues a verification job
+that marks it ready or failed. Resque will later also run media transcoding,
+catalog imports, notification delivery, and external integrations.

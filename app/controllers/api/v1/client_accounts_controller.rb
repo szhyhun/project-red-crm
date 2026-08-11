@@ -25,6 +25,9 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
       raise ActiveRecord::RecordInvalid.new(user) if user.errors.any?
 
       account.client_memberships.find_or_create_by!(user: user) { |membership| membership.role = invite_params[:membership_role] }
+      account.conversations.client.find_each do |conversation|
+        conversation.conversation_memberships.find_or_create_by!(user: user) { |membership| membership.role = :participant }
+      end
     end
 
     render json: { client_user: user.slice(:id, :name, :email, :role) }, status: :created

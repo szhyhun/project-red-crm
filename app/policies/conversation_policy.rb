@@ -11,6 +11,10 @@ class ConversationPolicy < OrganizationRecordPolicy
     user.internal?
   end
 
+  def create_message?
+    visible_to_user?
+  end
+
   class Scope < Scope
     def resolve
       conversations = scope.where(organization_id: user.organization_id)

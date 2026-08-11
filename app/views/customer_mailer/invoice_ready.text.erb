@@ -1,0 +1,7 @@
+Invoice <%= @invoice.number %> is ready.
+
+<%= @organization.name %> has issued an invoice<%= " for #{@listing.address}" if @listing %>.
+Amount due: <%= number_to_currency(@invoice.balance_due_cents / 100.0, unit: "$", precision: 2) %> <%= @invoice.currency.upcase %>
+<% if @invoice.due_on %>Due date: <%= @invoice.due_on.to_fs(:long) %>
+<% end %>
+View invoice: <%= @portal_url %>

@@ -19,9 +19,15 @@ Rails.application.routes.draw do
 
       resources :products, only: %i[index show create update]
       resources :orders, only: %i[index show create update]
-      resources :invoices, only: %i[index create]
+      resources :invoices, only: %i[index create] do
+        post :send_invoice, on: :member
+        post :payment_intent, on: :member
+      end
       get "client_portal", to: "client_portal#show"
-      resources :media_assets, only: %i[index create update]
+      resources :media_assets, only: %i[index create update] do
+        post :upload, on: :collection
+        get :download, on: :member
+      end
       resources :conversations, only: %i[index show create] do
         post :messages, on: :member, action: :create_message
       end
@@ -38,8 +44,12 @@ Rails.application.routes.draw do
           post :publish
         end
       end
-      resources :appointments, only: %i[index update]
-      resources :workflow_tasks, only: %i[index update]
+      resources :appointments, only: %i[index update destroy]
+      resources :workflow_tasks, only: %i[index update destroy]
+
+      namespace :webhooks do
+        post :stripe, to: "stripe#create"
+      end
 
       namespace :public do
         get "property_sites/:organization_slug/:slug", to: "property_sites#show"

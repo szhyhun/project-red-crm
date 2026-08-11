@@ -1,0 +1,6 @@
+Payment received
+
+Thank you. We received <%= number_to_currency(@payment.amount_cents / 100.0, unit: "$", precision: 2) %> for invoice <%= @invoice.number %>.
+Your invoice balance is now <%= number_to_currency(@invoice.balance_due_cents / 100.0, unit: "$", precision: 2) %>.
+
+Open client portal: <%= @portal_url %>

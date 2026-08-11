@@ -1,8 +1,8 @@
 class Api::V1::OrdersController < Api::V1::BaseController
   def index
-    orders = policy_scope(Order).includes(:client_account, :listing, order_items: %i[product product_variant]).order(created_at: :desc)
+    orders = policy_scope(Order).includes(:client_account, :listing, :invoices, order_items: %i[product product_variant]).order(created_at: :desc)
     orders = orders.where(listing_id: params[:listing_id]) if params[:listing_id].present?
-    render json: { orders: orders.map { |order| serialize(order) } }
+    render json: { orders: orders.map { |order| serialize(order, include_details: true) } }
   end
 
   def show
@@ -50,7 +50,9 @@ class Api::V1::OrdersController < Api::V1::BaseController
 
     data.merge(
       items: order.order_items.map { |item| item.slice(:id, :title, :quantity, :unit_price_cents, :total_cents) },
-      invoices: order.invoices.map { |invoice| invoice.slice(:id, :number, :status, :total_cents, :balance_due_cents, :due_on) }
+      invoices: order.invoices.map do |invoice|
+        invoice.slice(:id, :number, :status, :total_cents, :balance_due_cents, :due_on).merge(can_pay: policy(invoice).pay?)
+      end
     )
   end
 end

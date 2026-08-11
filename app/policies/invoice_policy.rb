@@ -7,6 +7,14 @@ class InvoicePolicy < OrganizationRecordPolicy
     belongs_to_current_organization? && (user.internal? || user.client_account_ids.include?(record.client_account_id))
   end
 
+  def update?
+    belongs_to_current_organization? && user.internal?
+  end
+
+  def pay?
+    show? && !record.draft? && !record.void? && record.balance_due_cents.positive?
+  end
+
   class Scope < Scope
     def resolve
       invoices = scope.where(organization_id: user.organization_id)

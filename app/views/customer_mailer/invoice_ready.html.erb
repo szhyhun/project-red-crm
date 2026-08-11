@@ -1,0 +1,6 @@
+<p class="eyebrow">Invoice ready</p>
+<h1>Invoice <%= @invoice.number %> is ready.</h1>
+<p><strong><%= @organization.name %></strong> has issued an invoice for<% if @listing %> <strong><%= @listing.address %></strong>.<% else %> your ProjectRed services.<% end %></p>
+<table class="summary" role="presentation"><tr><td>Amount due</td><td><strong><%= number_to_currency(@invoice.balance_due_cents / 100.0, unit: "$", precision: 2) %> <%= @invoice.currency.upcase %></strong></td></tr><% if @invoice.due_on %><tr><td>Due date</td><td><strong><%= @invoice.due_on.to_fs(:long) %></strong></td></tr><% end %></table>
+<p class="button-wrap"><a class="button" href="<%= @portal_url %>">View invoice</a></p>
+<p class="muted">Payment collection will be available in your client portal once your agency connects its payment provider.</p>

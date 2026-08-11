@@ -1,0 +1,5 @@
+<p class="eyebrow">Client portal access</p>
+<h1>You have been invited to ProjectRed.</h1>
+<p><strong><%= @resource.organization.name %></strong> has invited you to access your listings, final delivery files, invoices, and client messages.</p>
+<p class="button-wrap"><a class="button" href="<%= accept_user_invitation_url(@resource, invitation_token: @token) %>">Accept invitation</a></p>
+<p class="muted">This invitation is intended only for <%= @resource.email %>.</p>

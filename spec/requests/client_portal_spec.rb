@@ -12,6 +12,11 @@ RSpec.describe "Client portal", type: :request do
     own_listing.workflow_tasks.create!(organization: organization, title: "Edit photos", stage: "editing", customer_visible: true)
     own_listing.workflow_tasks.create!(organization: organization, title: "Internal QA", stage: "review", customer_visible: false)
     MediaAsset.create!(organization: organization, listing: own_listing, kind: :final, status: :ready, storage_key: "final/photo.jpg", filename: "photo.jpg", content_type: "image/jpeg")
+    conversation = Conversation.create!(organization: organization, listing: own_listing, client_account: own_account, kind: :client, subject: "Editing update")
+    ConversationMembership.create!(conversation: conversation, user: client_user)
+    manager = User.create!(organization: organization, name: "Morgan Manager", email: "manager-client-portal@example.test", password: "long-enough-password", role: :manager)
+    conversation.messages.create!(author: manager, body: "Photos are ready.")
+    conversation.messages.create!(author: manager, body: "Internal note", visibility: :staff_only)
 
     sign_in client_user
     get "/api/v1/client_portal"
@@ -21,5 +26,6 @@ RSpec.describe "Client portal", type: :request do
     expect(listing.fetch("address")).to eq("111 Oak Bay Avenue")
     expect(listing.fetch("progress").map { |task| task.fetch("title") }).to eq(["Edit photos"])
     expect(listing.fetch("media_assets").map { |asset| asset.fetch("storage_key") }).to eq(["final/photo.jpg"])
+    expect(JSON.parse(response.body).dig("conversations", 0, "messages").map { |message| message.fetch("body") }).to eq(["Photos are ready."])
   end
 end

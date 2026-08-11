@@ -1,0 +1,5 @@
+You have been invited to ProjectRed.
+
+<%= @resource.organization.name %> has invited you to access your listings, final delivery files, invoices, and client messages.
+
+Accept invitation: <%= accept_user_invitation_url(@resource, invitation_token: @token) %>

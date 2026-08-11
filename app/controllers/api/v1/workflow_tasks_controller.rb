@@ -30,24 +30,29 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     task = policy_scope(WorkflowTask).find(params[:id])
     authorize task
 
-    if task.update(task_params)
-      task.update!(completed_at: Time.current) if task.done? && task.completed_at.nil?
-      render json: { workflow_task: serialize(task) }
-    else
-      render_validation_errors(task)
-    end
+    WorkflowTasks::Mover.new(task:, attributes: task_params).move!
+    render json: { workflow_task: serialize(task.reload) }
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_errors(error.record)
+  end
+
+  def destroy
+    task = policy_scope(WorkflowTask).find(params[:id])
+    authorize task
+    task.destroy!
+    head :no_content
   end
 
   private
 
   def task_params
-    params.require(:workflow_task).permit(:title, :status, :stage, :assignee_id, :customer_visible, :position, :due_at)
+    params.require(:workflow_task).permit(:title, :description, :status, :stage, :assignee_id, :customer_visible, :position, :due_at, :priority)
   end
 
   def serialize(task)
-    data = task.slice(:id, :listing_id, :title, :status, :stage, :customer_visible, :position, :due_at, :completed_at).merge(listing_address: task.listing.address)
+    data = task.slice(:id, :listing_id, :title, :description, :status, :stage, :priority, :customer_visible, :position, :due_at, :completed_at).merge(listing_address: task.listing.address)
     return data unless current_user.internal?
 
-    data.merge(assignee_id: task.assignee_id, assignee: task.assignee && task.assignee.slice(:id, :name, :role))
+    data.merge(assignee_id: task.assignee_id, assignee: task.assignee && task.assignee.slice(:id, :name, :email, :role))
   end
 end

@@ -1,13 +1,20 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <style>
-      /* Email styles need to be inline */
+      .eyebrow{margin:0 0 10px;color:#ff4b2b;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}.eyebrow+h1{margin:0 0 18px;font-size:32px;line-height:1.15;letter-spacing:-.7px}.button-wrap{margin:28px 0}.button{display:inline-block;background:#ff4b2b;border-radius:999px;color:#ffffff!important;font-weight:700;padding:13px 22px;text-decoration:none}.muted{color:#6f6c78;font-size:14px}.summary{width:100%;border-collapse:collapse;margin:24px 0}.summary td{border-top:1px solid #e7e5e1;padding:12px 0}.summary td:last-child{text-align:right}
     </style>
   </head>
-
-  <body>
-    <%= yield %>
+  <body style="margin:0;padding:0;background:#f2f1ef;color:#0a0920;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f2f1ef;padding:32px 16px;"><tr><td align="center">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;">
+        <tr><td style="padding:28px 36px;background:#09071d;color:#ffffff;"><span style="font-size:30px;line-height:1;font-weight:800;letter-spacing:-1px;">Project<span style="color:#ff4b2b;">Red</span></span></td></tr>
+        <tr><td style="padding:42px 36px 30px;font-size:16px;line-height:1.6;">
+          <%= yield %>
+        </td></tr>
+        <tr><td style="padding:22px 36px;background:#ff4b2b;color:#ffffff;font-size:13px;line-height:1.5;">ProjectRed client operations<br><span style="opacity:.82;">This email was sent for your workspace activity.</span></td></tr>
+      </table>
+    </td></tr></table>
   </body>
 </html>

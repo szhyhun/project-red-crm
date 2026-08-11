@@ -21,20 +21,21 @@ When `MEDIA_CDN_URL` is configured, the API serializes a CloudFront URL from a
 record's storage key. It does not manufacture a CDN URL when the setting is
 absent.
 
-## Current workflow
+## Current local workflow
 
-The internal portal can register a final asset that is already stored in the
-configured delivery store. That creates the CRM record and makes a ready final
-visible in the client portal and, once published, the public property-site API.
+The internal portal uploads a final asset using an authenticated multipart
+endpoint. Rails writes it under `storage/deliveries/organizations/...`, creates
+a `pending` media record, and queues `MediaAssets::VerifyUploadJob` on the
+`media` Resque queue. The job verifies the file exists and changes the record to
+`ready` or `failed`. Ready assets can be opened through an authorized local
+download endpoint and are visible in the customer portal.
 
-This is deliberately not presented as a full uploader. The following are still
-required before production media delivery is complete:
+The following are still required before production media delivery is complete:
 
-1. A server endpoint that issues organization/listing-scoped direct S3 upload
-   URLs.
+1. Direct organization/listing-scoped S3 upload URLs so large files bypass the
+   Rails process.
 2. Browser upload progress and completion confirmation.
-3. A Resque job that probes/transcodes media, writes variants, and changes the
-   media status from `pending` to `ready` or `failed`.
+3. A worker that probes/transcodes media and writes image/video variants.
 4. CloudFront cache invalidation/versioned keys where transformed files change.
 
 ## Property sites

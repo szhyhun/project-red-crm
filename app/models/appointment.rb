@@ -8,6 +8,7 @@ class Appointment < ApplicationRecord
   validates :starts_at, :ends_at, presence: true
   validate :ends_after_start
   validate :assigned_user_belongs_to_organization
+  validate :assigned_user_is_available
 
   private
 
@@ -21,5 +22,15 @@ class Appointment < ApplicationRecord
     return if assigned_user.blank? || assigned_user.organization_id == organization_id
 
     errors.add(:assigned_user, "must belong to the same organization")
+  end
+
+  def assigned_user_is_available
+    return if assigned_user_id.blank? || starts_at.blank? || ends_at.blank? || cancelled?
+
+    conflict = self.class.where(organization_id:, assigned_user_id:)
+      .where.not(status: :cancelled)
+      .where("starts_at < ? AND ends_at > ?", ends_at, starts_at)
+    conflict = conflict.where.not(id:) if persisted?
+    errors.add(:assigned_user, "already has an appointment during this time") if conflict.exists?
   end
 end
