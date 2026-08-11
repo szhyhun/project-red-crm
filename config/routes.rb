@@ -20,6 +20,7 @@ Rails.application.routes.draw do
       resources :products, only: %i[index show create update]
       resources :orders, only: %i[index show create update]
       resources :invoices, only: %i[index create]
+      get "client_portal", to: "client_portal#show"
       resources :media_assets, only: %i[index create update]
       resources :conversations, only: %i[index show create] do
         post :messages, on: :member, action: :create_message

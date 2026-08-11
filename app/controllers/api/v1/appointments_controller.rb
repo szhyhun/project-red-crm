@@ -1,5 +1,7 @@
 class Api::V1::AppointmentsController < Api::V1::BaseController
   def index
+    return render json: { error: "forbidden" }, status: :forbidden unless current_user.internal?
+
     appointments = Current.organization.appointments.includes(:listing, :assigned_user).order(:starts_at)
     render json: { appointments: appointments.map { |appointment| serialize(appointment) } }
   end

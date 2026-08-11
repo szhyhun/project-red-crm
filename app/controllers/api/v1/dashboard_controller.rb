@@ -1,5 +1,7 @@
 class Api::V1::DashboardController < Api::V1::BaseController
   def show
+    return render json: { error: "forbidden" }, status: :forbidden unless current_user.internal?
+
     render json: {
       listings: {
         active: Current.organization.listings.where.not(status: %w[delivered cancelled]).count,

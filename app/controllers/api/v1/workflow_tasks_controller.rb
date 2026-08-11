@@ -4,6 +4,7 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
       listing = policy_scope(Listing).find(params[:listing_id])
       authorize listing, :show?
       tasks = listing.workflow_tasks.includes(:assignee).order(:position)
+      tasks = tasks.where(customer_visible: true) unless current_user.internal?
     else
       authorize WorkflowTask, :index?
       tasks = policy_scope(WorkflowTask).includes(:listing, :assignee).order(:status, :position, :created_at)
@@ -44,9 +45,9 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   end
 
   def serialize(task)
-    task.slice(:id, :listing_id, :title, :status, :stage, :assignee_id, :customer_visible, :position, :due_at, :completed_at).merge(
-      listing_address: task.listing.address,
-      assignee: task.assignee && task.assignee.slice(:id, :name, :role)
-    )
+    data = task.slice(:id, :listing_id, :title, :status, :stage, :customer_visible, :position, :due_at, :completed_at).merge(listing_address: task.listing.address)
+    return data unless current_user.internal?
+
+    data.merge(assignee_id: task.assignee_id, assignee: task.assignee && task.assignee.slice(:id, :name, :role))
   end
 end

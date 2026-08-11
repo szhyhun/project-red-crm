@@ -54,8 +54,12 @@ class Api::V1::ListingsController < Api::V1::BaseController
     }
     return data unless include_details
 
+    tasks = listing.workflow_tasks.includes(:assignee).order(:position)
+    tasks = tasks.where(customer_visible: true) unless current_user.internal?
+    return data.merge(workflow_tasks: tasks.map { |task| serialize_task(task) }, appointments: [], assignments: []) unless current_user.internal?
+
     data.merge(
-      workflow_tasks: listing.workflow_tasks.includes(:assignee).order(:position).map { |task| serialize_task(task) },
+      workflow_tasks: tasks.map { |task| serialize_task(task) },
       appointments: listing.appointments.includes(:assigned_user).order(:starts_at).map { |appointment| serialize_appointment(appointment) },
       assignments: listing.listing_assignments.map { |assignment| serialize_assignment(assignment) }
     )
