@@ -16,8 +16,14 @@ From `project-red-crm`:
 ```bash
 rbenv exec bundle install
 rbenv exec ruby bin/rails db:prepare
+rbenv exec ruby bin/rails db:seed
 rbenv exec ruby bin/rails server -p 3002
 ```
+
+The seed is idempotent: it creates the ProjectRed demo workspace only when its
+records are missing and does not overwrite later edits. Override the default
+local password with `DEMO_PASSWORD=...`. Production skips demo data unless
+`SEED_DEMO_DATA=true` is explicitly set.
 
 Use Ruby from the project's rbenv installation. The macOS system Ruby is not
 the application runtime.
