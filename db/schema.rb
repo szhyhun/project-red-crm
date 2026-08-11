@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_11_073000) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_11_080000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -86,6 +86,60 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_073000) do
     t.index ["user_id"], name: "index_client_memberships_on_user_id"
   end
 
+  create_table "conversation_memberships", force: :cascade do |t|
+    t.bigint "conversation_id", null: false
+    t.bigint "user_id", null: false
+    t.string "role", default: "participant", null: false
+    t.datetime "last_read_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["conversation_id", "user_id"], name: "index_conversation_memberships_on_conversation_and_user", unique: true
+    t.index ["conversation_id"], name: "index_conversation_memberships_on_conversation_id"
+    t.index ["user_id"], name: "index_conversation_memberships_on_user_id"
+  end
+
+  create_table "conversations", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "listing_id"
+    t.bigint "client_account_id"
+    t.string "kind", default: "internal", null: false
+    t.string "subject"
+    t.datetime "last_message_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_account_id"], name: "index_conversations_on_client_account_id"
+    t.index ["listing_id"], name: "index_conversations_on_listing_id"
+    t.index ["organization_id", "kind", "last_message_at"], name: "idx_on_organization_id_kind_last_message_at_fcb0d57e64"
+    t.index ["organization_id"], name: "index_conversations_on_organization_id"
+  end
+
+  create_table "invoices", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "client_account_id", null: false
+    t.bigint "listing_id"
+    t.bigint "order_id"
+    t.string "number", null: false
+    t.string "status", default: "draft", null: false
+    t.string "currency", default: "cad", null: false
+    t.integer "subtotal_cents", default: 0, null: false
+    t.integer "tax_cents", default: 0, null: false
+    t.integer "total_cents", default: 0, null: false
+    t.integer "balance_due_cents", default: 0, null: false
+    t.date "due_on"
+    t.datetime "sent_at"
+    t.datetime "paid_at"
+    t.string "payment_provider"
+    t.string "provider_invoice_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_account_id"], name: "index_invoices_on_client_account_id"
+    t.index ["listing_id"], name: "index_invoices_on_listing_id"
+    t.index ["order_id"], name: "index_invoices_on_order_id"
+    t.index ["organization_id", "number"], name: "index_invoices_on_organization_id_and_number", unique: true
+    t.index ["organization_id", "status"], name: "index_invoices_on_organization_id_and_status"
+    t.index ["organization_id"], name: "index_invoices_on_organization_id"
+  end
+
   create_table "listing_assignments", force: :cascade do |t|
     t.bigint "listing_id", null: false
     t.bigint "user_id", null: false
@@ -146,6 +200,19 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_073000) do
     t.index ["uploaded_by_id"], name: "index_media_assets_on_uploaded_by_id"
   end
 
+  create_table "messages", force: :cascade do |t|
+    t.bigint "conversation_id", null: false
+    t.bigint "author_id", null: false
+    t.text "body", null: false
+    t.string "visibility", default: "participants", null: false
+    t.jsonb "attachments", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["author_id"], name: "index_messages_on_author_id"
+    t.index ["conversation_id", "created_at"], name: "index_messages_on_conversation_id_and_created_at"
+    t.index ["conversation_id"], name: "index_messages_on_conversation_id"
+  end
+
   create_table "order_items", force: :cascade do |t|
     t.bigint "order_id", null: false
     t.bigint "product_id"
@@ -193,6 +260,23 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_073000) do
     t.index ["slug"], name: "index_organizations_on_slug", unique: true
   end
 
+  create_table "payments", force: :cascade do |t|
+    t.bigint "invoice_id", null: false
+    t.bigint "organization_id", null: false
+    t.string "provider", null: false
+    t.string "provider_payment_id"
+    t.string "status", default: "pending", null: false
+    t.integer "amount_cents", null: false
+    t.string "currency", default: "cad", null: false
+    t.datetime "paid_at"
+    t.jsonb "provider_payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["invoice_id"], name: "index_payments_on_invoice_id"
+    t.index ["organization_id"], name: "index_payments_on_organization_id"
+    t.index ["provider", "provider_payment_id"], name: "index_payments_on_provider_and_provider_payment_id", unique: true
+  end
+
   create_table "product_variants", force: :cascade do |t|
     t.bigint "product_id", null: false
     t.string "external_id"
@@ -230,6 +314,21 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_073000) do
     t.index ["organization_id", "external_source", "external_id"], name: "index_products_on_org_and_external_identity", unique: true
     t.index ["organization_id", "slug"], name: "index_products_on_organization_id_and_slug", unique: true
     t.index ["organization_id"], name: "index_products_on_organization_id"
+  end
+
+  create_table "property_sites", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "listing_id", null: false
+    t.string "slug", null: false
+    t.string "status", default: "draft", null: false
+    t.string "custom_domain"
+    t.datetime "published_at"
+    t.jsonb "settings", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["listing_id"], name: "index_property_sites_on_listing_id"
+    t.index ["organization_id", "slug"], name: "index_property_sites_on_organization_id_and_slug", unique: true
+    t.index ["organization_id"], name: "index_property_sites_on_organization_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -289,6 +388,15 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_073000) do
   add_foreign_key "client_accounts", "organizations"
   add_foreign_key "client_memberships", "client_accounts"
   add_foreign_key "client_memberships", "users"
+  add_foreign_key "conversation_memberships", "conversations"
+  add_foreign_key "conversation_memberships", "users"
+  add_foreign_key "conversations", "client_accounts"
+  add_foreign_key "conversations", "listings"
+  add_foreign_key "conversations", "organizations"
+  add_foreign_key "invoices", "client_accounts"
+  add_foreign_key "invoices", "listings"
+  add_foreign_key "invoices", "orders"
+  add_foreign_key "invoices", "organizations"
   add_foreign_key "listing_assignments", "listings"
   add_foreign_key "listing_assignments", "users"
   add_foreign_key "listings", "client_accounts"
@@ -296,14 +404,20 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_11_073000) do
   add_foreign_key "media_assets", "listings"
   add_foreign_key "media_assets", "organizations"
   add_foreign_key "media_assets", "users", column: "uploaded_by_id"
+  add_foreign_key "messages", "conversations"
+  add_foreign_key "messages", "users", column: "author_id"
   add_foreign_key "order_items", "orders"
   add_foreign_key "order_items", "product_variants"
   add_foreign_key "order_items", "products"
   add_foreign_key "orders", "client_accounts"
   add_foreign_key "orders", "listings"
   add_foreign_key "orders", "organizations"
+  add_foreign_key "payments", "invoices"
+  add_foreign_key "payments", "organizations"
   add_foreign_key "product_variants", "products"
   add_foreign_key "products", "organizations"
+  add_foreign_key "property_sites", "listings"
+  add_foreign_key "property_sites", "organizations"
   add_foreign_key "users", "organizations"
   add_foreign_key "workflow_tasks", "listings"
   add_foreign_key "workflow_tasks", "organizations"

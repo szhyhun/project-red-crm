@@ -8,6 +8,9 @@ class Listing < ApplicationRecord
   has_many :workflow_tasks, dependent: :destroy
   has_many :media_assets, dependent: :nullify
   has_many :activity_events, as: :subject, dependent: :destroy
+  has_one :property_site, dependent: :destroy
+  has_many :invoices, dependent: :nullify
+  has_many :conversations, dependent: :nullify
 
   enum :status, {
     draft: "draft", quoted: "quoted", booked: "booked", in_production: "in_production",

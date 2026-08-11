@@ -3,6 +3,7 @@ class Order < ApplicationRecord
   belongs_to :client_account
   belongs_to :listing, optional: true
   has_many :order_items, dependent: :destroy
+  has_many :invoices, dependent: :nullify
   accepts_nested_attributes_for :order_items
 
   enum :status, { draft: "draft", submitted: "submitted", approved: "approved", invoiced: "invoiced", paid: "paid", cancelled: "cancelled" }, validate: true

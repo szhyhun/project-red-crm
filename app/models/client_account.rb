@@ -4,6 +4,8 @@ class ClientAccount < ApplicationRecord
   has_many :users, through: :client_memberships
   has_many :listings, dependent: :restrict_with_error
   has_many :orders, dependent: :restrict_with_error
+  has_many :invoices, dependent: :restrict_with_error
+  has_many :conversations, dependent: :restrict_with_error
 
   enum :kind, { agent: "agent", team: "team", brokerage: "brokerage" }, validate: true
 
