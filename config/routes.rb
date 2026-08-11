@@ -35,7 +35,7 @@ Rails.application.routes.draw do
       resources :client_accounts, only: %i[index create] do
         post :invite, on: :member
       end
-      resources :staff, only: %i[index create], controller: "staff"
+      resources :staff, only: %i[index create update], controller: "staff"
       resources :listings, only: %i[index show create update] do
         resources :workflow_tasks, only: %i[index create]
         resources :appointments, only: :create
