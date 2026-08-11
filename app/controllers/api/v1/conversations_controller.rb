@@ -1,26 +1,28 @@
 class Api::V1::ConversationsController < Api::V1::BaseController
   def index
-    conversations = policy_scope(Conversation).includes(:listing, :client_account, :users).order(last_message_at: :desc, created_at: :desc)
+    conversations = policy_scope(Conversation).includes(:listing, :client_account, conversation_memberships: :user).order(last_message_at: :desc, created_at: :desc)
     conversations = conversations.where(listing_id: params[:listing_id]) if params[:listing_id].present?
     authorize Conversation, :index?
     render json: { conversations: conversations.map { |conversation| serialize(conversation) } }
   end
 
   def show
-    conversation = policy_scope(Conversation).includes(:users, messages: :author).find(params[:id])
+    conversation = policy_scope(Conversation).includes(conversation_memberships: :user, messages: :author).find(params[:id])
     authorize conversation
     render json: { conversation: serialize(conversation, include_messages: true) }
   end
 
   def create
     listing = policy_scope(Listing).find(create_params[:listing_id]) if create_params[:listing_id].present?
-    authorize Conversation, :create?
-    conversation = Current.organization.conversations.build(create_params.except(:listing_id, :member_ids, :body).merge(listing: listing, client_account: listing&.client_account))
-
-    if conversation.client? && listing.blank?
-      conversation.errors.add(:listing, "is required for a client conversation")
-      raise ActiveRecord::RecordInvalid.new(conversation)
+    client_account = if create_params[:client_account_id].present?
+      policy_scope(ClientAccount).find(create_params[:client_account_id])
+    else
+      listing&.client_account
     end
+    authorize Conversation, :create?
+    attributes = create_params.except(:listing_id, :client_account_id, :member_ids, :body)
+    conversation = Current.organization.conversations.build(attributes.merge(listing: listing))
+    conversation.client_account = client_account if conversation.client?
 
     Conversation.transaction do
       conversation.save!
@@ -55,7 +57,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   private
 
   def create_params
-    params.require(:conversation).permit(:listing_id, :kind, :subject, :body, member_ids: [])
+    params.require(:conversation).permit(:listing_id, :client_account_id, :kind, :subject, :body, member_ids: [])
   end
 
   def message_params
@@ -78,7 +80,10 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     data = conversation.slice(:id, :listing_id, :client_account_id, :kind, :subject, :last_message_at, :created_at).merge(
       listing: conversation.listing && { id: conversation.listing.id, address: conversation.listing.address },
       client_account: conversation.client_account && conversation.client_account.slice(:id, :name),
-      members: conversation.users.order(:name).map { |user| user.slice(:id, :name, :email, :role) }
+      members: conversation.conversation_memberships.sort_by { |membership| membership.user.name }.map do |membership|
+        membership.user.slice(:id, :name, :email, :role).merge(membership_id: membership.id, membership_role: membership.role)
+      end,
+      can_manage_members: policy(conversation).manage_members?
     )
     return data unless include_messages
 

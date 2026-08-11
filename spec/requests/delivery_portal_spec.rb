@@ -47,6 +47,31 @@ RSpec.describe "Delivery portal", type: :request do
     expect(conversation.conversation_memberships.where(user: client_user)).to exist
   end
 
+  it "creates a customer conversation without requiring a listing" do
+    manager = User.create!(organization: organization, name: "Morgan Manager", email: "customer-room-manager@example.test", password: "long-enough-password", role: :manager)
+    client_user = User.create!(organization: organization, name: "Avery Client", email: "customer-room-client@example.test", password: "long-enough-password", role: :client_admin)
+    ClientMembership.create!(client_account: client_account, user: client_user, role: :admin)
+
+    sign_in manager
+    post "/api/v1/conversations", params: { conversation: { client_account_id: client_account.id, kind: "client", subject: "Account updates", body: "Welcome." } }
+
+    expect(response).to have_http_status(:created)
+    conversation = Conversation.order(:id).last
+    expect(conversation).to have_attributes(client_account: client_account, listing: nil)
+    expect(conversation.users).to contain_exactly(manager, client_user)
+  end
+
+  it "rejects a customer room when its listing belongs to another customer" do
+    manager = User.create!(organization: organization, name: "Morgan Manager", email: "mismatched-room-manager@example.test", password: "long-enough-password", role: :manager)
+    other_account = ClientAccount.create!(organization: organization, name: "Other Client", kind: :agent)
+
+    sign_in manager
+    post "/api/v1/conversations", params: { conversation: { listing_id: listing.id, client_account_id: other_account.id, kind: "client", subject: "Wrong account", body: "Hello." } }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body).dig("details", "listing")).to include("must belong to the selected customer account")
+  end
+
   it "allows a client participant to reply to a client conversation" do
     client_user = User.create!(organization: organization, name: "Avery Client", email: "reply-client@example.test", password: "long-enough-password", role: :client_admin)
     ClientMembership.create!(client_account: client_account, user: client_user, role: :admin)
@@ -88,5 +113,40 @@ RSpec.describe "Delivery portal", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(JSON.parse(response.body).fetch("conversations")).to be_empty
+  end
+
+
+  it "allows a room manager to invite and remove an organization participant" do
+    manager = User.create!(organization: organization, name: "Morgan Manager", email: "room-manager@example.test", password: "long-enough-password", role: :manager)
+    producer = User.create!(organization: organization, name: "Parker Producer", email: "room-producer@example.test", password: "long-enough-password", role: :production_staff)
+    conversation = Conversation.create!(organization: organization, kind: :internal, subject: "Production room")
+    conversation.conversation_memberships.create!(user: manager, role: :manager)
+
+    sign_in manager
+    post "/api/v1/conversations/#{conversation.id}/members", params: { conversation_membership: { user_id: producer.id } }
+
+    expect(response).to have_http_status(:created)
+    membership = conversation.conversation_memberships.find_by!(user: producer)
+
+    sign_in manager
+    delete "/api/v1/conversations/#{conversation.id}/members/#{membership.id}"
+
+    expect(response).to have_http_status(:no_content)
+    expect(conversation.conversation_memberships.where(user: producer)).not_to exist
+  end
+
+  it "does not let an ordinary room participant manage members" do
+    manager = User.create!(organization: organization, name: "Morgan Manager", email: "locked-room-manager@example.test", password: "long-enough-password", role: :manager)
+    participant = User.create!(organization: organization, name: "Parker Participant", email: "locked-room-participant@example.test", password: "long-enough-password", role: :production_staff)
+    invitee = User.create!(organization: organization, name: "Taylor Invitee", email: "locked-room-invitee@example.test", password: "long-enough-password", role: :production_staff)
+    conversation = Conversation.create!(organization: organization, kind: :internal, subject: "Private room")
+    conversation.conversation_memberships.create!(user: manager, role: :manager)
+    conversation.conversation_memberships.create!(user: participant)
+
+    sign_in participant
+    post "/api/v1/conversations/#{conversation.id}/members", params: { conversation_membership: { user_id: invitee.id } }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(conversation.conversation_memberships.where(user: invitee)).not_to exist
   end
 end

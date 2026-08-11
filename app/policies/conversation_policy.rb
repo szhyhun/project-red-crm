@@ -15,6 +15,13 @@ class ConversationPolicy < OrganizationRecordPolicy
     visible_to_user?
   end
 
+  def manage_members?
+    return false unless belongs_to_current_organization?
+    return true if user.organization_admin? || user.platform_owner?
+
+    record.conversation_memberships.manager.exists?(user_id: user.id)
+  end
+
   class Scope < Scope
     def resolve
       conversations = scope.where(organization_id: user.organization_id)

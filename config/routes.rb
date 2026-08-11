@@ -30,6 +30,7 @@ Rails.application.routes.draw do
       end
       resources :conversations, only: %i[index show create] do
         post :messages, on: :member, action: :create_message
+        resources :members, only: %i[create destroy], controller: "conversation_memberships"
       end
       get "dashboard", to: "dashboard#show"
       resources :client_accounts, only: %i[index create] do
