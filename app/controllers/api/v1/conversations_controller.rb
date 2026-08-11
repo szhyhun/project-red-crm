@@ -1,29 +1,38 @@
 class Api::V1::ConversationsController < Api::V1::BaseController
   def index
-    conversations = policy_scope(Conversation).includes(:listing, :client_account, :conversation_memberships).order(last_message_at: :desc, created_at: :desc)
+    conversations = policy_scope(Conversation).includes(:listing, :client_account, :users).order(last_message_at: :desc, created_at: :desc)
     conversations = conversations.where(listing_id: params[:listing_id]) if params[:listing_id].present?
     authorize Conversation, :index?
     render json: { conversations: conversations.map { |conversation| serialize(conversation) } }
   end
 
   def show
-    conversation = policy_scope(Conversation).includes(messages: :author).find(params[:id])
+    conversation = policy_scope(Conversation).includes(:users, messages: :author).find(params[:id])
     authorize conversation
     render json: { conversation: serialize(conversation, include_messages: true) }
   end
 
   def create
-    listing = policy_scope(Listing).find(create_params.fetch(:listing_id))
+    listing = policy_scope(Listing).find(create_params[:listing_id]) if create_params[:listing_id].present?
     authorize Conversation, :create?
-    conversation = Current.organization.conversations.build(create_params.except(:listing_id, :member_ids, :body).merge(listing: listing, client_account: listing.client_account))
+    conversation = Current.organization.conversations.build(create_params.except(:listing_id, :member_ids, :body).merge(listing: listing, client_account: listing&.client_account))
+
+    if conversation.client? && listing.blank?
+      conversation.errors.add(:listing, "is required for a client conversation")
+      raise ActiveRecord::RecordInvalid.new(conversation)
+    end
 
     Conversation.transaction do
       conversation.save!
       member_ids = [current_user.id, *Array(create_params[:member_ids]).map(&:to_i)]
       member_ids.concat(conversation.client_account.users.active.ids) if conversation.client? && conversation.client_account.present?
       member_ids.uniq!
-      users = Current.organization.users.where(id: member_ids)
+      users = Current.organization.users.active.where(id: member_ids)
       raise ActiveRecord::RecordInvalid.new(conversation) unless users.size == member_ids.size
+      if conversation.internal? && users.any? { |user| !user.internal? }
+        conversation.errors.add(:base, "Internal conversations can include only organization staff")
+        raise ActiveRecord::RecordInvalid.new(conversation)
+      end
 
       users.each { |member| conversation.conversation_memberships.create!(user: member, role: member == current_user ? :manager : :participant) }
       create_message!(conversation, create_params[:body]) if create_params[:body].present?
@@ -68,7 +77,8 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   def serialize(conversation, include_messages: false)
     data = conversation.slice(:id, :listing_id, :client_account_id, :kind, :subject, :last_message_at, :created_at).merge(
       listing: conversation.listing && { id: conversation.listing.id, address: conversation.listing.address },
-      client_account: conversation.client_account && conversation.client_account.slice(:id, :name)
+      client_account: conversation.client_account && conversation.client_account.slice(:id, :name),
+      members: conversation.users.order(:name).map { |user| user.slice(:id, :name, :email, :role) }
     )
     return data unless include_messages
 

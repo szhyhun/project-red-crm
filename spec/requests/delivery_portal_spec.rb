@@ -61,4 +61,32 @@ RSpec.describe "Delivery portal", type: :request do
     expect(response).to have_http_status(:created)
     expect(conversation.messages.last).to have_attributes(author: client_user, body: "Thank you.", visibility: "participants")
   end
+
+  it "creates an organization-level conversation for selected staff" do
+    admin = User.create!(organization: organization, name: "Alex Admin", email: "chat-admin@example.test", password: "long-enough-password", role: :organization_admin)
+    producer = User.create!(organization: organization, name: "Parker Producer", email: "chat-producer@example.test", password: "long-enough-password", role: :production_staff)
+
+    sign_in admin
+    post "/api/v1/conversations", params: { conversation: { kind: "internal", subject: "Studio updates", body: "Welcome to the team chat.", member_ids: [producer.id] } }
+
+    expect(response).to have_http_status(:created)
+    conversation = Conversation.order(:id).last
+    expect(conversation).to have_attributes(kind: "internal", listing_id: nil, client_account_id: nil)
+    expect(conversation.users).to contain_exactly(admin, producer)
+  end
+
+  it "limits internal staff to conversations where they are members" do
+    admin = User.create!(organization: organization, name: "Alex Admin", email: "scope-admin@example.test", password: "long-enough-password", role: :organization_admin)
+    member = User.create!(organization: organization, name: "Morgan Member", email: "scope-member@example.test", password: "long-enough-password", role: :manager)
+    outsider = User.create!(organization: organization, name: "Parker Outsider", email: "scope-outsider@example.test", password: "long-enough-password", role: :production_staff)
+    conversation = Conversation.create!(organization: organization, kind: :internal, subject: "Private production")
+    conversation.conversation_memberships.create!(user: admin, role: :manager)
+    conversation.conversation_memberships.create!(user: member)
+
+    sign_in outsider
+    get "/api/v1/conversations"
+
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch("conversations")).to be_empty
+  end
 end

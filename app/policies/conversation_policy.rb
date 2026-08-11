@@ -18,7 +18,13 @@ class ConversationPolicy < OrganizationRecordPolicy
   class Scope < Scope
     def resolve
       conversations = scope.where(organization_id: user.organization_id)
-      return conversations if user.internal?
+      return conversations if user.organization_admin? || user.platform_owner?
+
+      if user.internal?
+        return conversations.joins(:conversation_memberships)
+                            .where(conversation_memberships: { user_id: user.id })
+                            .distinct
+      end
 
       conversations.client
                    .where(client_account_id: user.client_account_ids)
@@ -32,7 +38,8 @@ class ConversationPolicy < OrganizationRecordPolicy
 
   def visible_to_user?
     return false unless belongs_to_current_organization?
-    return true if user.internal?
+    return true if user.organization_admin? || user.platform_owner?
+    return record.conversation_memberships.exists?(user_id: user.id) if user.internal?
 
     record.client? && user.client_account_ids.include?(record.client_account_id) &&
       record.conversation_memberships.exists?(user_id: user.id)
