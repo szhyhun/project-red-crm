@@ -14,6 +14,13 @@ bin/rails server
 QUEUE='media' bundle exec rake resque:work
 ```
 
+If the Homebrew Redis service cannot start through `launchctl`, use the local
+development daemon instead:
+
+```sh
+redis-server --daemonize yes
+```
+
 `bin/setup` creates and migrates the local database. It does not run the test suite.
 
 ## Related applications
