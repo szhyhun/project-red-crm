@@ -7,6 +7,10 @@ class ClientAccountPolicy < OrganizationRecordPolicy
     belongs_to_current_organization? && (user.internal? || user.client_account_ids.include?(record.id))
   end
 
+  def invite?
+    belongs_to_current_organization? && user.organization_admin?
+  end
+
   class Scope < Scope
     def resolve
       accounts = scope.where(organization_id: user.organization_id)

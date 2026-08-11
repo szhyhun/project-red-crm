@@ -23,8 +23,10 @@ Rails.application.routes.draw do
         post :messages, on: :member, action: :create_message
       end
       get "dashboard", to: "dashboard#show"
-      resources :client_accounts, only: %i[index create]
-      resources :staff, only: :index, controller: "staff"
+      resources :client_accounts, only: %i[index create] do
+        post :invite, on: :member
+      end
+      resources :staff, only: %i[index create], controller: "staff"
       resources :listings, only: %i[index show create update] do
         resources :workflow_tasks, only: %i[index create]
         resources :appointments, only: :create
