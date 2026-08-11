@@ -18,6 +18,10 @@ Rails.application.routes.draw do
       resources :products, only: %i[index show create update]
       resources :orders, only: %i[index show create update]
       resources :invoices, only: %i[index create]
+      resources :media_assets, only: %i[index create update]
+      resources :conversations, only: %i[index show create] do
+        post :messages, on: :member, action: :create_message
+      end
       get "dashboard", to: "dashboard#show"
       resources :client_accounts, only: %i[index create]
       resources :staff, only: :index, controller: "staff"
@@ -25,9 +29,16 @@ Rails.application.routes.draw do
         resources :workflow_tasks, only: %i[index create]
         resources :appointments, only: :create
         resources :listing_assignments, only: %i[create destroy]
+        resource :property_site, only: %i[show create update] do
+          post :publish
+        end
       end
       resources :appointments, only: %i[index update]
       resources :workflow_tasks, only: %i[index update]
+
+      namespace :public do
+        get "property_sites/:organization_slug/:slug", to: "property_sites#show"
+      end
     end
   end
 end

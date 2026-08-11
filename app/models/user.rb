@@ -11,6 +11,8 @@ class User < ApplicationRecord
   has_many :assigned_listings, through: :listing_assignments, source: :listing
   has_many :assigned_workflow_tasks, class_name: "WorkflowTask", foreign_key: :assignee_id,
            dependent: :nullify
+  has_many :conversation_memberships, dependent: :destroy
+  has_many :conversations, through: :conversation_memberships
 
   enum :role, {
     platform_owner: "platform_owner",
@@ -24,4 +26,8 @@ class User < ApplicationRecord
   enum :status, { active: "active", suspended: "suspended" }, validate: true
 
   validates :name, presence: true
+
+  def internal?
+    !client_admin? && !client_member?
+  end
 end
