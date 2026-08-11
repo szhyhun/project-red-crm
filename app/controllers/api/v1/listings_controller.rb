@@ -5,7 +5,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
   end
 
   def show
-    listing = policy_scope(Listing).includes(:client_account, :workflow_tasks, :appointments).find(params[:id])
+    listing = policy_scope(Listing).includes(:client_account, :workflow_tasks, :appointments, listing_assignments: :user).find(params[:id])
     authorize listing
     render json: { listing: serialize_listing(listing, include_details: true) }
   end
@@ -55,13 +55,24 @@ class Api::V1::ListingsController < Api::V1::BaseController
     return data unless include_details
 
     data.merge(
-      workflow_tasks: listing.workflow_tasks.order(:position).map { |task| serialize_task(task) },
-      appointments: listing.appointments.order(:starts_at).map { |appointment| appointment.slice(:id, :status, :starts_at, :ends_at, :notes) }
+      workflow_tasks: listing.workflow_tasks.includes(:assignee).order(:position).map { |task| serialize_task(task) },
+      appointments: listing.appointments.includes(:assigned_user).order(:starts_at).map { |appointment| serialize_appointment(appointment) },
+      assignments: listing.listing_assignments.map { |assignment| serialize_assignment(assignment) }
     )
   end
 
   def serialize_task(task)
     { id: task.id, title: task.title, status: task.status, stage: task.stage, assignee_id: task.assignee_id,
-      customer_visible: task.customer_visible, due_at: task.due_at }
+      customer_visible: task.customer_visible, due_at: task.due_at, assignee: task.assignee && task.assignee.slice(:id, :name, :role) }
+  end
+
+  def serialize_appointment(appointment)
+    appointment.slice(:id, :status, :starts_at, :ends_at, :notes).merge(
+      assigned_user: appointment.assigned_user && appointment.assigned_user.slice(:id, :name, :role)
+    )
+  end
+
+  def serialize_assignment(assignment)
+    assignment.slice(:id, :user_id, :role).merge(user: assignment.user.slice(:id, :name, :role))
   end
 end

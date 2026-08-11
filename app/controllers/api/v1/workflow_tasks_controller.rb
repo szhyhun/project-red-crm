@@ -1,8 +1,15 @@
 class Api::V1::WorkflowTasksController < Api::V1::BaseController
   def index
-    listing = policy_scope(Listing).find(params[:listing_id])
-    authorize listing, :show?
-    render json: { workflow_tasks: listing.workflow_tasks.order(:position).map { |task| serialize(task) } }
+    if params[:listing_id].present?
+      listing = policy_scope(Listing).find(params[:listing_id])
+      authorize listing, :show?
+      tasks = listing.workflow_tasks.includes(:assignee).order(:position)
+    else
+      authorize WorkflowTask, :index?
+      tasks = policy_scope(WorkflowTask).includes(:listing, :assignee).order(:status, :position, :created_at)
+    end
+
+    render json: { workflow_tasks: tasks.map { |task| serialize(task) } }
   end
 
   def create
@@ -37,6 +44,9 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   end
 
   def serialize(task)
-    task.slice(:id, :title, :status, :stage, :assignee_id, :customer_visible, :position, :due_at, :completed_at)
+    task.slice(:id, :listing_id, :title, :status, :stage, :assignee_id, :customer_visible, :position, :due_at, :completed_at).merge(
+      listing_address: task.listing.address,
+      assignee: task.assignee && task.assignee.slice(:id, :name, :role)
+    )
   end
 end

@@ -18,10 +18,14 @@ Rails.application.routes.draw do
       resources :products, only: %i[index show]
       get "dashboard", to: "dashboard#show"
       resources :client_accounts, only: %i[index create]
+      resources :staff, only: :index, controller: "staff"
       resources :listings, only: %i[index show create update] do
         resources :workflow_tasks, only: %i[index create]
+        resources :appointments, only: :create
+        resources :listing_assignments, only: %i[create destroy]
       end
-      resources :workflow_tasks, only: %i[update]
+      resources :appointments, only: %i[index update]
+      resources :workflow_tasks, only: %i[index update]
     end
   end
 end
