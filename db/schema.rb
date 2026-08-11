@@ -1,0 +1,311 @@
+# This file is auto-generated from the current state of the database. Instead
+# of editing this file, please use the migrations feature of Active Record to
+# incrementally modify your database, and then regenerate this schema definition.
+#
+# This file is the source Rails uses to define your schema when running `bin/rails
+# db:schema:load`. When creating a new database, `bin/rails db:schema:load` tends to
+# be faster and is potentially less error prone than running all of your
+# migrations from scratch. Old migrations may fail to apply correctly if those
+# migrations use external dependencies or application code.
+#
+# It's strongly recommended that you check this file into your version control system.
+
+ActiveRecord::Schema[8.0].define(version: 2026_08_11_073000) do
+  # These are extensions that must be enabled in order to support this database
+  enable_extension "pg_catalog.plpgsql"
+
+  create_table "activity_events", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "actor_id"
+    t.string "event_type", null: false
+    t.string "subject_type", null: false
+    t.bigint "subject_id", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_activity_events_on_actor_id"
+    t.index ["organization_id", "created_at"], name: "index_activity_events_on_organization_id_and_created_at"
+    t.index ["organization_id"], name: "index_activity_events_on_organization_id"
+    t.index ["subject_type", "subject_id"], name: "index_activity_events_on_subject"
+  end
+
+  create_table "appointments", force: :cascade do |t|
+    t.bigint "listing_id", null: false
+    t.bigint "organization_id", null: false
+    t.bigint "assigned_user_id"
+    t.string "status", default: "scheduled", null: false
+    t.datetime "starts_at", null: false
+    t.datetime "ends_at", null: false
+    t.text "notes"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["assigned_user_id"], name: "index_appointments_on_assigned_user_id"
+    t.index ["listing_id"], name: "index_appointments_on_listing_id"
+    t.index ["organization_id", "starts_at"], name: "index_appointments_on_organization_id_and_starts_at"
+    t.index ["organization_id"], name: "index_appointments_on_organization_id"
+  end
+
+  create_table "catalog_sync_runs", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "source", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "products_seen", default: 0, null: false
+    t.integer "products_created", default: 0, null: false
+    t.integer "products_updated", default: 0, null: false
+    t.jsonb "unmapped_products", default: [], null: false
+    t.jsonb "errors", default: [], null: false
+    t.datetime "started_at"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id"], name: "index_catalog_sync_runs_on_organization_id"
+  end
+
+  create_table "client_accounts", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.string "kind", default: "agent", null: false
+    t.string "email"
+    t.string "phone"
+    t.string "brokerage_name"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "name"], name: "index_client_accounts_on_organization_id_and_name"
+    t.index ["organization_id"], name: "index_client_accounts_on_organization_id"
+  end
+
+  create_table "client_memberships", force: :cascade do |t|
+    t.bigint "client_account_id", null: false
+    t.bigint "user_id", null: false
+    t.string "role", default: "member", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_account_id", "user_id"], name: "index_client_memberships_on_client_and_user", unique: true
+    t.index ["client_account_id"], name: "index_client_memberships_on_client_account_id"
+    t.index ["user_id"], name: "index_client_memberships_on_user_id"
+  end
+
+  create_table "listing_assignments", force: :cascade do |t|
+    t.bigint "listing_id", null: false
+    t.bigint "user_id", null: false
+    t.string "role", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["listing_id", "user_id", "role"], name: "index_listing_assignments_on_listing_user_role", unique: true
+    t.index ["listing_id"], name: "index_listing_assignments_on_listing_id"
+    t.index ["user_id"], name: "index_listing_assignments_on_user_id"
+  end
+
+  create_table "listings", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "client_account_id", null: false
+    t.string "status", default: "draft", null: false
+    t.string "public_slug"
+    t.string "address_line_1", null: false
+    t.string "address_line_2"
+    t.string "city"
+    t.string "province"
+    t.string "postal_code"
+    t.string "country", default: "CA", null: false
+    t.integer "square_feet"
+    t.integer "bedrooms"
+    t.decimal "bathrooms", precision: 4, scale: 1
+    t.datetime "scheduled_at"
+    t.datetime "delivered_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_account_id"], name: "index_listings_on_client_account_id"
+    t.index ["organization_id", "public_slug"], name: "index_listings_on_organization_id_and_public_slug", unique: true
+    t.index ["organization_id", "status"], name: "index_listings_on_organization_id_and_status"
+    t.index ["organization_id"], name: "index_listings_on_organization_id"
+  end
+
+  create_table "media_assets", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "listing_id"
+    t.bigint "uploaded_by_id"
+    t.string "kind", default: "final", null: false
+    t.string "status", default: "pending", null: false
+    t.string "storage_key", null: false
+    t.string "filename", null: false
+    t.string "content_type", null: false
+    t.bigint "byte_size"
+    t.integer "width"
+    t.integer "height"
+    t.integer "duration_seconds"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "processed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["listing_id"], name: "index_media_assets_on_listing_id"
+    t.index ["organization_id", "status"], name: "index_media_assets_on_organization_id_and_status"
+    t.index ["organization_id"], name: "index_media_assets_on_organization_id"
+    t.index ["storage_key"], name: "index_media_assets_on_storage_key", unique: true
+    t.index ["uploaded_by_id"], name: "index_media_assets_on_uploaded_by_id"
+  end
+
+  create_table "order_items", force: :cascade do |t|
+    t.bigint "order_id", null: false
+    t.bigint "product_id"
+    t.bigint "product_variant_id"
+    t.string "title", null: false
+    t.integer "quantity", default: 1, null: false
+    t.integer "unit_price_cents", null: false
+    t.integer "total_cents", null: false
+    t.jsonb "snapshot", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["order_id"], name: "index_order_items_on_order_id"
+    t.index ["product_id"], name: "index_order_items_on_product_id"
+    t.index ["product_variant_id"], name: "index_order_items_on_product_variant_id"
+  end
+
+  create_table "orders", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "client_account_id", null: false
+    t.bigint "listing_id"
+    t.string "status", default: "draft", null: false
+    t.string "payment_mode", default: "pay_later", null: false
+    t.string "currency", default: "cad", null: false
+    t.integer "subtotal_cents", default: 0, null: false
+    t.integer "discount_cents", default: 0, null: false
+    t.integer "tax_cents", default: 0, null: false
+    t.integer "total_cents", default: 0, null: false
+    t.string "source", default: "crm", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_account_id"], name: "index_orders_on_client_account_id"
+    t.index ["listing_id"], name: "index_orders_on_listing_id"
+    t.index ["organization_id", "status"], name: "index_orders_on_organization_id_and_status"
+    t.index ["organization_id"], name: "index_orders_on_organization_id"
+  end
+
+  create_table "organizations", force: :cascade do |t|
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.string "time_zone", default: "Pacific Time (US & Canada)", null: false
+    t.jsonb "settings", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_organizations_on_slug", unique: true
+  end
+
+  create_table "product_variants", force: :cascade do |t|
+    t.bigint "product_id", null: false
+    t.string "external_id"
+    t.string "title", null: false
+    t.integer "price_cents", null: false
+    t.integer "duration_minutes"
+    t.integer "sqft_min"
+    t.integer "sqft_max"
+    t.string "quantity_label"
+    t.boolean "active", default: true, null: false
+    t.jsonb "source_payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["product_id", "external_id"], name: "index_product_variants_on_product_id_and_external_id", unique: true
+    t.index ["product_id"], name: "index_product_variants_on_product_id"
+  end
+
+  create_table "products", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "external_source"
+    t.string "external_id"
+    t.string "slug", null: false
+    t.string "title", null: false
+    t.string "kind", null: false
+    t.text "description"
+    t.boolean "active", default: true, null: false
+    t.boolean "bundle_candidate", default: false, null: false
+    t.boolean "do_not_recommend", default: false, null: false
+    t.jsonb "categories", default: [], null: false
+    t.jsonb "capabilities", default: [], null: false
+    t.jsonb "requires_capabilities", default: [], null: false
+    t.jsonb "source_payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "external_source", "external_id"], name: "index_products_on_org_and_external_identity", unique: true
+    t.index ["organization_id", "slug"], name: "index_products_on_organization_id_and_slug", unique: true
+    t.index ["organization_id"], name: "index_products_on_organization_id"
+  end
+
+  create_table "users", force: :cascade do |t|
+    t.string "email", default: "", null: false
+    t.string "encrypted_password", default: "", null: false
+    t.string "reset_password_token"
+    t.datetime "reset_password_sent_at"
+    t.datetime "remember_created_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "invitation_token"
+    t.datetime "invitation_created_at"
+    t.datetime "invitation_sent_at"
+    t.datetime "invitation_accepted_at"
+    t.integer "invitation_limit"
+    t.string "invited_by_type"
+    t.bigint "invited_by_id"
+    t.integer "invitations_count", default: 0
+    t.bigint "organization_id"
+    t.string "name", default: "", null: false
+    t.string "role", default: "manager", null: false
+    t.string "status", default: "active", null: false
+    t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["invitation_token"], name: "index_users_on_invitation_token", unique: true
+    t.index ["invited_by_id"], name: "index_users_on_invited_by_id"
+    t.index ["invited_by_type", "invited_by_id"], name: "index_users_on_invited_by"
+    t.index ["organization_id"], name: "index_users_on_organization_id"
+    t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
+  end
+
+  create_table "workflow_tasks", force: :cascade do |t|
+    t.bigint "listing_id", null: false
+    t.bigint "organization_id", null: false
+    t.bigint "assignee_id"
+    t.string "title", null: false
+    t.string "status", default: "todo", null: false
+    t.string "stage", default: "intake", null: false
+    t.boolean "customer_visible", default: false, null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "due_at"
+    t.datetime "completed_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["assignee_id"], name: "index_workflow_tasks_on_assignee_id"
+    t.index ["listing_id"], name: "index_workflow_tasks_on_listing_id"
+    t.index ["organization_id", "status", "stage"], name: "index_workflow_tasks_on_organization_id_and_status_and_stage"
+    t.index ["organization_id"], name: "index_workflow_tasks_on_organization_id"
+  end
+
+  add_foreign_key "activity_events", "organizations"
+  add_foreign_key "activity_events", "users", column: "actor_id"
+  add_foreign_key "appointments", "listings"
+  add_foreign_key "appointments", "organizations"
+  add_foreign_key "appointments", "users", column: "assigned_user_id"
+  add_foreign_key "catalog_sync_runs", "organizations"
+  add_foreign_key "client_accounts", "organizations"
+  add_foreign_key "client_memberships", "client_accounts"
+  add_foreign_key "client_memberships", "users"
+  add_foreign_key "listing_assignments", "listings"
+  add_foreign_key "listing_assignments", "users"
+  add_foreign_key "listings", "client_accounts"
+  add_foreign_key "listings", "organizations"
+  add_foreign_key "media_assets", "listings"
+  add_foreign_key "media_assets", "organizations"
+  add_foreign_key "media_assets", "users", column: "uploaded_by_id"
+  add_foreign_key "order_items", "orders"
+  add_foreign_key "order_items", "product_variants"
+  add_foreign_key "order_items", "products"
+  add_foreign_key "orders", "client_accounts"
+  add_foreign_key "orders", "listings"
+  add_foreign_key "orders", "organizations"
+  add_foreign_key "product_variants", "products"
+  add_foreign_key "products", "organizations"
+  add_foreign_key "users", "organizations"
+  add_foreign_key "workflow_tasks", "listings"
+  add_foreign_key "workflow_tasks", "organizations"
+  add_foreign_key "workflow_tasks", "users", column: "assignee_id"
+end

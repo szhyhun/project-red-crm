@@ -30,5 +30,12 @@ module ProjectRedCrm
     config.api_only = true
     config.time_zone = "Pacific Time (US & Canada)"
     config.active_job.queue_adapter = :resque
+
+    # The separate Next portal authenticates with an HttpOnly Rails session.
+    config.middleware.use ActionDispatch::Cookies
+    config.middleware.use ActionDispatch::Session::CookieStore,
+                          key: "_project_red_crm_session",
+                          same_site: :lax,
+                          secure: Rails.env.production?
   end
 end
