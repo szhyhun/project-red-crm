@@ -191,12 +191,12 @@ This checklist is derived from the supplied Listings specification. A checked it
 
 - [x] 1. Separate card per appointment.
 - [x] 2. Date, time, calculated duration, assignee, notes. `UI needs expanded presentation`
-- [ ] 3. Reschedule, Postpone, Cancel, Customer Reschedule actions. `PARTIAL: postpone/cancel/complete; customer reschedule remains`
-- [x] 4. Existing appointment can be rescheduled; audit history remains incomplete.
+- [x] 3. Reschedule, Postpone, Cancel, Customer Reschedule actions.
+- [x] 4. Existing appointment can be rescheduled with audit history.
 - [x] 5. Appointment scheduling history.
 - [x] 6. Postponed state.
 - [x] 7. Confirmed soft cancellation preserving history.
-- [ ] 8. Customer Reschedule Page.
+- [x] 8. Customer Reschedule Page. `Implemented as a customer-portal modal with current appointment context and requested date/time fields.`
 - [x] 9. Duration can be edited via start/end; dedicated duration UI remains incomplete.
 - [x] 10. Multiple Appointment Team Members.
 - [x] 11. Team Member management controls.
@@ -216,7 +216,7 @@ This checklist is derived from the supplied Listings specification. A checked it
 - [x] 2. Independent collapsible cards with category counts and empty states.
 - [x] 3. Customer visibility per category/asset.
 - [x] 4. Add media action.
-- [ ] 5. Upload modal/drawer.
+- [x] 5. Upload modal/drawer. `Device batch upload and external video/3D link forms share one media drawer.`
 - [ ] 6. Device, Link, Camera, Dropbox, Google Drive, Google Photos, OneDrive sources. `DEVICE ONLY`
 - [x] 7. Upload progress is shown with a spinner, aggregate byte progress, file count, and file names for multi-file device uploads. Background processing status remains separate.
 - [ ] 8. Complete Images workspace.

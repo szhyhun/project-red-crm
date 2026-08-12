@@ -34,7 +34,7 @@ class Api::V1::AppointmentsController < Api::V1::BaseController
       else
         "updated"
       end
-      appointment.appointment_events.create!(actor: current_user, event_type:, changeset: appointment.previous_changes)
+      appointment.appointment_events.create!(actor: current_user, event_type: event_type, changeset: appointment.previous_changes)
       record_activity(appointment, "appointment.updated")
       render json: { appointment: serialize(appointment) }
     else
