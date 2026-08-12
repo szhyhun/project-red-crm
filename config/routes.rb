@@ -18,14 +18,23 @@ Rails.application.routes.draw do
       end
 
       resources :products, only: %i[index show create update]
-      resources :orders, only: %i[index show create update]
+      resources :orders, only: %i[index show create update] do
+        resources :items, only: %i[create update destroy], controller: "order_items"
+        post :cancel, on: :member
+      end
       resources :invoices, only: %i[index create] do
         post :send_invoice, on: :member
         post :payment_intent, on: :member
+        post :send_reminder, on: :member
       end
       get "client_portal", to: "client_portal#show"
-      resources :media_assets, only: %i[index create update] do
+      post "client_portal/appointments/:id/reschedule", to: "client_portal#request_reschedule"
+      resources :media_assets, only: %i[index create update destroy] do
         post :upload, on: :collection
+        post :link, on: :collection
+        post :reorder, on: :collection
+        post :replace, on: :member
+        post :retry, on: :member
         get :download, on: :member
       end
       resources :conversations, only: %i[index show create] do
@@ -33,20 +42,37 @@ Rails.application.routes.draw do
         resources :members, only: %i[create destroy], controller: "conversation_memberships"
       end
       get "dashboard", to: "dashboard#show"
-      resources :client_accounts, only: %i[index create] do
+      resources :client_accounts, only: %i[index create update] do
         post :invite, on: :member
       end
       resources :staff, only: %i[index create update], controller: "staff"
       resources :listings, only: %i[index show create update] do
+        get :download_media, on: :member
         resources :workflow_tasks, only: %i[index create]
         resources :appointments, only: :create
         resources :listing_assignments, only: %i[create destroy]
+        resources :listing_notes, only: %i[create destroy]
+        resources :payroll_items, only: :create
+        resources :listing_feedbacks, only: :create
+        resources :listing_customers, only: %i[create update destroy]
+        resources :listing_custom_fields, only: %i[create update destroy]
+        resources :marketing_materials, only: %i[create update destroy]
         resource :property_site, only: %i[show create update] do
           post :publish
         end
       end
       resources :appointments, only: %i[index update destroy]
+      resources :appointments, only: [] do
+        resources :team_members, only: %i[create destroy], controller: "appointment_team_members"
+        resources :items, only: %i[create update destroy], controller: "appointment_items"
+      end
+      resources :payroll_items, only: %i[update destroy]
+      resources :listing_feedbacks, only: :update
       resources :workflow_tasks, only: %i[index update destroy]
+      resources :workflow_columns, only: %i[index create update destroy]
+      resources :saved_listing_views, only: %i[index create update destroy] do
+        patch :preference, on: :collection
+      end
 
       namespace :webhooks do
         post :stripe, to: "stripe#create"

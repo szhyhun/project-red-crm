@@ -3,6 +3,7 @@ class PropertySite < ApplicationRecord
   belongs_to :listing
 
   enum :status, { draft: "draft", published: "published", archived: "archived" }, validate: true
+  enum :site_kind, { branded: "branded", unbranded: "unbranded" }, validate: true
 
   validates :slug, presence: true
   validate :listing_belongs_to_organization

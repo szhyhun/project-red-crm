@@ -41,6 +41,12 @@ module Payments
             paid_at: balance_due_cents.zero? ? Time.current : nil,
             payment_provider: "stripe"
           )
+          invoice.order&.update!(status: :paid) if balance_due_cents.zero? && invoice.order&.status != "cancelled"
+          ActivityEvent.create!(organization: invoice.organization, subject: invoice, event_type: "payment.succeeded",
+                                payload: { payment_id: payment.id, amount_cents: payment.amount_cents }) if invoice.listing || invoice.order&.listing
+          listing = invoice.listing || invoice.order&.listing
+          ActivityEvent.create!(organization: invoice.organization, subject: listing, event_type: "payment.succeeded",
+                                payload: { payment_id: payment.id, invoice_id: invoice.id, amount_cents: payment.amount_cents }) if listing
         end
       end
       CustomerNotifications.payment_received(payment.reload)

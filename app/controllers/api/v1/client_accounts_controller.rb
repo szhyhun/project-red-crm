@@ -15,6 +15,17 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
     end
   end
 
+  def update
+    account = policy_scope(ClientAccount).find(params[:id])
+    authorize account
+
+    if account.update(client_account_params)
+      render json: { client_account: serialize(account) }
+    else
+      render_validation_errors(account)
+    end
+  end
+
   def invite
     account = policy_scope(ClientAccount).find(params[:id])
     authorize account, :invite?
@@ -49,6 +60,32 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
   end
 
   def serialize(account)
-    account.slice(:id, :name, :kind, :email, :phone, :brokerage_name)
+    feedbacks = account.listing_feedbacks.includes(:listing).order(created_at: :desc)
+    submitted = feedbacks.select(&:submitted_at?)
+    ratings = submitted.flat_map { |feedback| [feedback.delivery_rating, feedback.service_rating, feedback.media_rating].compact }
+
+    account.slice(:id, :name, :kind, :email, :phone, :brokerage_name).merge(
+      feedback_summary: {
+        total: feedbacks.length,
+        submitted: submitted.length,
+        needs_attention: feedbacks.count { |feedback| feedback.follow_up_status_needed? },
+        average_rating: ratings.empty? ? nil : (ratings.sum.to_f / ratings.length).round(2),
+        latest_submitted_at: submitted.first&.submitted_at
+      },
+      feedback_history: feedbacks.first(20).map do |feedback|
+        {
+          id: feedback.id,
+          listing_id: feedback.listing_id,
+          listing_address: feedback.listing.address,
+          delivery_rating: feedback.delivery_rating,
+          service_rating: feedback.service_rating,
+          media_rating: feedback.media_rating,
+          follow_up_status: feedback.follow_up_status,
+          comment: feedback.comment,
+          submitted_at: feedback.submitted_at,
+          created_at: feedback.created_at
+        }
+      end
+    )
   end
 end

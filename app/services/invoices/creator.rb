@@ -18,7 +18,10 @@ module Invoices
           number: next_number,
           currency: @order.currency,
           subtotal_cents: @order.subtotal_cents,
+          discount_cents: @order.discount_cents,
           tax_cents: @order.tax_cents,
+          fee_cents: @order.fee_cents,
+          fee_label: @order.fee_label,
           total_cents: @order.total_cents,
           balance_due_cents: @order.total_cents
         )

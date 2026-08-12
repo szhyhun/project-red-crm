@@ -8,7 +8,8 @@ class Invoice < ApplicationRecord
   enum :status, { draft: "draft", sent: "sent", partially_paid: "partially_paid", paid: "paid", void: "void", overdue: "overdue" }, validate: true
 
   validates :number, presence: true
-  validates :balance_due_cents, numericality: { greater_than_or_equal_to: 0 }
+  validates :discount_cents, :tax_cents, :fee_cents, :balance_due_cents,
+            numericality: { greater_than_or_equal_to: 0 }
   validate :related_records_belong_to_organization
 
   def sendable?

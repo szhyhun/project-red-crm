@@ -11,7 +11,13 @@ class CustomerNotifications
     end
 
     def listing_ready(listing)
-      schedule_for_client_account(kind: "listing_ready", notifiable: listing, client_account: listing.client_account)
+      listing.customer_accounts.find_each do |client_account|
+        schedule_for_client_account(kind: "listing_ready", notifiable: listing, client_account:)
+      end
+    end
+
+    def feedback_requested(feedback)
+      schedule_for_client_account(kind: "feedback_requested", notifiable: feedback, client_account: feedback.client_account)
     end
 
     def payment_received(payment)
@@ -23,6 +29,7 @@ class CustomerNotifications
       when "workspace_welcome" then CustomerMailer.workspace_welcome(delivery.notifiable)
       when "invoice_ready" then CustomerMailer.invoice_ready(delivery.notifiable, recipient: delivery.recipient)
       when "listing_ready" then CustomerMailer.listing_ready(delivery.notifiable, recipient: delivery.recipient)
+      when "feedback_requested" then CustomerMailer.feedback_requested(delivery.notifiable, recipient: delivery.recipient)
       when "payment_received" then CustomerMailer.payment_received(delivery.notifiable, recipient: delivery.recipient)
       else raise ArgumentError, "Unknown notification kind: #{delivery.kind}"
       end

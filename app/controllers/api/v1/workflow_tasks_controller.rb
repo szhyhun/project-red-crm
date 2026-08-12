@@ -16,7 +16,9 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   def create
     listing = policy_scope(Listing).find(params[:listing_id])
     authorize listing, :update?
-    task = listing.workflow_tasks.build(task_params.merge(organization: Current.organization))
+    attributes = task_params
+    attributes[:status] = Current.organization.workflow_columns.ordered.first&.key if attributes[:status].blank?
+    task = listing.workflow_tasks.build(attributes.merge(organization: Current.organization))
     authorize task
 
     if task.save
@@ -50,9 +52,18 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   end
 
   def serialize(task)
-    data = task.slice(:id, :listing_id, :title, :description, :status, :stage, :priority, :customer_visible, :position, :due_at, :completed_at).merge(listing_address: task.listing.address)
+    column = workflow_columns_by_key[task.status]
+    data = task.slice(:id, :listing_id, :title, :description, :status, :stage, :priority, :customer_visible, :position, :due_at, :completed_at).merge(
+      listing_address: task.listing.address,
+      workflow_column_id: column&.id,
+      column_category: column&.category
+    )
     return data unless current_user.internal?
 
     data.merge(assignee_id: task.assignee_id, assignee: task.assignee && task.assignee.slice(:id, :name, :email, :role))
+  end
+
+  def workflow_columns_by_key
+    @workflow_columns_by_key ||= Current.organization.workflow_columns.index_by(&:key)
   end
 end

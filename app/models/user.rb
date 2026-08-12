@@ -6,13 +6,20 @@ class User < ApplicationRecord
   has_many :client_memberships, dependent: :destroy
   has_many :client_accounts, through: :client_memberships
   has_many :assigned_appointments, class_name: "Appointment", foreign_key: :assigned_user_id,
-           dependent: :nullify
+    dependent: :nullify
+  has_many :appointment_team_members, dependent: :destroy
+  has_many :team_appointments, through: :appointment_team_members, source: :appointment
   has_many :listing_assignments, dependent: :destroy
   has_many :assigned_listings, through: :listing_assignments, source: :listing
   has_many :assigned_workflow_tasks, class_name: "WorkflowTask", foreign_key: :assignee_id,
            dependent: :nullify
   has_many :conversation_memberships, dependent: :destroy
   has_many :conversations, through: :conversation_memberships
+  has_many :saved_listing_views, dependent: :destroy
+  has_many :authored_listing_notes, class_name: "ListingNote", foreign_key: :author_id, dependent: :destroy
+  has_many :created_payroll_items, class_name: "PayrollItem", foreign_key: :created_by_id, dependent: :restrict_with_error
+  has_many :payroll_items, class_name: "PayrollItem", foreign_key: :team_member_id, dependent: :nullify
+  has_one :listing_view_preference, dependent: :destroy
 
   enum :role, {
     platform_owner: "platform_owner",

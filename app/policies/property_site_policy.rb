@@ -1,6 +1,6 @@
 class PropertySitePolicy < OrganizationRecordPolicy
   def show?
-    belongs_to_current_organization? && (user.internal? || user.client_account_ids.include?(record.listing.client_account_id))
+    belongs_to_current_organization? && (user.internal? || customer_can_access_listing?)
   end
 
   def create?
@@ -16,7 +16,16 @@ class PropertySitePolicy < OrganizationRecordPolicy
       sites = scope.where(organization_id: user.organization_id)
       return sites if user.internal?
 
-      sites.joins(:listing).where(listings: { client_account_id: user.client_account_ids })
+      sites.joins(listing: :listing_customers).where(
+        "listings.client_account_id IN (:ids) OR listing_customers.client_account_id IN (:ids)", ids: user.client_account_ids
+      ).distinct
     end
+  end
+
+  private
+
+  def customer_can_access_listing?
+    user.client_account_ids.include?(record.listing.client_account_id) ||
+      record.listing.listing_customers.where(client_account_id: user.client_account_ids).exists?
   end
 end

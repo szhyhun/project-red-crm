@@ -32,4 +32,13 @@ class CustomerMailer < ApplicationMailer
 
     mail(to: recipient, subject: "Payment received for invoice #{@invoice.number}")
   end
+
+  def feedback_requested(feedback, recipient:)
+    @feedback = feedback
+    @listing = feedback.listing
+    @organization = feedback.organization
+    @portal_url = portal_url
+
+    mail(to: recipient, subject: "How did we do? #{ @listing.address }")
+  end
 end

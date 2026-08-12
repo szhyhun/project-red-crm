@@ -43,11 +43,11 @@ class Api::V1::PropertySitesController < Api::V1::BaseController
   private
 
   def site_params
-    params.require(:property_site).permit(:slug, :custom_domain, settings: {})
+    params.require(:property_site).permit(:slug, :custom_domain, :customer_visible, :site_kind, :status, settings: {})
   end
 
   def serialize(site)
-    site.slice(:id, :listing_id, :slug, :status, :custom_domain, :published_at, :settings).merge(
+    site.slice(:id, :listing_id, :slug, :status, :custom_domain, :published_at, :customer_visible, :site_kind, :settings).merge(
       public_path: site.published? ? "/p/#{site.organization.slug}/#{site.slug}" : nil
     )
   end

@@ -25,4 +25,16 @@ RSpec.describe WorkflowTasks::Mover do
     expect { described_class.new(task:, attributes: { position: "not-a-number" }).move! }
       .to raise_error(ActiveRecord::RecordInvalid, /Position must be an integer/)
   end
+
+  it "uses a custom column category to track task completion" do
+    organization = Organization.create!(name: "ProjectRed", slug: "projectred-custom-complete")
+    client = ClientAccount.create!(organization:, name: "Avery Agent", kind: :agent)
+    listing = Listing.create!(organization:, client_account: client, address_line_1: "111 Oak Bay Avenue")
+    approved = organization.workflow_columns.create!(name: "Approved", color: "#3cb371", category: :completed, position: 4)
+    task = WorkflowTask.create!(organization:, listing:, title: "Review", stage: "review", status: :todo, position: 0)
+
+    described_class.new(task:, attributes: { status: approved.key, position: 0 }).move!
+
+    expect(task.reload.completed_at).to be_present
+  end
 end
