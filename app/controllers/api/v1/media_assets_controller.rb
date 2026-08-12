@@ -158,7 +158,7 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
         asset.listing&.media_assets&.where(category: asset.category)&.where.not(id: asset.id)&.update_all(cover: false)
       end
       ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: asset, event_type: "media_asset.updated")
-      record_listing_activity(asset, "media_asset.updated", filename: asset.filename)
+      record_listing_activity(asset, "media_asset.updated", media_payload(asset))
       render json: { media_asset: serialize(asset) }
     else
       render_validation_errors(asset)
@@ -169,10 +169,10 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     asset = policy_scope(MediaAsset).find(params[:id])
     authorize asset
     listing = asset.listing
-    filename = asset.filename
+    payload = media_payload(asset)
     DeliveryStorage.delete(asset.storage_key) if asset.storage_key.present?
     asset.destroy!
-    ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: listing, event_type: "media_asset.deleted", payload: { filename: filename }) if listing
+    ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: listing, event_type: "media_asset.deleted", payload: payload) if listing
     head :no_content
   end
 

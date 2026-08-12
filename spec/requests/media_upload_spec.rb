@@ -167,6 +167,7 @@ RSpec.describe "Media uploads", type: :request do
     patch "/api/v1/media_assets/#{asset.id}", params: { media_asset: { metadata: { description: "Front elevation", thumbnail_url: "https://example.test/poster.jpg" } } }
     expect(response).to have_http_status(:ok)
     expect(asset.reload.metadata).to include("description" => "Front elevation", "thumbnail_url" => "https://example.test/poster.jpg")
+    expect(listing.activity_events.order(:id).last.payload).to include("media_asset_id" => asset.id, "category" => "images")
   ensure
     uploads&.each { |tempfile, _file| tempfile.close! }
   end

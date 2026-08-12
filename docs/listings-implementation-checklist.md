@@ -219,14 +219,14 @@ This checklist is derived from the supplied Listings specification. A checked it
 - [x] 5. Upload modal/drawer. `Device batch upload and external video/3D link forms share one media drawer.`
 - [ ] 6. Device, Link, Camera, Dropbox, Google Drive, Google Photos, OneDrive sources. `DEVICE ONLY`
 - [x] 7. Upload progress is shown with a spinner, aggregate byte progress, file count, and file names for multi-file device uploads. Background processing status remains separate.
-- [ ] 8. Complete Images workspace.
+- [x] 8. Complete Images workspace. `Preview, metadata, rename, replace, visibility, cover, drag reorder, batch selection, and delete are available.`
 - [x] 9. Image drag reordering and cover image.
 - [x] 10. Image/media bulk selection and delete action.
 - [x] 11. Video file and video link support.
 - [x] 12. Video metadata, optional thumbnail URL, visibility, ordering.
 - [ ] 13. Floor-plan uploads and formats. `PARTIAL`
 - [ ] 14. Linked/embedded 3D provider content.
-- [ ] 15. General Files workspace. `PARTIAL`
+- [x] 15. General Files workspace. `Upload, external link, preview/download, rename, visibility, replace, retry, and delete use the shared media workspace.`
 - [x] 16. Internal assets remain inaccessible to customers when hidden.
 - [x] 17. Live category counts.
 - [x] 18. Preview/download/rename/replace/hide/delete item actions.
@@ -237,7 +237,7 @@ This checklist is derived from the supplied Listings specification. A checked it
 - [x] 23. One Listing Media area supports media from multiple orders.
 - [x] 24. Customer delivery policy respects final/ready/visible assets.
 - [ ] 25. Fine-grained media permissions.
-- [ ] 26. Media Activity Log coverage.
+- [x] 26. Media Activity Log coverage. `Upload, link, replace, update, and delete events retain identifying media/source metadata in the listing activity feed.`
 - [x] 27. Complete in-listing media-management workflow. `Upload, batch progress, preview, metadata, poster, visibility, replace, retry, reorder, and delete are available.`
 
 ## Marketing
