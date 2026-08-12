@@ -41,7 +41,7 @@ class Api::V1::OrderItemsController < Api::V1::BaseController
   def destroy
     item = @order.order_items.find(params[:id])
     item.update!(cancelled_at: Time.current)
-      finish("order_item.cancelled", item)
+    finish("order_item.cancelled", item)
     render json: { order_item: serialize(item) }
   end
 
@@ -87,10 +87,11 @@ class Api::V1::OrderItemsController < Api::V1::BaseController
       total_cents: item.total_cents,
       cancelled: item.cancelled_at.present?
     }
-    ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: @order, event_type:, payload:)
+    ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: @order,
+                          event_type: event_type, payload: payload)
     if @order.listing
       ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: @order.listing,
-                            event_type:, payload:)
+                            event_type: event_type, payload: payload)
     end
   end
 

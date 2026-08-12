@@ -96,12 +96,12 @@ This checklist is derived from the supplied Listings specification. A checked it
 - [x] 2. Complete order actions menu.
 - [x] 3. Expanded order details in place.
 - [x] 4. Add/remove order tags.
-- [ ] 5. Complete order item details, descriptions, options, quantities, and prices.
+- [x] 5. Complete order item details, descriptions, options, quantities, and prices.
 - [x] 6. Item actions: edit, create payroll item, cancel.
-- [ ] 7. Add Product Item drawer with search/filter.
+- [x] 7. Add Product Item drawer with search/filter.
 - [x] 8. Add Custom Item workflow.
 - [x] 9. Add Order under the current listing.
-- [ ] 10. Full Create Order drawer with multiple items.
+- [x] 10. Full Create Order drawer with multiple items.
 - [x] 11. Pricing summary with discounts, tax, total, and a separate fee line.
 - [ ] 12. Existing/one-off coupons.
 - [x] 13. Order tax editing and recalculation.
@@ -126,7 +126,7 @@ This checklist is derived from the supplied Listings specification. A checked it
 - [x] 32. Order fulfillment and listing delivery are separate states.
 - [ ] 33. Full order Activity Log coverage.
 - [ ] 34. Fine-grained financial/destructive permissions.
-- [ ] 35. Complete compact-to-expanded order UX.
+- [x] 35. Complete compact-to-expanded order UX.
 
 ## Payroll / Pay Run Items
 

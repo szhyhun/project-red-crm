@@ -93,7 +93,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
     return unless order.listing
 
     ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: order.listing,
-                          event_type:, payload: {
+                          event_type: event_type, payload: {
                             order_id: order.id,
                             status: order.status,
                             payment_status: order.payment_status,
