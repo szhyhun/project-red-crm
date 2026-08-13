@@ -20,10 +20,28 @@ class MediaAsset < ApplicationRecord
     source_url.present?
   end
 
+  # Only the upload endpoint derived a category from the file; assets registered
+  # or linked without one fell to the column default and landed in "files",
+  # which is how a listing ends up with 51 JPEGs that the images section cannot
+  # see. An image filed under "files" is a mistake far more often than intent.
+  before_validation :derive_category_from_content_type, on: :create
+
   validate :storage_source_present
   validate :related_records_belong_to_organization
 
   private
+
+  def derive_category_from_content_type
+    return unless category.blank? || category == "files"
+
+    self.category = if content_type.to_s.start_with?("image/")
+                      "images"
+    elsif content_type.to_s.start_with?("video/")
+                      "videos"
+    else
+                      category.presence || "files"
+    end
+  end
 
   def storage_source_present
     errors.add(:base, "a storage key or source URL is required") if storage_key.blank? && source_url.blank?
