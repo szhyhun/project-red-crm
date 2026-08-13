@@ -2,7 +2,10 @@ module WorkflowTasks
   class Mover
     def initialize(task:, attributes:)
       @task = task
-      @attributes = attributes.symbolize_keys
+      # ActionController::Parameters no longer subclasses Hash, so it does not
+      # respond to symbolize_keys. Normalising through to_h keeps this callable
+      # with permitted params or a plain hash.
+      @attributes = attributes.to_h.symbolize_keys
     end
 
     def move!
