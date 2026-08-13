@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_12_200000) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -340,10 +340,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_200000) do
     t.text "source_url"
     t.bigint "order_id"
     t.bigint "order_item_id"
+    t.bigint "media_group_id"
     t.index ["listing_id", "category", "position"], name: "index_media_assets_on_listing_id_and_category_and_position"
     t.index ["listing_id", "category"], name: "index_media_assets_on_listing_id_and_category"
     t.index ["listing_id", "cover"], name: "index_media_assets_on_listing_id_and_cover"
     t.index ["listing_id"], name: "index_media_assets_on_listing_id"
+    t.index ["media_group_id", "position"], name: "index_media_assets_on_media_group_id_and_position"
+    t.index ["media_group_id"], name: "index_media_assets_on_media_group_id"
     t.index ["order_id", "order_item_id"], name: "index_media_assets_on_order_id_and_order_item_id"
     t.index ["order_id"], name: "index_media_assets_on_order_id"
     t.index ["order_item_id"], name: "index_media_assets_on_order_item_id"
@@ -352,6 +355,20 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_200000) do
     t.index ["source_url"], name: "index_media_assets_on_source_url"
     t.index ["storage_key"], name: "index_media_assets_on_storage_key", unique: true
     t.index ["uploaded_by_id"], name: "index_media_assets_on_uploaded_by_id"
+  end
+
+  create_table "media_groups", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "listing_id", null: false
+    t.string "name", null: false
+    t.integer "position", default: 0, null: false
+    t.boolean "customer_visible", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["listing_id", "name"], name: "index_media_groups_on_listing_id_and_name", unique: true
+    t.index ["listing_id", "position"], name: "index_media_groups_on_listing_id_and_position"
+    t.index ["listing_id"], name: "index_media_groups_on_listing_id"
+    t.index ["organization_id"], name: "index_media_groups_on_organization_id"
   end
 
   create_table "messages", force: :cascade do |t|
@@ -668,10 +685,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_200000) do
   add_foreign_key "marketing_materials", "organizations"
   add_foreign_key "marketing_materials", "users", column: "created_by_id"
   add_foreign_key "media_assets", "listings"
+  add_foreign_key "media_assets", "media_groups"
   add_foreign_key "media_assets", "order_items"
   add_foreign_key "media_assets", "orders"
   add_foreign_key "media_assets", "organizations"
   add_foreign_key "media_assets", "users", column: "uploaded_by_id"
+  add_foreign_key "media_groups", "listings"
+  add_foreign_key "media_groups", "organizations"
   add_foreign_key "messages", "conversations"
   add_foreign_key "messages", "users", column: "author_id"
   add_foreign_key "notification_deliveries", "organizations"

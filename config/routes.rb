@@ -35,6 +35,7 @@ Rails.application.routes.draw do
         post :reorder, on: :collection
         post :replace, on: :member
         post :retry, on: :member
+        get :preview, on: :member
         get :download, on: :member
       end
       resources :conversations, only: %i[index show create] do
@@ -60,6 +61,7 @@ Rails.application.routes.draw do
         resource :property_site, only: %i[show create update] do
           post :publish
         end
+        resources :media_groups, only: %i[index create update destroy]
       end
       resources :appointments, only: %i[index update destroy]
       resources :appointments, only: [] do

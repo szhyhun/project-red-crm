@@ -149,6 +149,20 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     render json: { error: "asset_missing" }, status: :not_found
   end
 
+  def preview
+    asset = policy_scope(MediaAsset).find(params[:id])
+    authorize asset, :show?
+    return redirect_to asset.source_url, allow_other_host: true if asset.external? && asset.ready?
+    return render json: { error: "asset_not_ready" }, status: :unprocessable_entity unless asset.ready?
+
+    send_file DeliveryStorage.path_for(asset.storage_key),
+              type: asset.content_type.presence || "application/octet-stream",
+              disposition: "inline",
+              filename: asset.filename
+  rescue DeliveryStorage::MissingFile
+    render json: { error: "asset_missing" }, status: :not_found
+  end
+
   def update
     asset = policy_scope(MediaAsset).find(params[:id])
     authorize asset
@@ -187,14 +201,15 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
 
   def update_params
     params.require(:media_asset).permit(:kind, :status, :filename, :content_type, :byte_size, :category, :customer_visible, :position, :cover, :hidden,
-                                        :width, :height, :duration_seconds, :order_id, :order_item_id, metadata: {})
+                                        :width, :height, :duration_seconds, :order_id, :order_item_id, :media_group_id, metadata: {})
   end
 
   def serialize(asset)
     asset.slice(:id, :listing_id, :kind, :status, :storage_key, :source_url, :filename, :content_type,
                 :byte_size, :width, :height, :duration_seconds, :category, :customer_visible,
-                :position, :cover, :hidden, :metadata, :processed_at, :created_at, :order_id, :order_item_id).merge(
+                :position, :cover, :hidden, :metadata, :processed_at, :created_at, :order_id, :order_item_id, :media_group_id).merge(
       cdn_url: asset.ready? ? (asset.source_url.presence || cdn_url_for(asset.storage_key)) : nil,
+      preview_path: asset.ready? && !asset.external? ? preview_api_v1_media_asset_path(asset) : nil,
       download_path: asset.ready? && !asset.external? ? download_api_v1_media_asset_path(asset) : nil,
       uploaded_by: asset.uploaded_by && asset.uploaded_by.slice(:id, :name)
     )

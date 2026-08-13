@@ -10,6 +10,7 @@ class Listing < ApplicationRecord
   has_many :assigned_users, through: :listing_assignments, source: :user
   has_many :workflow_tasks, dependent: :destroy
   has_many :media_assets, dependent: :nullify
+  has_many :media_groups, dependent: :destroy
   has_many :listing_notes, dependent: :destroy
   has_many :payroll_items, dependent: :destroy
   has_many :listing_feedbacks, dependent: :destroy

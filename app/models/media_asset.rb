@@ -4,6 +4,7 @@ class MediaAsset < ApplicationRecord
   belongs_to :uploaded_by, class_name: "User", optional: true
   belongs_to :order, optional: true
   belongs_to :order_item, optional: true
+  belongs_to :media_group, optional: true
 
   enum :kind, { final: "final", raw: "raw", marketing: "marketing" }, validate: true
   enum :status, { pending: "pending", processing: "processing", ready: "ready", failed: "failed" }, validate: true

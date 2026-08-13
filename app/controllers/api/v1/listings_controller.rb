@@ -13,6 +13,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
       { workflow_tasks: :assignee },
       { appointments: :assigned_user },
       { listing_customers: :client_account },
+      :media_groups,
       :listing_custom_fields,
       :marketing_materials,
       { listing_assignments: :user },
@@ -82,8 +83,10 @@ class Api::V1::ListingsController < Api::V1::BaseController
     appointment = listing.appointments.reject(&:cancelled?).min_by(&:starts_at)
     order = listing.orders.max_by(&:created_at)
     invoices = listing.orders.flat_map(&:invoices)
-    cover = listing.media_assets.find { |asset| asset.cover? && asset.ready? && asset.content_type.start_with?("image/") } ||
-      listing.media_assets.find { |asset| asset.ready? && asset.content_type.start_with?("image/") }
+    photos = listing.media_assets
+      .select { |asset| asset.ready? && asset.content_type.start_with?("image/") }
+      .sort_by { |asset| [asset.position, asset.created_at] }
+    cover = photos.first || listing.media_assets.find { |asset| asset.cover? && asset.ready? && asset.content_type.start_with?("image/") }
     payment_status = listing_payment_status(listing)
     data = {
       id: listing.id,
@@ -115,7 +118,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
                         items: order.order_items.map { |item| item.slice(:id, :product_id, :title) } },
       payment_status: payment_status,
       feedback_summary: listing_feedback_summary(listing),
-      cover_image_url: cover && cdn_url_for(cover.storage_key)
+      cover_image_url: cover && media_url_for(cover)
     }
     return data unless include_details
 
@@ -132,6 +135,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
       workflow_tasks: tasks.map { |task| serialize_task(task) },
       appointments: listing.appointments.includes(:assigned_user).order(:starts_at).map { |appointment| serialize_appointment(appointment) },
       listing_custom_fields: listing.listing_custom_fields.map { |field| field.slice(:id, :name, :value, :position) },
+      media_groups: listing.media_groups.ordered.map { |group| group.slice(:id, :listing_id, :name, :position, :customer_visible) },
       marketing_materials: listing.marketing_materials.where.not(status: :archived).order(created_at: :desc).map { |material| material.slice(:id, :material_type, :title, :status, :customer_visible, :settings, :created_at) },
       assignments: listing.listing_assignments.map { |assignment| serialize_assignment(assignment) },
       listing_notes: listing.listing_notes.order(created_at: :desc).map { |note| serialize_note(note) },
@@ -164,6 +168,13 @@ class Api::V1::ListingsController < Api::V1::BaseController
     return nil if cdn_base.blank?
 
     "#{cdn_base.chomp("/")}/#{URI::DEFAULT_PARSER.escape(storage_key)}"
+  end
+
+  def media_url_for(asset)
+    return asset.source_url if asset.source_url.present?
+    return cdn_url_for(asset.storage_key) if ENV["MEDIA_CDN_URL"].present?
+
+    preview_api_v1_media_asset_path(asset)
   end
 
   def listing_payment_status(listing)

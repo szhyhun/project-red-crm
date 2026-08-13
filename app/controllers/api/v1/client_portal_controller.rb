@@ -75,7 +75,8 @@ class Api::V1::ClientPortalController < Api::V1::BaseController
   def serialize_asset(asset)
     cdn_base = ENV["MEDIA_CDN_URL"]
     asset.slice(:id, :filename, :content_type, :storage_key, :metadata).merge(
-      cdn_url: cdn_base.present? ? "#{cdn_base.chomp("/")}/#{URI::DEFAULT_PARSER.escape(asset.storage_key)}" : nil,
+      cdn_url: asset.source_url.presence || (cdn_base.present? ? "#{cdn_base.chomp("/")}/#{URI::DEFAULT_PARSER.escape(asset.storage_key)}" : nil),
+      preview_path: asset.external? ? nil : preview_api_v1_media_asset_path(asset),
       download_path: download_api_v1_media_asset_path(asset)
     )
   end

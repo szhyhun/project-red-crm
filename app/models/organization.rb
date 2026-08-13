@@ -10,6 +10,7 @@ class Organization < ApplicationRecord
   has_many :workflow_tasks, dependent: :destroy
   has_many :workflow_columns, dependent: :destroy
   has_many :media_assets, dependent: :destroy
+  has_many :media_groups, dependent: :destroy
   has_many :activity_events, dependent: :destroy
   has_many :invoices, dependent: :destroy
   has_many :property_sites, dependent: :destroy
