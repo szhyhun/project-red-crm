@@ -51,10 +51,7 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
     end
 
     WorkflowColumn.transaction do
-      if replacement
-        completed_at = replacement.completed? ? Time.current : nil
-        tasks.update_all(status: replacement.key, completed_at:, updated_at: Time.current)
-      end
+      move_tasks!(tasks, replacement) if replacement
       column.destroy!
       compact_positions!
     end
@@ -83,6 +80,20 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
     columns = Current.organization.workflow_columns.where.not(id: column.id).ordered.to_a
     columns.insert(target_position.clamp(0, columns.length), column)
     columns.each_with_index { |item, position| item.update_columns(position:, updated_at: Time.current) }
+  end
+
+  # Reassigning with update_all kept each task's old position, so tasks arriving
+  # from the deleted column collided with the positions already in use in the
+  # replacement column. Duplicate positions make the board order arbitrary and
+  # the next drag computes its target from a broken sequence, so they are
+  # appended after whatever the replacement column already holds.
+  def move_tasks!(tasks, replacement)
+    completed_at = replacement.completed? ? Time.current : nil
+    offset = Current.organization.workflow_tasks.where(status: replacement.key).maximum(:position).to_i + 1
+
+    tasks.order(:position, :id).to_a.each_with_index do |task, index|
+      task.update_columns(status: replacement.key, position: offset + index, completed_at:, updated_at: Time.current)
+    end
   end
 
   def compact_positions!
