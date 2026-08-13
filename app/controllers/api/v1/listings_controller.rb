@@ -111,6 +111,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
       appointment: appointment && serialize_appointment(appointment),
       assigned_team_member: appointment&.assigned_user&.slice(:id, :name, :email, :role) || listing.assigned_users.first&.slice(:id, :name, :email, :role),
       order: order && { id: order.id, status: order.status, fulfillment_status: order.fulfillment_status,
+                        total_cents: order.total_cents, currency: order.currency,
                         items: order.order_items.map { |item| item.slice(:id, :product_id, :title) } },
       payment_status: payment_status,
       feedback_summary: listing_feedback_summary(listing),
