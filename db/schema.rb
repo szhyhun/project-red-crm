@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_19_090100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -78,12 +78,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.string "request_status", default: "not_requested", null: false
     t.bigint "order_id"
     t.datetime "completed_at"
+    t.string "origin", default: "native", null: false
     t.index ["assigned_user_id"], name: "index_appointments_on_assigned_user_id"
     t.index ["listing_id"], name: "index_appointments_on_listing_id"
     t.index ["order_id"], name: "index_appointments_on_order_id"
     t.index ["organization_id", "request_status"], name: "index_appointments_on_organization_id_and_request_status"
     t.index ["organization_id", "starts_at"], name: "index_appointments_on_organization_id_and_starts_at"
     t.index ["organization_id"], name: "index_appointments_on_organization_id"
+    t.index ["origin"], name: "index_appointments_on_origin"
     t.exclusion_constraint "organization_id WITH =, assigned_user_id WITH =, tsrange(starts_at, ends_at, '[)'::text) WITH &&", where: "(assigned_user_id IS NOT NULL) AND ((status)::text <> 'cancelled'::text)", using: :gist, name: "no_overlapping_staff_appointments"
   end
 
@@ -113,8 +115,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "origin", default: "native", null: false
     t.index ["organization_id", "name"], name: "index_client_accounts_on_organization_id_and_name"
     t.index ["organization_id"], name: "index_client_accounts_on_organization_id"
+    t.index ["origin"], name: "index_client_accounts_on_origin"
   end
 
   create_table "client_memberships", force: :cascade do |t|
@@ -155,6 +159,63 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.index ["organization_id"], name: "index_conversations_on_organization_id"
   end
 
+  create_table "external_records", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "integration_connection_id", null: false
+    t.bigint "integration_import_run_id"
+    t.string "provider", null: false
+    t.string "resource_type", null: false
+    t.string "external_id", null: false
+    t.string "record_type"
+    t.bigint "record_id"
+    t.jsonb "source_payload", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "sync_status", default: "imported", null: false
+    t.datetime "source_created_at"
+    t.datetime "source_updated_at"
+    t.datetime "last_imported_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["integration_connection_id", "resource_type", "external_id"], name: "index_external_records_on_connection_resource_external_id", unique: true
+    t.index ["integration_connection_id"], name: "index_external_records_on_integration_connection_id"
+    t.index ["integration_import_run_id"], name: "index_external_records_on_integration_import_run_id"
+    t.index ["organization_id"], name: "index_external_records_on_organization_id"
+    t.index ["record_type", "record_id"], name: "index_external_records_on_record"
+  end
+
+  create_table "integration_connections", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "provider", null: false
+    t.text "api_key"
+    t.string "status", default: "disconnected", null: false
+    t.datetime "last_validated_at"
+    t.datetime "last_imported_at"
+    t.jsonb "endpoint_coverage", default: {}, null: false
+    t.datetime "credentials_updated_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "provider"], name: "index_integration_connections_on_organization_id_and_provider", unique: true
+    t.index ["organization_id"], name: "index_integration_connections_on_organization_id"
+  end
+
+  create_table "integration_import_runs", force: :cascade do |t|
+    t.bigint "integration_connection_id", null: false
+    t.bigint "organization_id", null: false
+    t.string "provider", null: false
+    t.string "status", default: "pending", null: false
+    t.string "phase"
+    t.jsonb "counts", default: {}, null: false
+    t.jsonb "coverage", default: {}, null: false
+    t.jsonb "error_details", default: [], null: false
+    t.datetime "started_at"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["integration_connection_id"], name: "index_integration_import_runs_on_integration_connection_id"
+    t.index ["organization_id", "provider", "created_at"], name: "idx_on_organization_id_provider_created_at_7ddb91d344"
+    t.index ["organization_id"], name: "index_integration_import_runs_on_organization_id"
+  end
+
   create_table "invoices", force: :cascade do |t|
     t.bigint "organization_id", null: false
     t.bigint "client_account_id", null: false
@@ -177,12 +238,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.integer "discount_cents", default: 0, null: false
     t.integer "fee_cents", default: 0, null: false
     t.string "fee_label", default: "Service fee", null: false
+    t.string "origin", default: "native", null: false
     t.index ["client_account_id"], name: "index_invoices_on_client_account_id"
     t.index ["listing_id"], name: "index_invoices_on_listing_id"
     t.index ["order_id"], name: "index_invoices_on_order_id"
     t.index ["organization_id", "number"], name: "index_invoices_on_organization_id_and_number", unique: true
     t.index ["organization_id", "status"], name: "index_invoices_on_organization_id_and_status"
     t.index ["organization_id"], name: "index_invoices_on_organization_id"
+    t.index ["origin"], name: "index_invoices_on_origin"
   end
 
   create_table "listing_assignments", force: :cascade do |t|
@@ -289,12 +352,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.string "mls_number"
     t.string "tags", default: [], null: false, array: true
     t.datetime "customer_first_viewed_at"
+    t.string "origin", default: "native", null: false
     t.index ["client_account_id"], name: "index_listings_on_client_account_id"
     t.index ["customer_first_viewed_at"], name: "index_listings_on_customer_first_viewed_at"
     t.index ["organization_id", "delivery_status"], name: "index_listings_on_organization_id_and_delivery_status"
     t.index ["organization_id", "public_slug"], name: "index_listings_on_organization_id_and_public_slug", unique: true
     t.index ["organization_id", "status"], name: "index_listings_on_organization_id_and_status"
     t.index ["organization_id"], name: "index_listings_on_organization_id"
+    t.index ["origin"], name: "index_listings_on_origin"
     t.index ["tags"], name: "index_listings_on_tags", using: :gin
   end
 
@@ -341,6 +406,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.bigint "order_id"
     t.bigint "order_item_id"
     t.bigint "media_group_id"
+    t.string "origin", default: "native", null: false
     t.index ["listing_id", "category", "position"], name: "index_media_assets_on_listing_id_and_category_and_position"
     t.index ["listing_id", "category"], name: "index_media_assets_on_listing_id_and_category"
     t.index ["listing_id", "cover"], name: "index_media_assets_on_listing_id_and_cover"
@@ -352,6 +418,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.index ["order_item_id"], name: "index_media_assets_on_order_item_id"
     t.index ["organization_id", "status"], name: "index_media_assets_on_organization_id_and_status"
     t.index ["organization_id"], name: "index_media_assets_on_organization_id"
+    t.index ["origin"], name: "index_media_assets_on_origin"
     t.index ["source_url"], name: "index_media_assets_on_source_url"
     t.index ["storage_key"], name: "index_media_assets_on_storage_key", unique: true
     t.index ["uploaded_by_id"], name: "index_media_assets_on_uploaded_by_id"
@@ -444,11 +511,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.integer "discount_rate_basis_points", default: 0, null: false
     t.integer "fee_cents", default: 0, null: false
     t.string "fee_label", default: "Service fee", null: false
+    t.string "origin", default: "native", null: false
     t.index ["client_account_id"], name: "index_orders_on_client_account_id"
     t.index ["listing_id"], name: "index_orders_on_listing_id"
     t.index ["organization_id", "fulfillment_status"], name: "index_orders_on_organization_id_and_fulfillment_status"
     t.index ["organization_id", "status"], name: "index_orders_on_organization_id_and_status"
     t.index ["organization_id"], name: "index_orders_on_organization_id"
+    t.index ["origin"], name: "index_orders_on_origin"
     t.index ["tags"], name: "index_orders_on_tags", using: :gin
   end
 
@@ -474,9 +543,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.jsonb "provider_payload", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "origin", default: "native", null: false
     t.index ["invoice_id", "status"], name: "index_payments_on_invoice_id_and_status"
     t.index ["invoice_id"], name: "index_payments_on_invoice_id"
     t.index ["organization_id"], name: "index_payments_on_organization_id"
+    t.index ["origin"], name: "index_payments_on_origin"
     t.index ["provider", "provider_payment_id"], name: "index_payments_on_provider_and_provider_payment_id", unique: true
   end
 
@@ -539,9 +610,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.jsonb "source_payload", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "origin", default: "native", null: false
     t.index ["organization_id", "external_source", "external_id"], name: "index_products_on_org_and_external_identity", unique: true
     t.index ["organization_id", "slug"], name: "index_products_on_organization_id_and_slug", unique: true
     t.index ["organization_id"], name: "index_products_on_organization_id"
+    t.index ["origin"], name: "index_products_on_origin"
   end
 
   create_table "property_sites", force: :cascade do |t|
@@ -556,9 +629,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.datetime "updated_at", null: false
     t.boolean "customer_visible", default: true, null: false
     t.string "site_kind", default: "branded", null: false
+    t.string "origin", default: "native", null: false
     t.index ["listing_id"], name: "index_property_sites_on_listing_id"
     t.index ["organization_id", "slug"], name: "index_property_sites_on_organization_id_and_slug", unique: true
     t.index ["organization_id"], name: "index_property_sites_on_organization_id"
+    t.index ["origin"], name: "index_property_sites_on_origin"
   end
 
   create_table "saved_listing_views", force: :cascade do |t|
@@ -596,11 +671,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.string "name", default: "", null: false
     t.string "role", default: "manager", null: false
     t.string "status", default: "active", null: false
+    t.string "origin", default: "native", null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["invitation_token"], name: "index_users_on_invitation_token", unique: true
     t.index ["invited_by_id"], name: "index_users_on_invited_by_id"
     t.index ["invited_by_type", "invited_by_id"], name: "index_users_on_invited_by"
     t.index ["organization_id"], name: "index_users_on_organization_id"
+    t.index ["origin"], name: "index_users_on_origin"
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
@@ -634,11 +711,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
     t.datetime "updated_at", null: false
     t.text "description"
     t.string "priority", default: "normal", null: false
+    t.string "origin", default: "native", null: false
     t.index ["assignee_id"], name: "index_workflow_tasks_on_assignee_id"
     t.index ["listing_id"], name: "index_workflow_tasks_on_listing_id"
     t.index ["organization_id", "status", "position"], name: "idx_on_organization_id_status_position_3a4fef4137"
     t.index ["organization_id", "status", "stage"], name: "index_workflow_tasks_on_organization_id_and_status_and_stage"
     t.index ["organization_id"], name: "index_workflow_tasks_on_organization_id"
+    t.index ["origin"], name: "index_workflow_tasks_on_origin"
   end
 
   add_foreign_key "activity_events", "organizations"
@@ -662,6 +741,12 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_12_210000) do
   add_foreign_key "conversations", "client_accounts"
   add_foreign_key "conversations", "listings"
   add_foreign_key "conversations", "organizations"
+  add_foreign_key "external_records", "integration_connections"
+  add_foreign_key "external_records", "integration_import_runs"
+  add_foreign_key "external_records", "organizations"
+  add_foreign_key "integration_connections", "organizations"
+  add_foreign_key "integration_import_runs", "integration_connections"
+  add_foreign_key "integration_import_runs", "organizations"
   add_foreign_key "invoices", "client_accounts"
   add_foreign_key "invoices", "listings"
   add_foreign_key "invoices", "orders"

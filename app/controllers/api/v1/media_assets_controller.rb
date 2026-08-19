@@ -143,6 +143,7 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     authorize asset, :show?
     return redirect_to asset.source_url, allow_other_host: true if asset.external? && asset.ready?
     return render json: { error: "asset_not_ready" }, status: :unprocessable_entity unless asset.ready?
+    return redirect_to DeliveryStorage.temporary_url(asset.storage_key), allow_other_host: true if DeliveryStorage.s3?
 
     send_file DeliveryStorage.path_for(asset.storage_key), type: "application/octet-stream", disposition: "attachment", filename: asset.filename
   rescue DeliveryStorage::MissingFile
@@ -154,6 +155,7 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     authorize asset, :show?
     return redirect_to asset.source_url, allow_other_host: true if asset.external? && asset.ready?
     return render json: { error: "asset_not_ready" }, status: :unprocessable_entity unless asset.ready?
+    return redirect_to DeliveryStorage.temporary_url(asset.storage_key), allow_other_host: true if DeliveryStorage.s3?
 
     send_file DeliveryStorage.path_for(asset.storage_key),
               type: asset.content_type.presence || "application/octet-stream",
@@ -216,10 +218,7 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
   end
 
   def cdn_url_for(storage_key)
-    cdn_base = ENV["MEDIA_CDN_URL"]
-    return nil if cdn_base.blank?
-
-    "#{cdn_base.chomp("/")}/#{URI::DEFAULT_PARSER.escape(storage_key)}"
+    DeliveryStorage.public_url(storage_key)
   end
 
   def requested_category(uploaded_file)

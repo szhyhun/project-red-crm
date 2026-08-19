@@ -3,6 +3,9 @@ class Organization < ApplicationRecord
   has_many :client_accounts, dependent: :destroy
   has_many :products, dependent: :destroy
   has_many :catalog_sync_runs, dependent: :destroy
+  has_many :integration_connections, dependent: :destroy
+  has_many :integration_import_runs, dependent: :destroy
+  has_many :external_records, dependent: :destroy
   has_many :listings, dependent: :destroy
   has_many :listing_feedbacks, dependent: :destroy
   has_many :orders, dependent: :destroy

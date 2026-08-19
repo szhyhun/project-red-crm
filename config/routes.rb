@@ -18,6 +18,10 @@ Rails.application.routes.draw do
       end
 
       resources :products, only: %i[index show create update]
+      resource :aryeo_integration, only: %i[show create destroy] do
+        post :validate
+        post :import
+      end
       resources :orders, only: %i[index show create update] do
         resources :items, only: %i[create update destroy], controller: "order_items"
         post :cancel, on: :member
