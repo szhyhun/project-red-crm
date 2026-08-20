@@ -1,7 +1,12 @@
 class Organization < ApplicationRecord
   has_many :users, dependent: :restrict_with_error
   has_many :client_accounts, dependent: :destroy
+  has_many :customer_teams, dependent: :destroy
   has_many :products, dependent: :destroy
+  has_many :taxes, dependent: :destroy
+  has_many :coupons, dependent: :destroy
+  has_many :travel_fees, dependent: :destroy
+  has_many :pricing_plans, dependent: :destroy
   has_many :catalog_sync_runs, dependent: :destroy
   has_many :integration_connections, dependent: :destroy
   has_many :integration_import_runs, dependent: :destroy

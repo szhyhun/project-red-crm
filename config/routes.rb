@@ -18,6 +18,10 @@ Rails.application.routes.draw do
       end
 
       resources :products, only: %i[index show create update]
+      resources :taxes, only: %i[index create update destroy]
+      resources :coupons, only: %i[index create update destroy]
+      resources :travel_fees, only: %i[index create update destroy]
+      resources :pricing_plans, only: %i[index create update destroy]
       resource :aryeo_integration, only: %i[show create destroy] do
         post :validate
         post :import
@@ -49,6 +53,9 @@ Rails.application.routes.draw do
       get "dashboard", to: "dashboard#show"
       resources :client_accounts, only: %i[index create update] do
         post :invite, on: :member
+      end
+      resources :customer_teams, only: %i[index create update destroy] do
+        resources :memberships, only: %i[create destroy], controller: "customer_team_memberships"
       end
       resources :staff, only: %i[index create update], controller: "staff"
       resources :listings, only: %i[index show create update] do
