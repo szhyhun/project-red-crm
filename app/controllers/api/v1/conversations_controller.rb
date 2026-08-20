@@ -9,6 +9,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   def show
     conversation = policy_scope(Conversation).includes(conversation_memberships: :user, messages: :author).find(params[:id])
     authorize conversation
+    mark_read!(conversation)
     render json: { conversation: serialize(conversation, include_messages: true) }
   end
 
@@ -26,7 +27,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
 
     Conversation.transaction do
       conversation.save!
-      member_ids = [current_user.id, *Array(create_params[:member_ids]).map(&:to_i)]
+      member_ids = [ current_user.id, *Array(create_params[:member_ids]).map(&:to_i) ]
       member_ids.concat(conversation.client_account.users.active.ids) if conversation.client? && conversation.client_account.present?
       member_ids.uniq!
       users = Current.organization.users.active.where(id: member_ids)
@@ -76,8 +77,31 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     current_user.internal? ? messages : messages.participants
   end
 
+  # Opening a conversation is what marks it read; there is no separate action for
+  # it, so the count cannot drift from what the operator has actually seen.
+  def mark_read!(conversation)
+    membership = conversation.conversation_memberships.find_by(user: current_user)
+    membership&.update_columns(last_read_at: Time.current, updated_at: Time.current)
+  end
+
+  # One grouped query for the whole list rather than a count per conversation.
+  # A membership with a null last_read_at has never been opened, so every
+  # message in it is unread.
+  def unread_counts
+    @unread_counts ||= begin
+      scope = Message
+              .joins("INNER JOIN conversation_memberships cm ON cm.conversation_id = messages.conversation_id")
+              .where("cm.user_id = ?", current_user.id)
+              .where("messages.created_at > COALESCE(cm.last_read_at, '-infinity'::timestamp)")
+              .where.not(messages: { author_id: current_user.id })
+      scope = scope.participants unless current_user.internal?
+      scope.group("messages.conversation_id").count
+    end
+  end
+
   def serialize(conversation, include_messages: false)
     data = conversation.slice(:id, :listing_id, :client_account_id, :kind, :subject, :last_message_at, :created_at).merge(
+      unread_count: unread_counts.fetch(conversation.id, 0),
       listing: conversation.listing && { id: conversation.listing.id, address: conversation.listing.address },
       client_account: conversation.client_account && conversation.client_account.slice(:id, :name),
       members: conversation.conversation_memberships.sort_by { |membership| membership.user.name }.map do |membership|
