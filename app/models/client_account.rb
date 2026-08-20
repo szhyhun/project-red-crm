@@ -3,6 +3,9 @@ class ClientAccount < ApplicationRecord
   has_many :customer_listings, through: :listing_customers, source: :listing
   belongs_to :organization
   has_many :client_memberships, dependent: :destroy
+  has_many :customer_team_memberships, dependent: :destroy
+  has_many :customer_teams, through: :customer_team_memberships
+  has_many :pricing_plans, dependent: :destroy
   has_many :users, through: :client_memberships
   has_many :listings, dependent: :restrict_with_error
   has_many :orders, dependent: :restrict_with_error

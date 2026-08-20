@@ -1,6 +1,6 @@
 # Aryeo Migration
 
-The Aryeo integration is a manual, organization-level historical import. An organization admin opens **Settings > Integrations**, saves an Aryeo API key, validates it, then explicitly starts a migration.
+The Aryeo integration is a manual, organization-level historical import. An organization admin opens **Team & access > Organization settings > Manage integrations**, saves an Aryeo API key, validates it, then explicitly queues an import.
 
 ## Safety
 
@@ -12,9 +12,23 @@ The Aryeo integration is a manual, organization-level historical import. An orga
 
 ## Imported data
 
-The importer upserts readable Aryeo staff, clients, catalog products and variants, listings, nested property-site/media metadata, orders/items, safe payment metadata, appointments, and tasks. Each record is marked `origin: aryeo`. Every source object is also retained in `external_records` with its Aryeo ID, sanitized payload, import-run link, and any unsupported endpoint coverage result.
+The importer upserts readable Aryeo staff, clients, customer teams, catalog products and variants, listings, nested property-site/media metadata, orders/items, safe payment metadata, appointments, and tasks. Each record is marked `origin: aryeo`. Every source object is also retained in `external_records` with its Aryeo ID, sanitized payload, import-run link, and any unsupported endpoint coverage result.
 
-The migration is idempotent: rerunning it updates matching Aryeo records by external ID and never deletes native ProjectRed records.
+Existing raw `customer_teams` external records can be mapped once with
+`bin/rails customer_teams:backfill`. The task is idempotent and deliberately
+keeps `ClientAccount#brokerage_name` in place until customer-facing screens are
+migrated to read teams directly.
+
+## Import controls and conflicts
+
+Every import run selects its own resource groups: team users, clients, customer teams, products, listings, orders, appointments, and tasks. Listings can optionally be limited to records **updated on or after** a selected date. The date is applied by ProjectRed after safely reading Aryeo records; it never changes an Aryeo query or record.
+
+Every run also records one of two policies for records already imported from the same Aryeo ID:
+
+- **Skip existing imported data** is the default. The existing ProjectRed copy remains unchanged and the run reports how many records were skipped.
+- **Overwrite the existing imported copy** refreshes that previously imported ProjectRed record from Aryeo.
+
+Neither policy touches native ProjectRed records. The importer does not delete ProjectRed records.
 
 ## Media
 
@@ -32,4 +46,10 @@ When the bucket is configured, copied media is written to S3 under the ProjectRe
 
 ## Operations
 
-There is no schedule. The admin uses the Integration screen to run migrations when needed and can see the latest ten runs, endpoint coverage, counts, and errors. The stored connection remains available for a later explicit re-import.
+There is no schedule. Starting an import creates an `IntegrationImportRun` and queues `AryeoImportJob` on the `integrations` Resque queue. A Resque worker must be running for the job to begin:
+
+```sh
+OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES QUEUE='*' bundle exec rake resque:work
+```
+
+The Integration screen refreshes active run status every five seconds and retains the latest ten runs, selected resources, filter date, conflict policy, endpoint coverage, counts, partial errors, and terminal failures. The stored connection remains available for a later explicit re-import.

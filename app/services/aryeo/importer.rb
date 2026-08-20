@@ -13,15 +13,21 @@ module Aryeo
       appointments: "appointments",
       tasks: "tasks"
     }.freeze
+    RESOURCE_KEYS = ENDPOINTS.keys.map(&:to_s).freeze
 
-    def initialize(run:, client: nil, listing_limit: nil, skip_resources: [])
+    def initialize(run:, client: nil, resources: nil, listing_start_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
       @run = run
       @connection = run.integration_connection
       @organization = run.organization
       @client = client || Client.new(api_key: @connection.api_key)
       @listing_limit = listing_limit.to_i.positive? ? listing_limit.to_i : nil
-      @skip_resources = skip_resources.map(&:to_sym).to_set
+      requested_resources = resources.nil? ? ENDPOINTS.keys.map(&:to_s) : Array(resources).map(&:to_s)
+      @resources = requested_resources.intersection(RESOURCE_KEYS).map(&:to_sym).to_set - skip_resources.map(&:to_sym).to_set
+      @listing_start_date = listing_start_date.present? ? Date.iso8601(listing_start_date.to_s) : nil
+      @conflict_resolution = conflict_resolution.presence || run.conflict_resolution || "skip"
       @counts = Hash.new(0)
+      @conflict_counts = Hash.new(0)
+      @filtered_counts = Hash.new(0)
       @coverage = {}
       @errors = []
     end
@@ -31,8 +37,8 @@ module Aryeo
       @connection.update!(status: :importing)
 
       ENDPOINTS.each do |name, endpoint|
-        if @skip_resources.include?(name)
-          @coverage[name] = { status: "skipped", detail: "Excluded from this import run" }
+        unless @resources.include?(name)
+          @coverage[name] = { status: "skipped", detail: "Not selected for this import run" }
           next
         end
 
@@ -59,9 +65,21 @@ module Aryeo
           import_resource(name, payload)
         end
       else
-        @client.paginate(endpoint) { |payload| import_resource(name, stringify(payload)) }
+        @client.paginate(endpoint) do |payload|
+          payload = stringify(payload)
+          if name == :listings && @listing_start_date && !listing_on_or_after?(payload)
+            @filtered_counts[name] += 1
+            next
+          end
+          import_resource(name, payload)
+        end
       end
-      @coverage[name] = { status: "imported", count: @counts[name] - count_before }
+      @coverage[name] = {
+        status: "imported",
+        count: @counts[name] - count_before,
+        skipped_conflicts: @conflict_counts[name],
+        filtered_before_date: @filtered_counts[name]
+      }.compact
     rescue Client::EndpointUnavailable => error
       @coverage[name] = { status: "unavailable", detail: error.message }
     rescue Client::Error => error
@@ -72,9 +90,17 @@ module Aryeo
     end
 
     def import_resource(name, payload)
+      existing_record = record_for(name.to_s, external_id(payload))
+      if existing_record&.record.present? && @conflict_resolution == "skip"
+        archive!(name, payload, record: existing_record.record, sync_status: :skipped)
+        @conflict_counts[name] += 1
+        return
+      end
+
       record = case name
       when :staff then import_staff(payload)
       when :clients then import_client(payload)
+      when :customer_teams then import_customer_team(payload)
       when :products then import_product(payload)
       when :listings then import_listing(payload)
       when :orders then import_order(payload)
@@ -112,16 +138,46 @@ module Aryeo
       external = external_id(payload)
       return if external.blank?
 
-      record_for("clients", external)&.record || @organization.client_accounts.find_by("metadata ->> 'aryeo_id' = ?", external) ||
-        @organization.client_accounts.create!(
-          name: value(payload, "name", "full_name", "company_name").presence || "Aryeo client #{external}",
-          email: value(payload, "email", "email_address"),
-          phone: value(payload, "phone", "phone_number"),
-          brokerage_name: value(payload, "brokerage_name", "company"),
-          kind: client_kind(payload),
-          origin: :aryeo,
-          metadata: { "aryeo_id" => external }
-        )
+      client = record_for("clients", external)&.record || @organization.client_accounts.find_by("metadata ->> 'aryeo_id' = ?", external)
+      client ||= @organization.client_accounts.build(metadata: { "aryeo_id" => external })
+      client.assign_attributes(
+        name: value(payload, "name", "full_name", "company_name").presence || "Aryeo client #{external}",
+        email: value(payload, "email", "email_address"),
+        phone: value(payload, "phone", "phone_number"),
+        brokerage_name: value(payload, "brokerage_name", "company"),
+        kind: client_kind(payload),
+        origin: :aryeo,
+        metadata: client.metadata.merge("aryeo_id" => external)
+      )
+      client.save!
+      client
+    end
+
+    def import_customer_team(payload)
+      external = external_id(payload)
+      return if external.blank?
+
+      team = record_for("customer_teams", external)&.record
+      name = value(payload, "name", "brokerage_name").presence || "Aryeo customer team #{external}"
+      team ||= @organization.customer_teams.find_by("lower(name) = ?", name.downcase)
+      team ||= @organization.customer_teams.build
+      team.assign_attributes(
+        name: name,
+        brokerage_name: value(payload, "brokerage_name"),
+        brokerage_website: value(payload, "brokerage_website"),
+        website: value(payload, "website"),
+        logo_url: value(payload, "logo_url"),
+        description: value(payload, "description"),
+        archived: boolean_value(payload, "is_archived"),
+        origin: :aryeo
+      )
+      team.save!
+
+      customer_ids(payload).each do |customer_id|
+        account = record_for("clients", customer_id)&.record
+        team.customer_team_memberships.find_or_create_by!(client_account: account) if account
+      end
+      team
     end
 
     def import_product(payload)
@@ -354,8 +410,18 @@ module Aryeo
     end
 
     def finish!
-      @run.update!(status: :completed, phase: "completed", completed_at: Time.current, counts: @counts, coverage: @coverage, error_details: @errors)
+      status = @errors.empty? ? :completed : :completed_with_errors
+      @run.update!(status:, phase: "completed", completed_at: Time.current, counts: @counts, coverage: @coverage, error_details: @errors)
       @connection.update!(status: :connected, last_imported_at: Time.current, endpoint_coverage: @coverage)
+    end
+
+    def listing_on_or_after?(payload)
+      raw_timestamp = value(payload, "updated_at", "created_at")
+      return false if raw_timestamp.blank?
+
+      Date.parse(raw_timestamp.to_s) >= @listing_start_date
+    rescue Date::Error
+      false
     end
 
     def record_for(resource_type, external)
@@ -482,6 +548,20 @@ module Aryeo
     def active?(payload)
       value = payload["active"]
       value.nil? || value == true || value.to_s != "false"
+    end
+
+    def boolean_value(payload, *keys)
+      raw_value = value(payload, *keys)
+      return false if raw_value.nil?
+
+      ActiveModel::Type::Boolean.new.cast(raw_value)
+    end
+
+    def customer_ids(payload)
+      values = payload["customer_ids"] || payload["client_ids"] || payload["customers"] || payload["clients"] || []
+      Array(values).filter_map do |item|
+        item.is_a?(Hash) ? external_id(stringify(item)) : item.to_s.presence
+      end
     end
 
     def content_type_for(category)

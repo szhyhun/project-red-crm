@@ -32,9 +32,32 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
     authorize @connection, :import?
     return render json: { error: "aryeo_not_connected" }, status: :unprocessable_entity unless @connection.api_key_configured?
 
-    run = @connection.integration_import_runs.create!(organization: Current.organization, provider: :aryeo)
+    resources = Array(params[:resources]).map(&:to_s).uniq
+    invalid_resources = resources - Aryeo::Importer::RESOURCE_KEYS
+    return render json: { error: "aryeo_import_resources_required" }, status: :unprocessable_entity if resources.empty?
+    return render json: { error: "aryeo_import_resources_invalid", resources: invalid_resources }, status: :unprocessable_entity if invalid_resources.any?
+
+    conflict_resolution = params.fetch(:conflict_resolution, "skip").to_s
+    unless IntegrationImportRun.conflict_resolutions.key?(conflict_resolution)
+      return render json: { error: "aryeo_import_conflict_resolution_invalid" }, status: :unprocessable_entity
+    end
+
+    listing_start_date = params[:listing_start_date].presence
+    unless listing_start_date.blank? || Date.iso8601(listing_start_date)
+      return render json: { error: "aryeo_import_listing_start_date_invalid" }, status: :unprocessable_entity
+    end
+
+    run = @connection.integration_import_runs.create!(
+      organization: Current.organization,
+      provider: :aryeo,
+      requested_resources: resources,
+      listing_start_date: listing_start_date,
+      conflict_resolution: conflict_resolution
+    )
     AryeoImportJob.perform_later(run.id)
     render json: { import_run: serialize_run(run) }, status: :accepted
+  rescue Date::Error
+    render json: { error: "aryeo_import_listing_start_date_invalid" }, status: :unprocessable_entity
   end
 
   def destroy
@@ -66,6 +89,7 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
   end
 
   def serialize_run(run)
-    run.slice(:id, :status, :phase, :counts, :coverage, :started_at, :completed_at, :created_at).merge(errors: run.error_details)
+    run.slice(:id, :status, :phase, :counts, :coverage, :requested_resources, :listing_start_date,
+              :conflict_resolution, :started_at, :completed_at, :created_at).merge(errors: run.error_details)
   end
 end

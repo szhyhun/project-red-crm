@@ -1,6 +1,7 @@
 require "rails_helper"
 
 RSpec.describe "Aryeo integrations", type: :request do
+  include ActiveJob::TestHelper
   let!(:organization) { Organization.create!(name: "Integration Agency", slug: "integration-agency") }
   let!(:admin) { User.create!(organization:, name: "Admin", email: "aryeo-admin@example.test", password: "long-enough-password", role: :organization_admin) }
   let!(:manager) { User.create!(organization:, name: "Manager", email: "aryeo-manager@example.test", password: "long-enough-password", role: :manager) }
@@ -36,5 +37,34 @@ RSpec.describe "Aryeo integrations", type: :request do
     expect(response).to have_http_status(:no_content)
     expect(connection.reload).not_to be_api_key_configured
     expect(client.reload).to be_present
+  end
+
+  it "queues a selected import with date and conflict controls" do
+    connection = IntegrationConnection.create!(organization:, provider: :aryeo, api_key: "aryeo-key", status: :connected)
+    sign_in admin
+
+    expect {
+      post "/api/v1/aryeo_integration/import", params: {
+        resources: %w[clients listings orders],
+        listing_start_date: "2026-01-01",
+        conflict_resolution: "overwrite"
+      }
+    }.to have_enqueued_job(AryeoImportJob)
+
+    expect(response).to have_http_status(:accepted)
+    run = connection.integration_import_runs.order(:id).last
+    expect(run.requested_resources).to eq(%w[clients listings orders])
+    expect(run.listing_start_date).to eq(Date.new(2026, 1, 1))
+    expect(run.conflict_resolution).to eq("overwrite")
+  end
+
+  it "requires at least one known resource" do
+    IntegrationConnection.create!(organization:, provider: :aryeo, api_key: "aryeo-key", status: :connected)
+    sign_in admin
+
+    post "/api/v1/aryeo_integration/import", params: { resources: [ "not-an-aryeo-resource" ] }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body)).to include("error" => "aryeo_import_resources_invalid")
   end
 end
