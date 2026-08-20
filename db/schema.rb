@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_19_090100) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_19_104000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -159,6 +159,53 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_090100) do
     t.index ["organization_id"], name: "index_conversations_on_organization_id"
   end
 
+  create_table "coupons", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "code", null: false
+    t.string "description"
+    t.string "discount_type", default: "fixed", null: false
+    t.integer "amount_cents", default: 0, null: false
+    t.integer "rate_basis_points", default: 0, null: false
+    t.datetime "starts_at"
+    t.datetime "ends_at"
+    t.integer "max_redemptions"
+    t.integer "redemption_count", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "code"], name: "index_coupons_on_organization_id_and_code", unique: true
+    t.index ["organization_id"], name: "index_coupons_on_organization_id"
+  end
+
+  create_table "customer_team_memberships", force: :cascade do |t|
+    t.bigint "customer_team_id", null: false
+    t.bigint "client_account_id", null: false
+    t.boolean "primary", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_account_id"], name: "index_customer_team_memberships_on_client_account_id"
+    t.index ["customer_team_id", "client_account_id"], name: "idx_on_customer_team_id_client_account_id_31b990e941", unique: true
+    t.index ["customer_team_id"], name: "index_customer_team_memberships_on_customer_team_id"
+  end
+
+  create_table "customer_teams", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.string "brokerage_name"
+    t.string "brokerage_website"
+    t.string "website"
+    t.string "logo_url"
+    t.text "description"
+    t.boolean "archived", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "origin", default: "native", null: false
+    t.index "organization_id, lower((name)::text)", name: "index_customer_teams_on_organization_and_lower_name", unique: true
+    t.index ["organization_id", "archived"], name: "index_customer_teams_on_organization_id_and_archived"
+    t.index ["organization_id", "origin"], name: "index_customer_teams_on_organization_id_and_origin"
+    t.index ["organization_id"], name: "index_customer_teams_on_organization_id"
+  end
+
   create_table "external_records", force: :cascade do |t|
     t.bigint "organization_id", null: false
     t.bigint "integration_connection_id", null: false
@@ -211,6 +258,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_090100) do
     t.datetime "completed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "requested_resources", default: [], null: false
+    t.date "listing_start_date"
+    t.string "conflict_resolution", default: "skip", null: false
     t.index ["integration_connection_id"], name: "index_integration_import_runs_on_integration_connection_id"
     t.index ["organization_id", "provider", "created_at"], name: "idx_on_organization_id_provider_created_at_7ddb91d344"
     t.index ["organization_id"], name: "index_integration_import_runs_on_organization_id"
@@ -576,6 +626,37 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_090100) do
     t.index ["team_member_id"], name: "index_payroll_items_on_team_member_id"
   end
 
+  create_table "pricing_plan_prices", force: :cascade do |t|
+    t.bigint "pricing_plan_id", null: false
+    t.bigint "product_variant_id", null: false
+    t.integer "price_cents", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["pricing_plan_id", "product_variant_id"], name: "idx_on_pricing_plan_id_product_variant_id_1375d84476", unique: true
+    t.index ["pricing_plan_id"], name: "index_pricing_plan_prices_on_pricing_plan_id"
+    t.index ["product_variant_id"], name: "index_pricing_plan_prices_on_product_variant_id"
+  end
+
+  create_table "pricing_plans", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.bigint "client_account_id"
+    t.bigint "customer_team_id"
+    t.bigint "coupon_id"
+    t.integer "priority", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_account_id", "active"], name: "index_pricing_plans_on_client_account_id_and_active"
+    t.index ["client_account_id"], name: "index_pricing_plans_on_client_account_id"
+    t.index ["coupon_id"], name: "index_pricing_plans_on_coupon_id"
+    t.index ["customer_team_id", "active", "priority"], name: "idx_on_customer_team_id_active_priority_0e9ec032fc"
+    t.index ["customer_team_id"], name: "index_pricing_plans_on_customer_team_id"
+    t.index ["organization_id", "active"], name: "index_pricing_plans_on_organization_id_and_active"
+    t.index ["organization_id"], name: "index_pricing_plans_on_organization_id"
+    t.check_constraint "client_account_id IS NOT NULL AND customer_team_id IS NULL OR client_account_id IS NULL AND customer_team_id IS NOT NULL", name: "pricing_plans_exactly_one_owner"
+  end
+
   create_table "product_variants", force: :cascade do |t|
     t.bigint "product_id", null: false
     t.string "external_id"
@@ -649,6 +730,33 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_090100) do
     t.index ["organization_id", "user_id", "name"], name: "idx_on_organization_id_user_id_name_845fd7fd12", unique: true
     t.index ["organization_id"], name: "index_saved_listing_views_on_organization_id"
     t.index ["user_id"], name: "index_saved_listing_views_on_user_id"
+  end
+
+  create_table "taxes", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.integer "rate_basis_points", default: 0, null: false
+    t.string "scope", default: "custom", null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "organization_id, lower((name)::text)", name: "index_taxes_on_organization_and_lower_name", unique: true
+    t.index ["organization_id", "active"], name: "index_taxes_on_organization_id_and_active"
+    t.index ["organization_id"], name: "index_taxes_on_organization_id"
+  end
+
+  create_table "travel_fees", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.string "fee_type", default: "flat", null: false
+    t.integer "amount_cents", default: 0, null: false
+    t.integer "rate_basis_points", default: 0, null: false
+    t.integer "free_within_km"
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "active"], name: "index_travel_fees_on_organization_id_and_active"
+    t.index ["organization_id"], name: "index_travel_fees_on_organization_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -741,6 +849,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_090100) do
   add_foreign_key "conversations", "client_accounts"
   add_foreign_key "conversations", "listings"
   add_foreign_key "conversations", "organizations"
+  add_foreign_key "coupons", "organizations"
+  add_foreign_key "customer_team_memberships", "client_accounts"
+  add_foreign_key "customer_team_memberships", "customer_teams"
+  add_foreign_key "customer_teams", "organizations"
   add_foreign_key "external_records", "integration_connections"
   add_foreign_key "external_records", "integration_import_runs"
   add_foreign_key "external_records", "organizations"
@@ -794,12 +906,20 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_090100) do
   add_foreign_key "payroll_items", "organizations"
   add_foreign_key "payroll_items", "users", column: "created_by_id"
   add_foreign_key "payroll_items", "users", column: "team_member_id"
+  add_foreign_key "pricing_plan_prices", "pricing_plans"
+  add_foreign_key "pricing_plan_prices", "product_variants"
+  add_foreign_key "pricing_plans", "client_accounts"
+  add_foreign_key "pricing_plans", "coupons"
+  add_foreign_key "pricing_plans", "customer_teams"
+  add_foreign_key "pricing_plans", "organizations"
   add_foreign_key "product_variants", "products"
   add_foreign_key "products", "organizations"
   add_foreign_key "property_sites", "listings"
   add_foreign_key "property_sites", "organizations"
   add_foreign_key "saved_listing_views", "organizations"
   add_foreign_key "saved_listing_views", "users"
+  add_foreign_key "taxes", "organizations"
+  add_foreign_key "travel_fees", "organizations"
   add_foreign_key "users", "organizations"
   add_foreign_key "workflow_columns", "organizations"
   add_foreign_key "workflow_tasks", "listings"

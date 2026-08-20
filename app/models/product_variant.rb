@@ -1,5 +1,6 @@
 class ProductVariant < ApplicationRecord
   belongs_to :product
+  has_many :pricing_plan_prices, dependent: :restrict_with_error
 
   scope :active, -> { where(active: true) }
 
