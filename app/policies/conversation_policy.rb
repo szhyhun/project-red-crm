@@ -15,6 +15,13 @@ class ConversationPolicy < OrganizationRecordPolicy
     visible_to_user?
   end
 
+  # Deleting a conversation destroys its whole message history for everyone in
+  # it, so it is limited to organization admins rather than to the conversation's
+  # own managers, who can only add and remove members.
+  def destroy?
+    belongs_to_current_organization? && (user.organization_admin? || user.platform_owner?)
+  end
+
   def manage_members?
     return false unless belongs_to_current_organization?
     return true if user.organization_admin? || user.platform_owner?

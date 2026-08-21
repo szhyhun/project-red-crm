@@ -46,6 +46,14 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     render_validation_errors(error.record)
   end
 
+  def destroy
+    conversation = policy_scope(Conversation).find(params[:id])
+    authorize conversation
+    # Memberships and messages are `dependent: :destroy`, so the thread goes with it.
+    conversation.destroy!
+    head :no_content
+  end
+
   def create_message
     conversation = policy_scope(Conversation).find(params[:id])
     authorize conversation
