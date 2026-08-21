@@ -180,6 +180,16 @@ module Aryeo
       team
     end
 
+    # Only the fields the CRM acts on get their own column; the rest of the Aryeo
+    # payload is kept verbatim in `source_payload` (sanitized), on both the
+    # product and each variant. Nothing is dropped, so a field can be promoted to
+    # a real column later by backfilling from `source_payload` -- no re-import.
+    #
+    # Retained but unmapped today, as of the live Aryeo catalog:
+    #   product: tags, is_twilight, always_display_addons, type
+    #   variant: base_price_amount, base_is_hidden, display_original_price
+    # `price_amount` and `base_price_amount` duplicate `price`; all three are
+    # cents. See `cents` below for why that matters.
     def import_product(payload)
       external = external_id(payload)
       return if external.blank?
@@ -581,13 +591,28 @@ module Aryeo
       [ min || match&.captures&.first&.delete(",")&.to_i, max || match&.captures&.second&.delete(",")&.to_i ]
     end
 
+    # Aryeo reports every monetary field as an integer number of cents, whatever
+    # the key is called: `price`, `total`, and `amount` are cents just as much as
+    # `price_cents` is. An earlier version only trusted the `_cents` suffix and
+    # multiplied everything else by 100, which stored a $150.00 product variant
+    # (`"price" => 15000`) as $15,000.00. Treat a whole number as cents, and only
+    # scale a value that actually carries a decimal fraction -- that shape comes
+    # from a hand-written fixture or a CSV, never from the Aryeo API.
     def cents(payload, *keys)
       keys = %w[price_cents price amount] if keys.empty?
       value = keys.lazy.map { |key| payload[key] }.find(&:present?)
       return 0 if value.blank?
-      return value.to_i if keys.any? { |key| key.end_with?("_cents") && payload[key].present? }
 
-      (value.to_s.gsub(/[^0-9.\-]/, "").to_d * 100).round
+      digits = value.to_s.gsub(/[^0-9.\-]/, "")
+      return 0 if digits.match?(/\A-?\.?\z/)
+
+      amount = digits.to_d
+      # A whole number is cents, however it was spelled -- `15000` and `15000.0`
+      # are the same $150.00. Only a real fraction implies the value was quoted
+      # in dollars, because there is no such thing as a fractional cent.
+      return amount.to_i if amount.frac.zero?
+
+      (amount * 100).round
     end
 
     def integer_value(payload, *keys)

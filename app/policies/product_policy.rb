@@ -16,8 +16,16 @@ class ProductPolicy < ApplicationPolicy
   end
 
   class Scope < Scope
+    # Everyone ordering should only be offered what is currently available, but
+    # the people who maintain the catalog have to be able to see a retired
+    # product to bring it back -- filtering `active` for them would make
+    # unchecking "available to order" a one-way door, since `update` resolves the
+    # record through this same scope.
     def resolve
-      @scope.where(organization_id: user.organization_id, active: true)
+      scope = @scope.where(organization_id: user.organization_id)
+      return scope if user.organization_admin? || user.manager?
+
+      scope.where(active: true)
     end
   end
 end

@@ -34,10 +34,15 @@ module ProjectRedCrm
     config.eager_load_paths << Rails.root.join("app/services")
 
     # The separate Next portal authenticates with an HttpOnly Rails session.
-    config.middleware.use ActionDispatch::Cookies
-    config.middleware.use ActionDispatch::Session::CookieStore,
-                          key: "_project_red_crm_session",
-                          same_site: :lax,
-                          secure: Rails.env.production?
+    #
+    # These must be inserted *before* Warden::Manager rather than appended with
+    # `use`: appending puts them inside Warden, so Warden commits the signed-in
+    # user to the session after the cookie for that response has already been
+    # written, and the next request arrives with nothing to restore.
+    config.middleware.insert_before Warden::Manager, ActionDispatch::Cookies
+    config.middleware.insert_before Warden::Manager, ActionDispatch::Session::CookieStore,
+                                    key: "_project_red_crm_session",
+                                    same_site: :lax,
+                                    secure: Rails.env.production?
   end
 end

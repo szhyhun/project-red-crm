@@ -16,12 +16,12 @@ RSpec.describe Aryeo::Importer do
           block.call({ "id" => "customer-1", "name" => "Avery Agent", "email" => "avery@example.test" })
         when "products"
           block.call({ "id" => "product-1", "title" => "Premium photos", "category_names" => [ "Photo" ],
-                       "variants" => [ { "id" => "variant-1", "title" => "Up to 2,000 sqft", "price" => 549 } ] })
+                       "variants" => [ { "id" => "variant-1", "title" => "Up to 2,000 sqft", "price" => 54_900 } ] })
         when "listings"
           block.call({ "id" => "listing-1", "customer_id" => "customer-1", "address" => { "address_line_1" => "111 Oak Bay Ave", "city" => "Victoria", "province" => "BC" } })
         when "orders"
-          block.call({ "id" => "order-1", "listing_id" => "listing-1", "customer_id" => "customer-1", "status" => "submitted", "total" => 549,
-                       "items" => [ { "id" => "item-1", "title" => "Premium photos", "quantity" => 1, "price" => 549 } ] })
+          block.call({ "id" => "order-1", "listing_id" => "listing-1", "customer_id" => "customer-1", "status" => "submitted", "total" => 54_900,
+                       "items" => [ { "id" => "item-1", "title" => "Premium photos", "quantity" => 1, "price" => 54_900 } ] })
         end
       end
     end
@@ -36,6 +36,11 @@ RSpec.describe Aryeo::Importer do
 
     expect(Product.where(origin: "aryeo").count).to eq(1)
     expect(Product.first.product_variants.count).to eq(1)
+    # Aryeo quotes money in cents, so a `"price" => 54_900` variant is $549.00
+    # and must be stored verbatim rather than scaled up by another 100.
+    expect(Product.first.product_variants.first.price_cents).to eq(54_900)
+    expect(Order.first.total_cents).to eq(54_900)
+    expect(Order.first.order_items.first.unit_price_cents).to eq(54_900)
     expect(Listing.where(origin: "aryeo").pluck(:address_line_1)).to include("111 Oak Bay Ave")
     expect(Order.where(origin: "aryeo").count).to eq(1)
     expect(Order.first.order_items.count).to eq(1)

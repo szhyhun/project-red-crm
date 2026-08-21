@@ -6,6 +6,9 @@ class Product < ApplicationRecord
   enum :kind, { package: "package", service: "service", addon: "addon" }, validate: true
 
   validates :slug, :title, presence: true
+  # The database enforces this per organization; validating it here turns a
+  # duplicate slug into a 422 with a field error instead of a 500.
+  validates :slug, uniqueness: { scope: :organization_id }
 
   def variant_for_sqft(sqft)
     product_variants.active.find do |variant|

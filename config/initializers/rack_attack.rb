@@ -30,4 +30,7 @@ class Rack::Attack
   end
 end
 
-Rails.application.config.middleware.use Rack::Attack
+# The rack-attack railtie already inserts the middleware. Adding it again here
+# put two identical instances in the stack, and each one incremented the same
+# throttle counter, so every request was billed twice and the effective ceiling
+# was half of LIMIT.

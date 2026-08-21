@@ -47,6 +47,7 @@ class Api::V1::ProductsController < Api::V1::BaseController
       title: product.title,
       kind: product.kind,
       description: product.description,
+      active: product.active,
       capabilities: product.capabilities,
       variants: product.product_variants.active.order(:price_cents).map do |variant|
         {
@@ -55,7 +56,8 @@ class Api::V1::ProductsController < Api::V1::BaseController
           price_cents: variant.price_cents,
           sqft_min: variant.sqft_min,
           sqft_max: variant.sqft_max,
-          quantity_label: variant.quantity_label
+          quantity_label: variant.quantity_label,
+          duration_minutes: variant.duration_minutes
         }
       end
     }
