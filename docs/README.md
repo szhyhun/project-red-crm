@@ -10,6 +10,7 @@ local vertical slice for a production-ready external integration.
 - [Delivery](delivery.md): final media records, property sites, and customer delivery visibility.
 - [Local development](local-development.md): PostgreSQL, Redis, Resque, Rails, and portal startup.
 - [Product plan](plan.md): the staged roadmap, including smart ordering and external integrations.
+- [Marketing module](marketing/plan.md): planned only. Turning delivered media into social posts, schedules, and paid campaigns.
 
 ## Current status
 
