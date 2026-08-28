@@ -17,13 +17,12 @@ class Api::V1::Public::PropertySitesController < ApplicationController
   private
 
   def serialize_asset(asset)
-    cdn_base = ENV["MEDIA_CDN_URL"]
     {
       id: asset.id,
       filename: asset.filename,
       content_type: asset.content_type,
       storage_key: asset.storage_key,
-      url: cdn_base.present? ? "#{cdn_base.chomp("/")}/#{URI::DEFAULT_PARSER.escape(asset.storage_key)}" : nil,
+      url: DeliveryStorage.public_url(asset.storage_key),
       metadata: asset.metadata
     }
   end

@@ -82,6 +82,22 @@ RSpec.describe "Media uploads", type: :request do
     expect(response).to redirect_to("https://media.example.test/previews/image.jpg")
   end
 
+  it "uses the CDN for an uploaded listing cover" do
+    organization = Organization.create!(name: "CDN Cover Agency", slug: "cdn-cover-agency")
+    manager = User.create!(organization:, name: "Manager", email: "cdn-cover@example.test", password: "long-enough-password", role: :manager)
+    client = ClientAccount.create!(organization:, name: "Agent", kind: :agent)
+    listing = Listing.create!(organization:, client_account: client, address_line_1: "24 CDN Street")
+    asset = MediaAsset.create!(organization:, listing:, uploaded_by: manager, kind: :final, status: :ready,
+                               storage_key: "covers/image.jpg", filename: "image.jpg", content_type: "image/jpeg")
+    allow(DeliveryStorage).to receive(:public_url).with(asset.storage_key).and_return("https://cdn.example.test/covers/image.jpg")
+    sign_in manager
+
+    get "/api/v1/listings"
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("listings", 0, "cover_image_url")).to eq("https://cdn.example.test/covers/image.jpg")
+  end
+
   it "uploads multiple delivery files in one request" do
     organization = Organization.create!(name: "Batch Upload Agency", slug: "batch-upload-agency")
     manager = User.create!(organization:, name: "Manager", email: "batch-upload@example.test", password: "long-enough-password", role: :manager)

@@ -163,16 +163,11 @@ class Api::V1::ListingsController < Api::V1::BaseController
     }
   end
 
-  def cdn_url_for(storage_key)
-    cdn_base = ENV["MEDIA_CDN_URL"]
-    return nil if cdn_base.blank?
-
-    "#{cdn_base.chomp("/")}/#{URI::DEFAULT_PARSER.escape(storage_key)}"
-  end
-
   def media_url_for(asset)
     return asset.source_url if asset.source_url.present?
-    return cdn_url_for(asset.storage_key) if ENV["MEDIA_CDN_URL"].present?
+
+    cdn_url = DeliveryStorage.public_url(asset.storage_key)
+    return cdn_url if cdn_url.present?
 
     preview_api_v1_media_asset_path(asset)
   end

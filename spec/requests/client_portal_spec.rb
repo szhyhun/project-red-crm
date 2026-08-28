@@ -13,6 +13,7 @@ RSpec.describe "Client portal", type: :request do
     own_listing.workflow_tasks.create!(organization: organization, title: "Internal QA", stage: "review", customer_visible: false)
     MediaAsset.create!(organization: organization, listing: own_listing, kind: :final, status: :ready, storage_key: "final/photo.jpg", filename: "photo.jpg", content_type: "image/jpeg")
     MediaAsset.create!(organization: organization, listing: own_listing, kind: :final, status: :ready, storage_key: "final/internal.jpg", filename: "internal.jpg", content_type: "image/jpeg", hidden: true)
+    allow(DeliveryStorage).to receive(:public_url).with("final/photo.jpg").and_return("https://cdn.example.test/final/photo.jpg")
     own_listing.update!(delivered_at: Time.current)
     conversation = Conversation.create!(organization: organization, listing: own_listing, client_account: own_account, kind: :client, subject: "Editing update")
     ConversationMembership.create!(conversation: conversation, user: client_user)
@@ -28,6 +29,7 @@ RSpec.describe "Client portal", type: :request do
     expect(listing.fetch("address")).to eq("111 Oak Bay Avenue")
     expect(listing.fetch("progress").map { |task| task.fetch("title") }).to eq([ "Edit photos" ])
     expect(listing.fetch("media_assets").map { |asset| asset.fetch("storage_key") }).to eq([ "final/photo.jpg" ])
+    expect(listing.dig("media_assets", 0, "cdn_url")).to eq("https://cdn.example.test/final/photo.jpg")
     expect(listing.fetch("customer_first_viewed_at")).to be_present
     expect(own_listing.reload.customer_first_viewed_at).to be_present
     expect(JSON.parse(response.body).dig("conversations", 0, "messages").map { |message| message.fetch("body") }).to eq([ "Photos are ready." ])

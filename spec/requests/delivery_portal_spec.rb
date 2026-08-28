@@ -10,11 +10,13 @@ RSpec.describe "Delivery portal", type: :request do
     MediaAsset.create!(organization: organization, listing: listing, kind: :final, status: :ready, storage_key: "final/photo.jpg", filename: "photo.jpg", content_type: "image/jpeg")
     MediaAsset.create!(organization: organization, listing: listing, kind: :final, status: :processing, storage_key: "final/video.mp4", filename: "video.mp4", content_type: "video/mp4")
     MediaAsset.create!(organization: organization, listing: listing, kind: :raw, status: :ready, storage_key: "raw/source.mov", filename: "source.mov", content_type: "video/quicktime")
+    allow(DeliveryStorage).to receive(:public_url).with("final/photo.jpg").and_return("https://cdn.example.test/final/photo.jpg")
 
     get "/api/v1/public/property_sites/#{organization.slug}/#{site.slug}"
 
     expect(response).to have_http_status(:ok)
     expect(JSON.parse(response.body).dig("property_site", "media_assets").map { |asset| asset.fetch("storage_key") }).to eq([ "final/photo.jpg" ])
+    expect(JSON.parse(response.body).dig("property_site", "media_assets", 0, "url")).to eq("https://cdn.example.test/final/photo.jpg")
   end
 
   it "does not expose staff-only messages to a client participant" do
