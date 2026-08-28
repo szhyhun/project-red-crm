@@ -74,16 +74,24 @@ if ! systemctl restart "${API_SERVICE}" || ! systemctl restart "${WORKER_SERVICE
   exit 1
 fi
 
-sleep 8
-
 if ! systemctl is-active --quiet "${API_SERVICE}" || ! systemctl is-active --quiet "${WORKER_SERVICE}"; then
   rollback
   exit 1
 fi
 
-if ! curl --fail --silent --show-error --max-time 15 \
-  -H 'Host: api.projectred.ca' \
-  "http://127.0.0.1:${APP_PORT}/up" >/dev/null; then
+api_healthy=false
+for attempt in $(seq 1 20); do
+  if curl --fail --silent --show-error --max-time 15 \
+    -H 'Host: api.projectred.ca' \
+    "http://127.0.0.1:${APP_PORT}/up" >/dev/null; then
+    api_healthy=true
+    break
+  fi
+
+  sleep 3
+done
+
+if [[ "${api_healthy}" != true ]]; then
   rollback
   exit 1
 fi
