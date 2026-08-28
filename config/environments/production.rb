@@ -83,8 +83,10 @@ Rails.application.configure do
   # Only use :id for inspections in production.
   config.active_record.attributes_for_inspect = [ :id ]
 
-  # Enable DNS rebinding protection and other `Host` header attacks.
-  config.hosts = [ "api.projectred.ca", "localhost", "127.0.0.1" ]
+  # Enable DNS rebinding protection and other `Host` header attacks. Additional
+  # temporary or migration hosts are configured by the host environment file.
+  api_allowed_hosts = ENV.fetch("API_ALLOWED_HOSTS", "api.projectred.ca").split(",").map(&:strip).reject(&:empty?)
+  config.hosts = api_allowed_hosts + [ "localhost", "127.0.0.1" ]
   #
   # Skip DNS rebinding protection for the default health check endpoint.
   # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }

@@ -100,6 +100,30 @@ deliberately disabled in production unless `SEED_DEMO_DATA=true` is supplied;
 do not use its source-controlled default password for a real account. Create
 production admin and customer accounts with unique credentials instead.
 
+### Temporary preview domain
+
+Until Project Red DNS is available, the CRM is exposed through these temporary,
+HTTPS-enabled `sslip.io` names:
+
+- `https://crm.44.248.89.217.sslip.io`
+- `https://api.44.248.89.217.sslip.io`
+
+`sslip.io` automatically resolves the embedded IP address. It is a short-term
+preview route only, not a production domain. When the real DNS records and
+certificates are ready, remove the temporary names from the separate Nginx
+virtual hosts and set `/etc/project-red-crm/api.env` back to the final values:
+
+```sh
+API_ALLOWED_HOSTS=api.projectred.ca
+CRM_UI_ORIGIN=https://crm.projectred.ca
+CRM_UI_ORIGINS=https://crm.projectred.ca
+PORTAL_URL=https://crm.projectred.ca
+MAILER_HOST=api.projectred.ca
+```
+
+Then set `NEXT_PUBLIC_CRM_API_URL=https://api.projectred.ca/api/v1` in
+`/etc/project-red-crm/ui.env` and redeploy both applications from `main`.
+
 ### Related instance services
 
 Picaivid's application services are currently stopped without deleting their
