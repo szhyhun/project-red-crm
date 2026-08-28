@@ -14,7 +14,7 @@ module Payments
 
       @invoice.with_lock do
         payment = @invoice.payments.pending.where(provider: "stripe").order(created_at: :desc).first
-        payment, intent = payment&.provider_payment_id.present? ? [payment, retrieve(payment)] : create_intent(payment)
+        payment, intent = payment&.provider_payment_id.present? ? [ payment, retrieve(payment) ] : create_intent(payment)
 
         Result.new(payment:, client_secret: intent.client_secret)
       end
@@ -42,7 +42,7 @@ module Payments
       )
 
       payment.update!(provider_payment_id: intent.id, provider_payload: intent.to_hash)
-      [payment, intent]
+      [ payment, intent ]
     end
 
     def retrieve(payment)

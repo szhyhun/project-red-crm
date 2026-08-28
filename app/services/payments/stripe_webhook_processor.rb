@@ -34,7 +34,7 @@ module Payments
         unless payment.succeeded?
           payment.update!(status: :succeeded, paid_at: Time.current, provider_payload: payment_intent.to_hash)
           paid_cents = invoice.payments.succeeded.sum(:amount_cents)
-          balance_due_cents = [invoice.total_cents - paid_cents, 0].max
+          balance_due_cents = [ invoice.total_cents - paid_cents, 0 ].max
           invoice.update!(
             balance_due_cents:,
             status: balance_due_cents.zero? ? :paid : :partially_paid,

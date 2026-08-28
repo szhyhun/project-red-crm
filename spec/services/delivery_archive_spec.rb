@@ -25,9 +25,9 @@ RSpec.describe DeliveryArchive, type: :service do
     File.binwrite(DeliveryStorage.path_for(hidden.storage_key), "hidden bytes")
 
     archive = described_class.new(listing).build
-    entries = Gem::Package::TarReader.new(archive).map { |entry| [entry.full_name, entry.read] }
+    entries = Gem::Package::TarReader.new(archive).map { |entry| [ entry.full_name, entry.read ] }
 
-    expect(entries).to eq([["images/visible.jpg", "image bytes"]])
+    expect(entries).to eq([ [ "images/visible.jpg", "image bytes" ] ])
   ensure
     archive&.close!
   end

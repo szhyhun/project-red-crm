@@ -12,7 +12,7 @@ RSpec.describe Orders::Creator do
       attributes: {
         client_account_id: client.id,
         payment_mode: "pay_later",
-        items: [{ product_variant_id: variant.id, quantity: 2, unit_price_cents: 1 }]
+        items: [ { product_variant_id: variant.id, quantity: 2, unit_price_cents: 1 } ]
       }
     ).create!
 

@@ -24,11 +24,11 @@ RSpec.describe Appointment do
     described_class.create!(organization:, listing:, assigned_user: staff, starts_at:, ends_at: starts_at + 2.hours)
 
     expect do
-      described_class.insert_all!([{
+      described_class.insert_all!([ {
         organization_id: organization.id, listing_id: listing.id, assigned_user_id: staff.id,
         status: "scheduled", starts_at: starts_at + 1.hour, ends_at: starts_at + 3.hours,
         created_at: Time.current, updated_at: Time.current
-      }])
+      } ])
     end.to raise_error(ActiveRecord::StatementInvalid)
   end
 end

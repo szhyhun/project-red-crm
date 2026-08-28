@@ -3,7 +3,7 @@ class CustomerNotifications
 
   class << self
     def workspace_welcome(user)
-      schedule(kind: "workspace_welcome", notifiable: user, recipients: [user.email])
+      schedule(kind: "workspace_welcome", notifiable: user, recipients: [ user.email ])
     end
 
     def invoice_ready(invoice)
@@ -39,7 +39,7 @@ class CustomerNotifications
     private
 
     def schedule_for_client_account(kind:, notifiable:, client_account:, required: false)
-      recipients = [client_account.email, *client_account.users.active.pluck(:email)].compact_blank.map(&:downcase).uniq
+      recipients = [ client_account.email, *client_account.users.active.pluck(:email) ].compact_blank.map(&:downcase).uniq
       raise MissingRecipient, "Add a client email address before sending this notification." if recipients.empty? && required
 
       schedule(kind:, notifiable:, recipients:)
@@ -47,7 +47,7 @@ class CustomerNotifications
 
     def schedule(kind:, notifiable:, recipients:)
       recipients.each do |recipient|
-        key = [kind, notifiable.class.base_class.name, notifiable.id, recipient.downcase].join(":")
+        key = [ kind, notifiable.class.base_class.name, notifiable.id, recipient.downcase ].join(":")
         delivery = NotificationDelivery.create_or_find_by!(deduplication_key: key) do |record|
           record.organization = notifiable.organization
           record.notifiable = notifiable

@@ -10,7 +10,7 @@ class Api::V1::OrderItemsController < Api::V1::BaseController
       @order.order_items.build(
         product: variant.product,
         product_variant: variant,
-        title: [variant.product.title, variant.title].compact.join(" - "),
+        title: [ variant.product.title, variant.title ].compact.join(" - "),
         description: variant.product.description,
         quantity: quantity,
         unit_price_cents: variant.price_cents,

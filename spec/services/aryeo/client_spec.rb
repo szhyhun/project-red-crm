@@ -10,8 +10,8 @@ RSpec.describe Aryeo::Client do
 
   it "follows supplied pagination links without issuing a write" do
     client = described_class.new(api_key: "aryeo-key")
-    first_page = { "data" => [{ "id" => "one" }], "links" => { "next" => "/v1/products?page=2" } }
-    second_page = { "data" => [{ "id" => "two" }], "links" => { "next" => nil } }
+    first_page = { "data" => [ { "id" => "one" } ], "links" => { "next" => "/v1/products?page=2" } }
+    second_page = { "data" => [ { "id" => "two" } ], "links" => { "next" => nil } }
 
     allow(client).to receive(:get).and_return(first_page, second_page)
 

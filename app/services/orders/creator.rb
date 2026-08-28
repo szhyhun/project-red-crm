@@ -30,7 +30,7 @@ module Orders
           order.order_items.build(
             product: variant.product,
             product_variant: variant,
-            title: [variant.product.title, variant.title].compact.join(" - "),
+            title: [ variant.product.title, variant.title ].compact.join(" - "),
             quantity: quantity,
             unit_price_cents: variant.price_cents,
             total_cents: variant.price_cents * quantity,

@@ -14,7 +14,7 @@ RSpec.describe "Delivery portal", type: :request do
     get "/api/v1/public/property_sites/#{organization.slug}/#{site.slug}"
 
     expect(response).to have_http_status(:ok)
-    expect(JSON.parse(response.body).dig("property_site", "media_assets").map { |asset| asset.fetch("storage_key") }).to eq(["final/photo.jpg"])
+    expect(JSON.parse(response.body).dig("property_site", "media_assets").map { |asset| asset.fetch("storage_key") }).to eq([ "final/photo.jpg" ])
   end
 
   it "does not expose staff-only messages to a client participant" do
@@ -31,7 +31,7 @@ RSpec.describe "Delivery portal", type: :request do
     get "/api/v1/conversations/#{conversation.id}"
 
     expect(response).to have_http_status(:ok)
-    expect(JSON.parse(response.body).dig("conversation", "messages").map { |message| message.fetch("body") }).to eq(["Client-visible update"])
+    expect(JSON.parse(response.body).dig("conversation", "messages").map { |message| message.fetch("body") }).to eq([ "Client-visible update" ])
   end
 
   it "adds every client account user to a new client conversation" do
@@ -92,7 +92,7 @@ RSpec.describe "Delivery portal", type: :request do
     producer = User.create!(organization: organization, name: "Parker Producer", email: "chat-producer@example.test", password: "long-enough-password", role: :production_staff)
 
     sign_in admin
-    post "/api/v1/conversations", params: { conversation: { kind: "internal", subject: "Studio updates", body: "Welcome to the team chat.", member_ids: [producer.id] } }
+    post "/api/v1/conversations", params: { conversation: { kind: "internal", subject: "Studio updates", body: "Welcome to the team chat.", member_ids: [ producer.id ] } }
 
     expect(response).to have_http_status(:created)
     conversation = Conversation.order(:id).last

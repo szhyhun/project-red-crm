@@ -120,13 +120,13 @@ RSpec.describe "Media uploads", type: :request do
     manager = User.create!(organization:, name: "Manager", email: "replace@example.test", password: "long-enough-password", role: :manager)
     client = ClientAccount.create!(organization:, name: "Agent", kind: :agent)
     listing = Listing.create!(organization:, client_account: client, address_line_1: "24 Delivery Street")
-    old_file = Tempfile.new([ "old", ".txt"])
+    old_file = Tempfile.new([ "old", ".txt" ])
     old_file.write("old")
     old_file.rewind
     old_key = DeliveryStorage.key_for(organization:, listing:, filename: "old.txt")
     DeliveryStorage.write(upload: old_file, key: old_key)
     asset = MediaAsset.create!(organization:, listing:, uploaded_by: manager, kind: :final, status: :ready, storage_key: old_key, filename: "old.txt", content_type: "text/plain")
-    new_file = Tempfile.new([ "new", ".txt"])
+    new_file = Tempfile.new([ "new", ".txt" ])
     new_file.write("new")
     new_file.rewind
     allow(MediaAssets::VerifyUploadJob).to receive(:perform_later)
@@ -150,17 +150,17 @@ RSpec.describe "Media uploads", type: :request do
     client = ClientAccount.create!(organization:, name: "Agent", kind: :agent)
     listing = Listing.create!(organization:, client_account: client, address_line_1: "26 Delivery Street")
     uploads = 2.times.map do |index|
-      file = Tempfile.new([ "image-#{index}", ".jpg"])
+      file = Tempfile.new([ "image-#{index}", ".jpg" ])
       file.write("image-#{index}")
       file.rewind
-      [file, Rack::Test::UploadedFile.new(file.path, "image/jpeg", true, original_filename: "image-#{index}.jpg")]
+      [ file, Rack::Test::UploadedFile.new(file.path, "image/jpeg", true, original_filename: "image-#{index}.jpg") ]
     end
     allow(MediaAssets::VerifyUploadJob).to receive(:perform_later)
     sign_in manager
 
     post "/api/v1/media_assets/upload", params: { listing_id: listing.id, kind: "final", category: "images", files: uploads.map(&:last) }
     expect(response).to have_http_status(:created)
-    expect(listing.media_assets.order(:position).pluck(:position)).to eq([1, 2])
+    expect(listing.media_assets.order(:position).pluck(:position)).to eq([ 1, 2 ])
 
     asset = listing.media_assets.first
     sign_in manager

@@ -26,11 +26,11 @@ RSpec.describe "Client portal", type: :request do
     expect(response).to have_http_status(:ok)
     listing = JSON.parse(response.body).fetch("listings").sole
     expect(listing.fetch("address")).to eq("111 Oak Bay Avenue")
-    expect(listing.fetch("progress").map { |task| task.fetch("title") }).to eq(["Edit photos"])
-    expect(listing.fetch("media_assets").map { |asset| asset.fetch("storage_key") }).to eq(["final/photo.jpg"])
+    expect(listing.fetch("progress").map { |task| task.fetch("title") }).to eq([ "Edit photos" ])
+    expect(listing.fetch("media_assets").map { |asset| asset.fetch("storage_key") }).to eq([ "final/photo.jpg" ])
     expect(listing.fetch("customer_first_viewed_at")).to be_present
     expect(own_listing.reload.customer_first_viewed_at).to be_present
-    expect(JSON.parse(response.body).dig("conversations", 0, "messages").map { |message| message.fetch("body") }).to eq(["Photos are ready."])
+    expect(JSON.parse(response.body).dig("conversations", 0, "messages").map { |message| message.fetch("body") }).to eq([ "Photos are ready." ])
   end
 
   it "records a customer reschedule request without changing the confirmed appointment" do

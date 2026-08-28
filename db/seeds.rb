@@ -69,10 +69,10 @@ else
     end
 
     [
-      ["Confirm access details", "intake", :todo, :high, 0, admin, false],
-      ["Capture photo and video", "shoot", :in_progress, :urgent, 0, staff, false],
-      ["Edit final gallery", "post_production", :todo, :normal, 1, staff, false],
-      ["Client review", "review", :blocked, :normal, 0, admin, true]
+      [ "Confirm access details", "intake", :todo, :high, 0, admin, false ],
+      [ "Capture photo and video", "shoot", :in_progress, :urgent, 0, staff, false ],
+      [ "Edit final gallery", "post_production", :todo, :normal, 1, staff, false ],
+      [ "Client review", "review", :blocked, :normal, 0, admin, true ]
     ].each do |title, stage, status, priority, position, assignee, customer_visible|
       find_or_create.call(listing.workflow_tasks, title:) do |record|
         record.assign_attributes(

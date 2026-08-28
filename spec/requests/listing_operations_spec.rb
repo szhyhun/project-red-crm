@@ -18,7 +18,7 @@ RSpec.describe "Listing operations", type: :request do
     get "/api/v1/workflow_tasks"
 
     expect(response).to have_http_status(:ok)
-    expect(JSON.parse(response.body).fetch("workflow_tasks").map { |task| task.fetch("id") }).to eq([own_task.id])
+    expect(JSON.parse(response.body).fetch("workflow_tasks").map { |task| task.fetch("id") }).to eq([ own_task.id ])
   end
 
   it "rejects an appointment assigned to staff from another organization" do

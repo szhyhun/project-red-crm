@@ -41,6 +41,8 @@ jobs:
         with:
           ruby-version: .ruby-version
           bundler-cache: true
+      - name: Lint
+        run: bin/rubocop -f github
       - name: Test
         env:
           RAILS_ENV: test
