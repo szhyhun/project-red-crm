@@ -86,7 +86,7 @@ jobs:
         run: |
           jq -n --arg release_url "$RELEASE_URL" --arg release_sha "$GITHUB_SHA" '{
             commands: [
-              "set -euo pipefail",
+              "set -eu",
               "rm -rf /srv/project-red-crm-api.next",
               "mkdir -p /srv/project-red-crm-api.next",
               ("curl --fail --location --silent --show-error --output /tmp/project-red-crm-api-release.tar.gz " + ($release_url | @sh)),
