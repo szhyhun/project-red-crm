@@ -15,8 +15,12 @@ class DeliveryStorage
       "organizations/#{organization.id}/listings/#{listing.id}/#{SecureRandom.uuid}-#{safe_filename}"
     end
 
-    def write(upload:, key:)
-      return s3_client.put_object(bucket: media_bucket, key: key, body: upload) if s3?
+    def write(upload:, key:, content_type: nil)
+      if s3?
+        options = { bucket: media_bucket, key: key, body: upload }
+        options[:content_type] = content_type if content_type.present?
+        return s3_client.put_object(**options)
+      end
 
       destination = path_for(key)
       FileUtils.mkdir_p(destination.dirname)
@@ -53,10 +57,12 @@ class DeliveryStorage
       "#{media_cdn_url.chomp("/")}/#{escape_key(key)}"
     end
 
-    def temporary_url(key)
+    def temporary_url(key, content_type: nil)
       return unless s3? && key.present?
 
-      Aws::S3::Presigner.new(client: s3_client).presigned_url(:get_object, bucket: media_bucket, key: key, expires_in: 15.minutes.to_i)
+      options = { bucket: media_bucket, key: key, expires_in: 15.minutes.to_i }
+      options[:response_content_type] = content_type if content_type.present?
+      Aws::S3::Presigner.new(client: s3_client).presigned_url(:get_object, **options)
     end
 
     def s3?

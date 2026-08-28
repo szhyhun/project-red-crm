@@ -76,13 +76,14 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     uploaded_file = params.require(:file)
     old_key = asset.storage_key
     new_key = DeliveryStorage.key_for(organization: Current.organization, listing: asset.listing, filename: uploaded_file.original_filename)
+    content_type = upload_content_type(uploaded_file)
 
-    DeliveryStorage.write(upload: uploaded_file.tempfile, key: new_key)
+    DeliveryStorage.write(upload: uploaded_file.tempfile, key: new_key, content_type: content_type)
     asset.update!(
       status: :pending,
       storage_key: new_key,
       filename: uploaded_file.original_filename,
-      content_type: uploaded_file.content_type.presence || "application/octet-stream",
+      content_type: content_type,
       byte_size: uploaded_file.size,
       processed_at: nil,
       metadata: asset.metadata.except("processing_error")
@@ -108,6 +109,7 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
   def upload_one(listing, uploaded_file)
     storage_key = DeliveryStorage.key_for(organization: Current.organization, listing: listing, filename: uploaded_file.original_filename)
     category = requested_category(uploaded_file)
+    content_type = upload_content_type(uploaded_file)
     asset = Current.organization.media_assets.build(
       listing: listing,
       uploaded_by: current_user,
@@ -118,13 +120,13 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
       status: :pending,
       storage_key: storage_key,
       filename: uploaded_file.original_filename,
-      content_type: uploaded_file.content_type.presence || "application/octet-stream",
+      content_type: content_type,
       byte_size: uploaded_file.size,
       **source_records
     )
 
     if asset.save
-      DeliveryStorage.write(upload: uploaded_file.tempfile, key: storage_key)
+      DeliveryStorage.write(upload: uploaded_file.tempfile, key: storage_key, content_type: content_type)
       MediaAssets::VerifyUploadJob.perform_later(asset.id)
       ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: asset, event_type: "media_asset.uploaded")
       record_listing_activity(asset, "media_asset.uploaded", media_payload(asset))
@@ -155,7 +157,7 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     authorize asset, :show?
     return redirect_to asset.source_url, allow_other_host: true if asset.external? && asset.ready?
     return render json: { error: "asset_not_ready" }, status: :unprocessable_entity unless asset.ready?
-    return redirect_to DeliveryStorage.temporary_url(asset.storage_key), allow_other_host: true if DeliveryStorage.s3?
+    return redirect_to DeliveryStorage.temporary_url(asset.storage_key, content_type: asset.content_type), allow_other_host: true if DeliveryStorage.s3?
 
     send_file DeliveryStorage.path_for(asset.storage_key),
               type: asset.content_type.presence || "application/octet-stream",
@@ -230,6 +232,13 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     return "videos" if content_type.start_with?("video/")
 
     "files"
+  end
+
+  def upload_content_type(uploaded_file)
+    declared_type = uploaded_file.content_type.presence
+    return declared_type if declared_type.present? && declared_type != "application/octet-stream"
+
+    Marcel::MimeType.for(name: uploaded_file.original_filename).presence || declared_type || "application/octet-stream"
   end
 
   def link_params

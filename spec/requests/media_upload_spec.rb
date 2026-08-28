@@ -66,6 +66,22 @@ RSpec.describe "Media uploads", type: :request do
     tempfile&.close!
   end
 
+  it "preserves the image type when redirecting an S3 preview" do
+    organization = Organization.create!(name: "Preview Agency", slug: "preview-agency")
+    manager = User.create!(organization:, name: "Manager", email: "preview@example.test", password: "long-enough-password", role: :manager)
+    client = ClientAccount.create!(organization:, name: "Agent", kind: :agent)
+    listing = Listing.create!(organization:, client_account: client, address_line_1: "23 Preview Street")
+    asset = MediaAsset.create!(organization:, listing:, uploaded_by: manager, kind: :final, status: :ready,
+                               storage_key: "previews/image.jpg", filename: "image.jpg", content_type: "image/jpeg")
+    allow(DeliveryStorage).to receive(:s3?).and_return(true)
+    allow(DeliveryStorage).to receive(:temporary_url).with(asset.storage_key, content_type: "image/jpeg").and_return("https://media.example.test/previews/image.jpg")
+    sign_in manager
+
+    get "/api/v1/media_assets/#{asset.id}/preview"
+
+    expect(response).to redirect_to("https://media.example.test/previews/image.jpg")
+  end
+
   it "uploads multiple delivery files in one request" do
     organization = Organization.create!(name: "Batch Upload Agency", slug: "batch-upload-agency")
     manager = User.create!(organization:, name: "Manager", email: "batch-upload@example.test", password: "long-enough-password", role: :manager)
