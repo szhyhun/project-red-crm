@@ -78,8 +78,8 @@ psql "$project_red_admin_database_url" -v ON_ERROR_STOP=1 \
     'PORTAL_URL=https://crm.projectred.ca' \
     'MAILER_HOST=api.projectred.ca' \
     'MAILER_PROTOCOL=https' \
-    'MAILER_FROM=ProjectRed <no-reply@projectred.ca>' \
-    'AUTH_MAILER_FROM=ProjectRed <no-reply@projectred.ca>' \
+    'MAILER_FROM="ProjectRed <no-reply@projectred.ca>"' \
+    'AUTH_MAILER_FROM="ProjectRed <no-reply@projectred.ca>"' \
     "RAILS_MASTER_KEY=${PROJECT_RED_RAILS_MASTER_KEY}"
 } > /etc/project-red-crm/api.env
 chmod 600 /etc/project-red-crm/api.env
