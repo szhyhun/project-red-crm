@@ -81,20 +81,7 @@ test:
 # for a full overview on how database connection configuration can be specified.
 #
 production:
-  primary: &primary_production
-    <<: *default
-    database: project_red_crm_production
-    username: project_red_crm
-    password: <%= ENV["PROJECT_RED_CRM_DATABASE_PASSWORD"] %>
-  cache:
-    <<: *primary_production
-    database: project_red_crm_production_cache
-    migrations_paths: db/cache_migrate
-  queue:
-    <<: *primary_production
-    database: project_red_crm_production_queue
-    migrations_paths: db/queue_migrate
-  cable:
-    <<: *primary_production
-    database: project_red_crm_production_cable
-    migrations_paths: db/cable_migrate
+  <<: *default
+  # Production uses one dedicated PostgreSQL database on the shared RDS
+  # instance. The URL includes the host, database name, and SSL requirement.
+  url: <%= ENV.fetch("DATABASE_URL") %>

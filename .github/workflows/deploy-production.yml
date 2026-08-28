@@ -1,0 +1,112 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: project-red-crm-api-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+  DEPLOY_BUCKET: ${{ vars.DEPLOY_BUCKET }}
+  INSTANCE_ID: ${{ vars.INSTANCE_ID }}
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client headers
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libpq-dev
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+      - name: Lint
+        run: bin/rubocop -f github
+      - name: Test
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/project_red_crm_test
+        run: |
+          bin/rails db:test:prepare
+          bundle exec rspec
+          bin/rails test
+
+  deploy:
+    name: Deploy
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment configuration
+        run: |
+          for name in AWS_REGION AWS_ROLE_ARN DEPLOY_BUCKET INSTANCE_ID; do
+            test -n "${!name}" || { echo "Missing GitHub repository variable: ${name}" >&2; exit 1; }
+          done
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: project-red-crm-api-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Package release
+        run: |
+          tar --exclude='.git' --exclude='.github' --exclude='tmp' --exclude='log' --exclude='storage' --exclude='config/master.key' \
+            -czf "/tmp/project-red-crm-api-${GITHUB_SHA}.tar.gz" .
+      - name: Upload release
+        id: release
+        run: |
+          release_key="api/releases/${GITHUB_SHA}.tar.gz"
+          aws s3 cp "/tmp/project-red-crm-api-${GITHUB_SHA}.tar.gz" "s3://${DEPLOY_BUCKET}/${release_key}" --sse AES256
+          echo "release_url=$(aws s3 presign "s3://${DEPLOY_BUCKET}/${release_key}" --expires-in 3600)" >> "$GITHUB_OUTPUT"
+      - name: Deploy release through SSM
+        env:
+          RELEASE_URL: ${{ steps.release.outputs.release_url }}
+        run: |
+          jq -n --arg release_url "$RELEASE_URL" --arg release_sha "$GITHUB_SHA" '{
+            commands: [
+              "set -euo pipefail",
+              "rm -rf /srv/project-red-crm-api.next",
+              "mkdir -p /srv/project-red-crm-api.next",
+              ("curl --fail --location --silent --show-error --output /tmp/project-red-crm-api-release.tar.gz " + ($release_url | @sh)),
+              "tar -xzf /tmp/project-red-crm-api-release.tar.gz -C /srv/project-red-crm-api.next",
+              "chmod +x /srv/project-red-crm-api.next/scripts/aws/deploy-release-on-host.sh",
+              ("RELEASE_SHA=" + ($release_sha | @sh) + " RELEASE_DIR=/srv/project-red-crm-api.next /srv/project-red-crm-api.next/scripts/aws/deploy-release-on-host.sh")
+            ],
+            executionTimeout: ["3600"]
+          }' > /tmp/ssm-parameters.json
+
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript \
+            --comment "Deploy Project Red CRM API ${GITHUB_SHA}" --parameters file:///tmp/ssm-parameters.json \
+            --timeout-seconds 3600 --query 'Command.CommandId' --output text)"
+
+          for attempt in $(seq 1 240); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query 'Status' --output text 2>/dev/null || true)"
+            case "$status" in Success|Cancelled|TimedOut|Failed|Cancelling) break ;; esac
+            sleep 10
+          done
+
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,StatusDetails:StatusDetails,ResponseCode:ResponseCode,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output json
+          test "$status" = Success

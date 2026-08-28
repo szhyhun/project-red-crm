@@ -1,0 +1,17 @@
+[Unit]
+Description=Project Red CRM Rails API
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/srv/project-red-crm-api
+EnvironmentFile=/etc/project-red-crm/api.env
+ExecStart=/usr/bin/bash -lc 'export PATH=/home/ubuntu/.rbenv/bin:/home/ubuntu/.rbenv/shims:$PATH; eval "$(rbenv init - bash)"; exec bundle exec puma -e production -p "${PORT:-3003}"'
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

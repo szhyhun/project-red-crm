@@ -1,0 +1,17 @@
+[Unit]
+Description=Project Red CRM Resque worker
+After=network.target redis-server.service project-red-crm-api.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/srv/project-red-crm-api
+EnvironmentFile=/etc/project-red-crm/api.env
+ExecStart=/usr/bin/bash -lc 'export PATH=/home/ubuntu/.rbenv/bin:/home/ubuntu/.rbenv/shims:$PATH; eval "$(rbenv init - bash)"; exec env QUEUE="*" bundle exec rake resque:work'
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
