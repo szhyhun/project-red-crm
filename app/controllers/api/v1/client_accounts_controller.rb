@@ -62,7 +62,7 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
   def serialize(account)
     feedbacks = account.listing_feedbacks.includes(:listing).order(created_at: :desc)
     submitted = feedbacks.select(&:submitted_at?)
-    ratings = submitted.flat_map { |feedback| [feedback.delivery_rating, feedback.service_rating, feedback.media_rating].compact }
+    ratings = submitted.flat_map { |feedback| [ feedback.delivery_rating, feedback.service_rating, feedback.media_rating ].compact }
 
     account.slice(:id, :name, :kind, :email, :phone, :brokerage_name).merge(
       feedback_summary: {

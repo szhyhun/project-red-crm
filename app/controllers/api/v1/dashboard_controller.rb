@@ -29,7 +29,7 @@ class Api::V1::DashboardController < Api::V1::BaseController
   def feedback_metrics
     feedbacks = Current.organization.listing_feedbacks.includes(:listing, :client_account)
     submitted = feedbacks.select(&:submitted_at?)
-    ratings = submitted.flat_map { |feedback| [feedback.delivery_rating, feedback.service_rating, feedback.media_rating].compact }
+    ratings = submitted.flat_map { |feedback| [ feedback.delivery_rating, feedback.service_rating, feedback.media_rating ].compact }
 
     {
       total: feedbacks.length,
@@ -77,7 +77,7 @@ class Api::V1::DashboardController < Api::V1::BaseController
   end
 
   def feedback_average(feedback)
-    ratings = [feedback.delivery_rating, feedback.service_rating, feedback.media_rating].compact
+    ratings = [ feedback.delivery_rating, feedback.service_rating, feedback.media_rating ].compact
     ratings.empty? ? nil : (ratings.sum.to_f / ratings.length).round(2)
   end
 

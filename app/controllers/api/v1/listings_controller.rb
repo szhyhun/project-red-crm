@@ -85,7 +85,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
     invoices = listing.orders.flat_map(&:invoices)
     photos = listing.media_assets
       .select { |asset| asset.ready? && asset.content_type.start_with?("image/") }
-      .sort_by { |asset| [asset.position, asset.created_at] }
+      .sort_by { |asset| [ asset.position, asset.created_at ] }
     cover = photos.first || listing.media_assets.find { |asset| asset.cover? && asset.ready? && asset.content_type.start_with?("image/") }
     payment_status = listing_payment_status(listing)
     data = {
@@ -192,7 +192,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
     feedbacks = listing.listing_feedbacks
     submitted = feedbacks.select(&:submitted_at?)
     ratings = submitted.flat_map do |feedback|
-      [feedback.delivery_rating, feedback.service_rating, feedback.media_rating].compact
+      [ feedback.delivery_rating, feedback.service_rating, feedback.media_rating ].compact
     end
     average_rating = ratings.empty? ? nil : (ratings.sum.to_f / ratings.length).round(2)
     status = if feedbacks.empty?
