@@ -21,7 +21,7 @@ gem "devise_invitable"
 gem "pundit"
 
 # Local and production background work
-gem "resque", "~> 2.7", require: "resque/server"
+gem "resque", "~> 3.0", require: "resque/server"
 gem "redis", require: "redis"
 # Resque currently brings Redis 6 into this bundle. ConnectionPool 3.0 cannot
 # boot on Ruby 3.3, so keep the compatible pool release until Resque catches up.
