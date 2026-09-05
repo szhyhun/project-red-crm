@@ -1,5 +1,5 @@
 class IntegrationConnectionPolicy < ApplicationPolicy
-  def show?
+  def view?
     administrator?
   end
 

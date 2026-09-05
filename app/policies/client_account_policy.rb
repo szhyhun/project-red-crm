@@ -3,7 +3,7 @@ class ClientAccountPolicy < OrganizationRecordPolicy
     true
   end
 
-  def show?
+  def view?
     belongs_to_current_organization? && (user.internal? || user.client_account_ids.include?(record.id))
   end
 

@@ -1,5 +1,5 @@
 class PropertySitePolicy < OrganizationRecordPolicy
-  def show?
+  def view?
     belongs_to_current_organization? && (user.internal? || customer_can_access_listing?)
   end
 

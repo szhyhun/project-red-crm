@@ -1,5 +1,5 @@
 class OrganizationRecordPolicy < ApplicationPolicy
-  def show?
+  def view?
     belongs_to_current_organization?
   end
 

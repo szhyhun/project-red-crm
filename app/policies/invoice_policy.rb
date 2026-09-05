@@ -3,7 +3,7 @@ class InvoicePolicy < OrganizationRecordPolicy
     true
   end
 
-  def show?
+  def view?
     belongs_to_current_organization? && (user.internal? || user.client_account_ids.include?(record.client_account_id))
   end
 
@@ -12,7 +12,7 @@ class InvoicePolicy < OrganizationRecordPolicy
   end
 
   def pay?
-    show? && !record.draft? && !record.void? && record.balance_due_cents.positive?
+    view? && !record.draft? && !record.void? && record.balance_due_cents.positive?
   end
 
   class Scope < Scope

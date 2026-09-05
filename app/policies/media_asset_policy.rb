@@ -3,7 +3,7 @@ class MediaAssetPolicy < OrganizationRecordPolicy
     true
   end
 
-  def show?
+  def view?
     visible_to_user?
   end
 

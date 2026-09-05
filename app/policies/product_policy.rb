@@ -3,7 +3,7 @@ class ProductPolicy < ApplicationPolicy
     true
   end
 
-  def show?
+  def view?
     record.organization_id == user.organization_id
   end
 

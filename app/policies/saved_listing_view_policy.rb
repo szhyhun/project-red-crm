@@ -3,7 +3,7 @@ class SavedListingViewPolicy < OrganizationRecordPolicy
     true
   end
 
-  def show?
+  def view?
     belongs_to_current_organization? && (record.team? || record.user_id == user.id)
   end
 
