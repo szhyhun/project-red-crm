@@ -1,10 +1,14 @@
 # Working in this repository
 
-## Do not run the test suite
+## Do not run the test suite or watch CI
 
 Do not run `rspec`, `bundle exec rspec`, or `rails test`. The maintainer runs
 the suite. Write the specs, say which files are new or changed and that they
 have not been run, and leave it there.
+
+Do not watch CI either — no `gh run watch`, and no polling `gh run list` for a
+run to finish. Push, say what the push will trigger, and stop. The maintainer
+reads the result.
 
 `rubocop` is fine to run; it is cheap.
 
