@@ -93,10 +93,14 @@ publishes it.
 
 ```ruby
 class Api::V1::BaseController < ApplicationController
-  after_action :verify_authorized,    except: :index
-  after_action :verify_policy_scoped, only:   :index
+  after_action :verify_authorized,    unless: :index_action?
+  after_action :verify_policy_scoped, if:     :index_action?
 end
 ```
+
+Filtered with `if:` rather than `only: :index`: Rails raises
+`AbstractController::ActionNotFound` when an `only:` names an action a controller
+does not define, and most controllers here have no index.
 
 **Why `after_action` and not `before_action`.** `verify_authorized` does not
 authorize; it checks whether `authorize` *was called*, by reading a flag that
@@ -361,7 +365,7 @@ rough working days for one engineer.
 
 ### Phase A — Authorization and boards
 
-- [ ] **T1 · Capability-based authorization, enforced by default** — 4d — *no deps*
+- [~] **T1 · Capability-based authorization, enforced by default** — 4d — *no deps* — **backend done, frontend outstanding**
   - `verify_authorized` / `verify_policy_scoped` as `after_action` in `Api::V1::BaseController`,
     explicit skips on webhook, sign-up and public site endpoints.
   - CI request spec walking every route, asserting each action authorizes or skips.
@@ -372,9 +376,10 @@ rough working days for one engineer.
   - Frontend `useCapabilities()` / `<Can>`; remove every `role === …` check from
     `page.tsx`, `shell.tsx`, `listing-workspace.tsx`; handle 403 by showing the API
     message and refreshing `/auth/me`.
-- [ ] **T2 · Multiple boards with per-person and per-group access** — 7d — *T1*
-  - Schema, backfill, `BoardPolicy` + scope, board-scoped endpoints, back-compat
-    routes, switcher and settings UI.
+- [~] **T2 · Multiple boards with per-person and per-group access** — 7d — *T1* — **backend done, UI outstanding**
+  - Schema, backfill, `BoardPolicy` + scope, board-scoped endpoints and
+    back-compat routes: done.
+  - Switcher, create/edit modal, member manager and groups panel: outstanding.
   - `WorkflowTasks::Mover` repositions within a board; `customer_visible` gated on
     the board's `client_visible`.
 - [ ] **T3 · Task detail: comments, checklists, labels** — 3d — *T2*
