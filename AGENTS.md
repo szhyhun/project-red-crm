@@ -1,16 +1,27 @@
 # Working in this repository
 
-## Do not run the test suite or watch CI
+## Run the suite once, at the end
 
-Do not run `rspec`, `bundle exec rspec`, or `rails test`. The maintainer runs
-the suite. Write the specs, say which files are new or changed and that they
-have not been run, and leave it there.
+Running specs is fine, but it is expensive, so run them deliberately rather
+than reflexively:
 
-Do not watch CI either — no `gh run watch`, and no polling `gh run list` for a
-run to finish. Push, say what the push will trigger, and stop. The maintainer
-reads the result.
+- **Run the full suite when a feature is complete, before pushing.** That is
+  the run that matters, and it is the one to report.
+- **Do not run after every iteration** — not after each edit, each file, or
+  each green step along the way.
+- While actually diagnosing a failure, a single targeted file or example is
+  fine. Go back to leaving it alone once it passes.
+- A docs-only or comment-only change does not need a run. Say so instead.
 
-`rubocop` is fine to run; it is cheap.
+Always say which specs ran and what the result was. If something is new and
+unrun, say that plainly rather than implying it passed.
+
+`rubocop` is cheap; run it freely.
+
+## Do not watch CI
+
+No `gh run watch`, and no polling `gh run list` for a run to finish. Push, say
+what the push will trigger, and stop. The maintainer reads the result.
 
 ## Specs
 
