@@ -26,7 +26,11 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     else
       authorize WorkflowTask, :index?
       tasks = policy_scope(WorkflowTask).includes(:listing, :assignee, :board, :reporter, :task_comments, :task_checklist_items)
-      tasks = tasks.where(board_id: params[:board_id]) if params[:board_id].present?
+      # Asking for a board you cannot see is a missing board, not an empty one.
+      # Filtering by id alone answered 200 with nothing, which reads as "this
+      # board exists and is empty" -- resolving through the board scope makes it
+      # 404, the same answer every other board route gives.
+      tasks = tasks.where(board: policy_scope(Board).find(params[:board_id])) if params[:board_id].present?
       tasks = tasks.order(:board_id, :status, :position, :created_at)
     end
 
