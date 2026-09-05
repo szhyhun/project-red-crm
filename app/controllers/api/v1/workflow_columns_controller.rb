@@ -1,13 +1,15 @@
 class Api::V1::WorkflowColumnsController < Api::V1::BaseController
+  before_action :set_board
+
   def index
     authorize WorkflowColumn, :index?
-    columns = policy_scope(WorkflowColumn).ordered
+    columns = @board.workflow_columns.ordered
     render json: { workflow_columns: columns.map { |column| serialize(column) } }
   end
 
   def create
-    column = Current.organization.workflow_columns.build(column_params.except(:position))
-    column.position = normalized_position(column_params[:position], Current.organization.workflow_columns.count)
+    column = @board.workflow_columns.build(column_params.except(:position).merge(organization: Current.organization))
+    column.position = normalized_position(column_params[:position], @board.workflow_columns.count)
     authorize column
 
     WorkflowColumn.transaction do
@@ -20,7 +22,7 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
   end
 
   def update
-    column = policy_scope(WorkflowColumn).find(params[:id])
+    column = scoped_columns.find(params[:id])
     authorize column
     target_position = normalized_position(column_params[:position], column.position)
     category_changed = column_params[:category].present? && column.category != column_params[:category]
@@ -36,14 +38,14 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
   end
 
   def destroy
-    column = policy_scope(WorkflowColumn).find(params[:id])
+    column = scoped_columns.find(params[:id])
     authorize column
-    if Current.organization.workflow_columns.count == 1
+    if column.board.workflow_columns.count == 1
       column.errors.add(:base, "A board must keep at least one column")
       return render_validation_errors(column)
     end
 
-    tasks = Current.organization.workflow_tasks.where(status: column.key)
+    tasks = column.board.workflow_tasks.where(status: column.key)
     replacement = replacement_column(column)
     if tasks.exists? && replacement.blank?
       column.errors.add(:base, "Choose a replacement column for existing tasks")
@@ -53,12 +55,27 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
     WorkflowColumn.transaction do
       move_tasks!(tasks, replacement) if replacement
       column.destroy!
-      compact_positions!
+      compact_positions!(column.board)
     end
     head :no_content
   end
 
   private
+
+  # Columns are always read through a board. Requests that predate board
+  # scoping keep working by falling back to the organization's first board.
+  def set_board
+    @board = if params[:board_id].present?
+      policy_scope(Board).find(params[:board_id])
+    else
+      policy_scope(Board).active.ordered.first
+    end
+    raise ActiveRecord::RecordNotFound, "no board available" if @board.blank?
+  end
+
+  def scoped_columns
+    @board.workflow_columns
+  end
 
   def column_params
     params.require(:workflow_column).permit(:name, :color, :category, :position)
@@ -67,7 +84,7 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
   def replacement_column(column)
     return if params[:replacement_column_id].blank?
 
-    policy_scope(WorkflowColumn).where.not(id: column.id).find(params[:replacement_column_id])
+    column.board.workflow_columns.where.not(id: column.id).find(params[:replacement_column_id])
   end
 
   def normalized_position(value, fallback)
@@ -77,7 +94,7 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
   end
 
   def place!(column, target_position)
-    columns = Current.organization.workflow_columns.where.not(id: column.id).ordered.to_a
+    columns = column.board.workflow_columns.where.not(id: column.id).ordered.to_a
     columns.insert(target_position.clamp(0, columns.length), column)
     columns.each_with_index { |item, position| item.update_columns(position:, updated_at: Time.current) }
   end
@@ -89,27 +106,29 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
   # appended after whatever the replacement column already holds.
   def move_tasks!(tasks, replacement)
     completed_at = replacement.completed? ? Time.current : nil
-    offset = Current.organization.workflow_tasks.where(status: replacement.key).maximum(:position).to_i + 1
+    offset = replacement.board.workflow_tasks.where(status: replacement.key).maximum(:position).to_i + 1
 
     tasks.order(:position, :id).to_a.each_with_index do |task, index|
       task.update_columns(status: replacement.key, position: offset + index, completed_at:, updated_at: Time.current)
     end
   end
 
-  def compact_positions!
-    Current.organization.workflow_columns.ordered.each_with_index do |column, position|
+  def compact_positions!(board)
+    board.workflow_columns.ordered.each_with_index do |column, position|
       column.update_columns(position:, updated_at: Time.current)
     end
   end
 
   def update_task_completion!(column)
     completed_at = column.completed? ? Time.current : nil
-    Current.organization.workflow_tasks.where(status: column.key).update_all(completed_at:, updated_at: Time.current)
+    column.board.workflow_tasks.where(status: column.key).update_all(completed_at:, updated_at: Time.current)
   end
 
   def serialize(column)
     column.slice(:id, :key, :name, :color, :category, :position).merge(
-      task_count: Current.organization.workflow_tasks.where(status: column.key).count
+      board_id: column.board_id,
+      task_count: column.board.workflow_tasks.where(status: column.key).count,
+      capabilities: capabilities_for(column)
     )
   end
 end

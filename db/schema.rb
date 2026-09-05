@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_19_104000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_05_120100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -87,6 +87,39 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_104000) do
     t.index ["organization_id"], name: "index_appointments_on_organization_id"
     t.index ["origin"], name: "index_appointments_on_origin"
     t.exclusion_constraint "organization_id WITH =, assigned_user_id WITH =, tsrange(starts_at, ends_at, '[)'::text) WITH &&", where: "(assigned_user_id IS NOT NULL) AND ((status)::text <> 'cancelled'::text)", using: :gist, name: "no_overlapping_staff_appointments"
+  end
+
+  create_table "board_memberships", force: :cascade do |t|
+    t.bigint "board_id", null: false
+    t.string "member_type", null: false
+    t.bigint "member_id", null: false
+    t.string "access", default: "contributor", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_id", "member_type", "member_id"], name: "index_board_memberships_on_board_and_member", unique: true
+    t.index ["board_id"], name: "index_board_memberships_on_board_id"
+    t.index ["member_type", "member_id"], name: "index_board_memberships_on_member_type_and_member_id"
+  end
+
+  create_table "boards", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.text "description"
+    t.string "kind", default: "production", null: false
+    t.string "visibility", default: "organization", null: false
+    t.boolean "requires_listing", default: true, null: false
+    t.boolean "client_visible", default: true, null: false
+    t.boolean "archived", default: false, null: false
+    t.integer "position", default: 0, null: false
+    t.bigint "created_by_id"
+    t.jsonb "settings", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_boards_on_created_by_id"
+    t.index ["organization_id", "archived", "position"], name: "index_boards_on_organization_id_and_archived_and_position"
+    t.index ["organization_id", "slug"], name: "index_boards_on_organization_id_and_slug", unique: true
+    t.index ["organization_id"], name: "index_boards_on_organization_id"
   end
 
   create_table "catalog_sync_runs", force: :cascade do |t|
@@ -759,6 +792,27 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_104000) do
     t.index ["organization_id"], name: "index_travel_fees_on_organization_id"
   end
 
+  create_table "user_group_memberships", force: :cascade do |t|
+    t.bigint "user_group_id", null: false
+    t.bigint "user_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_group_id", "user_id"], name: "index_user_group_memberships_on_user_group_id_and_user_id", unique: true
+    t.index ["user_group_id"], name: "index_user_group_memberships_on_user_group_id"
+    t.index ["user_id"], name: "index_user_group_memberships_on_user_id"
+  end
+
+  create_table "user_groups", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.string "slug", null: false
+    t.text "description"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "slug"], name: "index_user_groups_on_organization_id_and_slug", unique: true
+    t.index ["organization_id"], name: "index_user_groups_on_organization_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "email", default: "", null: false
     t.string "encrypted_password", default: "", null: false
@@ -798,13 +852,16 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_104000) do
     t.integer "position", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["organization_id", "key"], name: "index_workflow_columns_on_organization_id_and_key", unique: true
+    t.bigint "board_id", null: false
+    t.index ["board_id", "key"], name: "index_workflow_columns_on_board_id_and_key", unique: true
+    t.index ["board_id", "position"], name: "index_workflow_columns_on_board_id_and_position"
+    t.index ["board_id"], name: "index_workflow_columns_on_board_id"
     t.index ["organization_id", "position"], name: "index_workflow_columns_on_organization_id_and_position"
     t.index ["organization_id"], name: "index_workflow_columns_on_organization_id"
   end
 
   create_table "workflow_tasks", force: :cascade do |t|
-    t.bigint "listing_id", null: false
+    t.bigint "listing_id"
     t.bigint "organization_id", null: false
     t.bigint "assignee_id"
     t.string "title", null: false
@@ -820,12 +877,21 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_104000) do
     t.text "description"
     t.string "priority", default: "normal", null: false
     t.string "origin", default: "native", null: false
+    t.bigint "board_id", null: false
+    t.bigint "reporter_id"
+    t.string "labels", default: [], null: false, array: true
+    t.datetime "started_at"
+    t.string "external_ref"
     t.index ["assignee_id"], name: "index_workflow_tasks_on_assignee_id"
+    t.index ["board_id", "status", "position"], name: "index_workflow_tasks_on_board_id_and_status_and_position"
+    t.index ["board_id"], name: "index_workflow_tasks_on_board_id"
+    t.index ["labels"], name: "index_workflow_tasks_on_labels", using: :gin
     t.index ["listing_id"], name: "index_workflow_tasks_on_listing_id"
     t.index ["organization_id", "status", "position"], name: "idx_on_organization_id_status_position_3a4fef4137"
     t.index ["organization_id", "status", "stage"], name: "index_workflow_tasks_on_organization_id_and_status_and_stage"
     t.index ["organization_id"], name: "index_workflow_tasks_on_organization_id"
     t.index ["origin"], name: "index_workflow_tasks_on_origin"
+    t.index ["reporter_id"], name: "index_workflow_tasks_on_reporter_id"
   end
 
   add_foreign_key "activity_events", "organizations"
@@ -840,6 +906,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_104000) do
   add_foreign_key "appointments", "orders"
   add_foreign_key "appointments", "organizations"
   add_foreign_key "appointments", "users", column: "assigned_user_id"
+  add_foreign_key "board_memberships", "boards"
+  add_foreign_key "boards", "organizations"
+  add_foreign_key "boards", "users", column: "created_by_id"
   add_foreign_key "catalog_sync_runs", "organizations"
   add_foreign_key "client_accounts", "organizations"
   add_foreign_key "client_memberships", "client_accounts"
@@ -920,9 +989,15 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_19_104000) do
   add_foreign_key "saved_listing_views", "users"
   add_foreign_key "taxes", "organizations"
   add_foreign_key "travel_fees", "organizations"
+  add_foreign_key "user_group_memberships", "user_groups"
+  add_foreign_key "user_group_memberships", "users"
+  add_foreign_key "user_groups", "organizations"
   add_foreign_key "users", "organizations"
+  add_foreign_key "workflow_columns", "boards"
   add_foreign_key "workflow_columns", "organizations"
+  add_foreign_key "workflow_tasks", "boards"
   add_foreign_key "workflow_tasks", "listings"
   add_foreign_key "workflow_tasks", "organizations"
   add_foreign_key "workflow_tasks", "users", column: "assignee_id"
+  add_foreign_key "workflow_tasks", "users", column: "reporter_id"
 end

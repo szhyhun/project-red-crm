@@ -9,11 +9,11 @@ RSpec.describe "Listing operations", type: :request do
   before { sign_in manager }
 
   it "keeps the production board scoped to the signed-in organization" do
-    own_task = WorkflowTask.create!(organization:, listing:, title: "Edit hero video", stage: "editing")
+    own_task = WorkflowTask.create!(organization:, board: organization.default_board, listing:, title: "Edit hero video", stage: "editing")
     other_organization = Organization.create!(name: "Other Agency", slug: "other-agency")
     other_client = ClientAccount.create!(organization: other_organization, name: "Other Agent", kind: :agent)
     other_listing = Listing.create!(organization: other_organization, client_account: other_client, address_line_1: "100 Other Street")
-    WorkflowTask.create!(organization: other_organization, listing: other_listing, title: "Hidden task", stage: "editing")
+    WorkflowTask.create!(organization: other_organization, board: other_organization.default_board, listing: other_listing, title: "Hidden task", stage: "editing")
 
     get "/api/v1/workflow_tasks"
 

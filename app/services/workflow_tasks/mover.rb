@@ -12,9 +12,9 @@ module WorkflowTasks
       WorkflowTask.transaction do
         source_status = @task.status
         target_status = @attributes.fetch(:status, @task.status)
-        target_column = @task.organization.workflow_columns.find_by(key: target_status)
+        target_column = @task.board.workflow_columns.find_by(key: target_status)
         unless target_column
-          @task.errors.add(:status, "must match a workflow column")
+          @task.errors.add(:status, "must match a column on this board")
           raise ActiveRecord::RecordInvalid, @task
         end
         target_position = normalized_position
@@ -24,14 +24,14 @@ module WorkflowTasks
         @task.status = target_status
         @task.save!
 
-        siblings = @task.organization.workflow_tasks.where(status: target_status).where.not(id: @task.id).order(:position, :id).to_a
+        siblings = @task.board.workflow_tasks.where(status: target_status).where.not(id: @task.id).order(:position, :id).to_a
         siblings.insert([ target_position, siblings.length ].min, @task)
         siblings.each_with_index do |sibling, position|
           sibling.update_columns(position:, updated_at: Time.current)
         end
 
         if source_status != target_status
-          @task.organization.workflow_tasks.where(status: source_status).order(:position, :id).each_with_index do |sibling, position|
+          @task.board.workflow_tasks.where(status: source_status).order(:position, :id).each_with_index do |sibling, position|
             sibling.update_columns(position:, updated_at: Time.current)
           end
         end

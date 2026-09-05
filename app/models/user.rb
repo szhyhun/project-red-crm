@@ -13,6 +13,9 @@ class User < ApplicationRecord
   has_many :assigned_listings, through: :listing_assignments, source: :listing
   has_many :assigned_workflow_tasks, class_name: "WorkflowTask", foreign_key: :assignee_id,
            dependent: :nullify
+  has_many :user_group_memberships, dependent: :destroy
+  has_many :user_groups, through: :user_group_memberships
+  has_many :board_memberships, as: :member, dependent: :destroy
   has_many :conversation_memberships, dependent: :destroy
   has_many :conversations, through: :conversation_memberships
   has_many :saved_listing_views, dependent: :destroy
@@ -36,5 +39,9 @@ class User < ApplicationRecord
 
   def internal?
     !client_admin? && !client_member?
+  end
+
+  def admin?
+    organization_admin? || platform_owner?
   end
 end

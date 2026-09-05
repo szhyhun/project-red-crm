@@ -13,6 +13,7 @@ RSpec.describe "Workflow columns", type: :request do
   end
   let!(:client) { ClientAccount.create!(organization:, name: "Avery Agent", kind: :agent) }
   let!(:listing) { Listing.create!(organization:, client_account: client, address_line_1: "111 Oak Bay Avenue") }
+  let(:board) { organization.default_board }
 
   before { sign_in manager }
 
@@ -34,7 +35,7 @@ RSpec.describe "Workflow columns", type: :request do
   end
 
   it "renames and reorders a custom column without changing its stable key" do
-    column = organization.workflow_columns.create!(name: "Client Approval", color: "#ffe599", position: 4)
+    column = board.workflow_columns.create!(organization:, name: "Client Approval", color: "#ffe599", position: 4)
 
     patch "/api/v1/workflow_columns/#{column.id}", params: {
       workflow_column: { name: "Customer Review", position: 3 }
@@ -46,9 +47,9 @@ RSpec.describe "Workflow columns", type: :request do
   end
 
   it "moves existing tasks to the chosen replacement before deleting a column" do
-    custom = organization.workflow_columns.create!(name: "Quality Check", color: "#aec7f7", position: 4)
+    custom = board.workflow_columns.create!(organization:, name: "Quality Check", color: "#aec7f7", position: 4)
     replacement = organization.workflow_columns.find_by!(key: "done")
-    task = WorkflowTask.create!(organization:, listing:, title: "Final QA", stage: "review", status: custom.key)
+    task = WorkflowTask.create!(organization:, board:, listing:, title: "Final QA", stage: "review", status: custom.key)
 
     delete "/api/v1/workflow_columns/#{custom.id}", params: { replacement_column_id: replacement.id }
 

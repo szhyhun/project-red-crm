@@ -7,11 +7,12 @@ class WorkflowColumn < ApplicationRecord
   ].freeze
 
   belongs_to :organization
+  belongs_to :board
 
   enum :category, { active: "active", blocked: "blocked", completed: "completed" }, validate: true
 
   validates :name, :key, :color, presence: true
-  validates :key, uniqueness: { scope: :organization_id }, format: { with: /\A[a-z0-9]+(?:_[a-z0-9]+)*\z/ }
+  validates :key, uniqueness: { scope: :board_id }, format: { with: /\A[a-z0-9]+(?:_[a-z0-9]+)*\z/ }
   validates :color, format: { with: /\A#[0-9a-fA-F]{6}\z/ }
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
@@ -22,12 +23,12 @@ class WorkflowColumn < ApplicationRecord
   private
 
   def assign_key
-    return if key.present? || name.blank? || organization.blank?
+    return if key.present? || name.blank? || board.blank?
 
     base = name.parameterize(separator: "_").presence || "column"
     candidate = base
     suffix = 2
-    while organization.workflow_columns.where(key: candidate).exists?
+    while board.workflow_columns.where(key: candidate).exists?
       candidate = "#{base}_#{suffix}"
       suffix += 1
     end

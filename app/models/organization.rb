@@ -15,6 +15,8 @@ class Organization < ApplicationRecord
   has_many :listing_feedbacks, dependent: :destroy
   has_many :orders, dependent: :destroy
   has_many :appointments, dependent: :destroy
+  has_many :boards, dependent: :destroy
+  has_many :user_groups, dependent: :destroy
   has_many :workflow_tasks, dependent: :destroy
   has_many :workflow_columns, dependent: :destroy
   has_many :media_assets, dependent: :destroy
@@ -29,11 +31,22 @@ class Organization < ApplicationRecord
   validates :name, :slug, presence: true
   validates :slug, format: { with: /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/ }
 
-  after_create :create_default_workflow_columns
+  after_create :create_default_board
+
+  def default_board
+    boards.active.ordered.first
+  end
 
   private
 
-  def create_default_workflow_columns
-    WorkflowColumn::DEFAULTS.each { |attributes| workflow_columns.create!(attributes) }
+  # Columns cannot exist without a board, so the organization's first board is
+  # created with them rather than alongside them.
+  def create_default_board
+    board = boards.create!(
+      name: "Production", slug: "production", kind: "production",
+      visibility: "organization", requires_listing: true, client_visible: true, position: 0
+    )
+    WorkflowColumn::DEFAULTS.each { |attributes| board.workflow_columns.create!(attributes.merge(organization: self)) }
+    board
   end
 end
