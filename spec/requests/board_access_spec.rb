@@ -112,6 +112,29 @@ RSpec.describe "Board access", type: :request do
       expect(internal_board.board_memberships.count).to eq(2)
     end
 
+    it "does not let a contributor change an existing grant" do
+      grant = internal_board.board_memberships.create!(member: developer, access: "contributor")
+
+      sign_in developer
+      patch "/api/v1/boards/#{internal_board.id}/members/#{grant.id}",
+            params: { member: { access: "manager" } }
+
+      expect(response).to have_http_status(:forbidden)
+      expect(grant.reload.access).to eq("contributor")
+    end
+
+    it "lets a granted manager update an existing grant" do
+      internal_board.board_memberships.create!(member: manager, access: "manager")
+      grant = internal_board.board_memberships.create!(member: developer, access: "viewer")
+
+      sign_in manager
+      patch "/api/v1/boards/#{internal_board.id}/members/#{grant.id}",
+            params: { member: { access: "contributor" } }
+
+      expect(response).to have_http_status(:ok)
+      expect(grant.reload.access).to eq("contributor")
+    end
+
     # A manager holds no implicit authority over a board they were not invited
     # to, which is the whole point of a restricted board.
     it "cannot be managed by an ungranted manager" do

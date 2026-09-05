@@ -19,6 +19,17 @@ class Api::V1::BoardMembershipsController < Api::V1::BaseController
     end
   end
 
+  def update
+    authorize @board, :manage?
+    membership = @board.board_memberships.find(params[:id])
+
+    if membership.update(membership_params)
+      render json: { member: serialize(membership.reload) }
+    else
+      render_validation_errors(membership)
+    end
+  end
+
   def destroy
     authorize @board, :manage?
     @board.board_memberships.find(params[:id]).destroy!

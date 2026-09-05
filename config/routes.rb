@@ -87,7 +87,7 @@ Rails.application.routes.draw do
       end
       resources :workflow_columns, only: %i[index create update destroy]
       resources :boards, only: %i[index show create update destroy] do
-        resources :members, only: %i[index create destroy], controller: "board_memberships"
+        resources :members, only: %i[index create update destroy], controller: "board_memberships"
         resources :workflow_columns, only: %i[index create update destroy]
         resources :workflow_tasks, only: %i[index create]
       end

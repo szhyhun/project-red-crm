@@ -13,7 +13,16 @@ class WorkflowTask < ApplicationRecord
   validate :status_matches_board_column
   validate :listing_present_when_board_requires_one
 
+  # `stage` is a legacy column retained for old integrations. Boards now own
+  # the workflow, so new tasks get a neutral value instead of exposing a second
+  # classification system to the product.
+  before_validation :assign_default_stage
+
   private
+
+  def assign_default_stage
+    self.stage = "work" if stage.blank?
+  end
 
   def status_matches_board_column
     return if board.blank? || status.blank? || board.workflow_columns.where(key: status).exists?

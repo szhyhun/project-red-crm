@@ -20,7 +20,7 @@ RSpec.describe "Board tasks", type: :request do
 
   it "creates a task with no listing on a board that does not require one" do
     post "/api/v1/boards/#{internal_board.id}/workflow_tasks", params: {
-      workflow_task: { title: "Move workflow tasks onto boards", stage: "build", external_ref: "T2" }
+      workflow_task: { title: "Move workflow tasks onto boards", external_ref: "T2" }
     }
 
     expect(response).to have_http_status(:created)
@@ -59,6 +59,25 @@ RSpec.describe "Board tasks", type: :request do
 
     titles = JSON.parse(response.body).fetch("workflow_tasks").pluck("title")
     expect(titles).to contain_exactly("Public QA")
+  end
+
+  it "does not expose a restricted board's tasks to an ungranted user" do
+    restricted_board = organization.boards.create!(name: "Private Engineering", kind: "internal", visibility: "restricted",
+                                                    requires_listing: false, client_visible: false, position: 2)
+    WorkflowColumn::DEFAULTS.each { |attributes| restricted_board.workflow_columns.create!(attributes.merge(organization:)) }
+    task = restricted_board.workflow_tasks.create!(organization:, title: "Private engineering task", status: "todo")
+    outsider = User.create!(organization:, name: "Outside", email: "outside-board@example.test",
+                            password: "long-enough-password", role: :production_staff)
+
+    sign_out manager
+    sign_in outsider
+    get "/api/v1/boards/#{restricted_board.id}/workflow_tasks"
+
+    expect(response).to have_http_status(:not_found)
+
+    get "/api/v1/workflow_tasks/#{task.id}"
+
+    expect(response).to have_http_status(:not_found)
   end
 
   # Creating from a listing predates boards. It has to keep working without a
