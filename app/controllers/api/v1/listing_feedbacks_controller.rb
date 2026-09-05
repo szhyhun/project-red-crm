@@ -21,6 +21,7 @@ class Api::V1::ListingFeedbacksController < Api::V1::BaseController
 
   def update
     feedback = ListingFeedback.joins(:listing).merge(policy_scope(Listing)).find(params[:id])
+    authorize feedback.listing, :view?
     return render json: { error: "forbidden" }, status: :forbidden unless can_update?(feedback)
 
     attributes = permitted_update_attributes

@@ -2,8 +2,7 @@ class Api::V1::AppointmentsController < Api::V1::BaseController
   rescue_from ActiveRecord::StatementInvalid, with: :render_schedule_conflict
 
   def index
-    return render json: { error: "forbidden" }, status: :forbidden unless current_user.internal?
-
+    authorize Appointment, :index?
     appointments = appointment_scope.order(:starts_at)
     render json: { appointments: appointments.map { |appointment| serialize(appointment) } }
   end
@@ -80,7 +79,7 @@ class Api::V1::AppointmentsController < Api::V1::BaseController
   end
 
   def appointment_scope
-    Current.organization.appointments.includes(
+    policy_scope(Appointment).includes(
       :listing, :assigned_user, :appointment_items,
       appointment_team_members: :user, appointment_events: :actor
     )

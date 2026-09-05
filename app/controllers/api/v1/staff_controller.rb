@@ -1,6 +1,7 @@
 class Api::V1::StaffController < Api::V1::BaseController
   def index
     authorize User, :index?
+    skip_policy_scope
     users = Current.organization.users.where(role: manageable_roles).order(:name)
     render json: { staff: users.map { |user| serialize(user) } }
   end

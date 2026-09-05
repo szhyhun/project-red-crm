@@ -37,6 +37,7 @@ class Api::V1::SavedListingViewsController < Api::V1::BaseController
   end
 
   def preference
+    authorize SavedListingView, :index?
     setting = current_user.listing_view_preference || current_user.build_listing_view_preference
     setting.assign_attributes(preference_params)
     return render_validation_errors(setting) unless setting.save

@@ -1,6 +1,6 @@
 class Api::V1::ClientPortalController < Api::V1::BaseController
   def show
-    return render json: { error: "forbidden" }, status: :forbidden if current_user.internal?
+    authorize :client_portal, :view?
 
     listings = policy_scope(Listing).includes(:property_site, :invoices, :workflow_tasks, :media_assets, appointments: :appointment_events).order(created_at: :desc)
     conversations = policy_scope(Conversation).includes(:listing).order(last_message_at: :desc, created_at: :desc).limit(20)
@@ -13,7 +13,7 @@ class Api::V1::ClientPortalController < Api::V1::BaseController
   end
 
   def request_reschedule
-    return render json: { error: "forbidden" }, status: :forbidden if current_user.internal?
+    authorize :client_portal, :update?
 
     appointment = Current.organization.appointments.includes(:listing, :appointment_events).find(params[:id])
     return render json: { error: "forbidden" }, status: :forbidden unless client_can_access?(appointment.listing)

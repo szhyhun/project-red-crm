@@ -1,6 +1,6 @@
 class Api::V1::DashboardController < Api::V1::BaseController
   def show
-    return render json: { error: "forbidden" }, status: :forbidden unless current_user.internal?
+    authorize :dashboard, :view?
 
     completed_statuses = Current.organization.workflow_columns.completed.pluck(:key)
     blocked_statuses = Current.organization.workflow_columns.blocked.pluck(:key)
