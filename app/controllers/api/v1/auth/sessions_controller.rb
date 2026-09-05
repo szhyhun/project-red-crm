@@ -1,4 +1,6 @@
 class Api::V1::Auth::SessionsController < ApplicationController
+  include Capabilities
+
   skip_before_action :verify_authenticity_token, only: :csrf
 
   def csrf
@@ -35,7 +37,10 @@ class Api::V1::Auth::SessionsController < ApplicationController
       name: user.name,
       email: user.email,
       role: user.role,
-      organization: { id: user.organization_id, name: user.organization.name, slug: user.organization.slug }
+      organization: { id: user.organization_id, name: user.organization.name, slug: user.organization.slug },
+      # What this user may do, resolved once by the policies rather than
+      # re-derived from `role` in the interface.
+      capabilities: session_capabilities(user)
     }
   end
 end
