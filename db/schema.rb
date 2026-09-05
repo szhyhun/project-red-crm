@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_05_120100) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_05_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -765,6 +765,31 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_120100) do
     t.index ["user_id"], name: "index_saved_listing_views_on_user_id"
   end
 
+  create_table "task_checklist_items", force: :cascade do |t|
+    t.bigint "workflow_task_id", null: false
+    t.bigint "completed_by_id"
+    t.string "title", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["completed_by_id"], name: "index_task_checklist_items_on_completed_by_id"
+    t.index ["workflow_task_id", "position"], name: "index_task_checklist_items_on_workflow_task_id_and_position"
+    t.index ["workflow_task_id"], name: "index_task_checklist_items_on_workflow_task_id"
+  end
+
+  create_table "task_comments", force: :cascade do |t|
+    t.bigint "workflow_task_id", null: false
+    t.bigint "author_id", null: false
+    t.text "body", null: false
+    t.datetime "edited_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["author_id"], name: "index_task_comments_on_author_id"
+    t.index ["workflow_task_id", "created_at"], name: "index_task_comments_on_workflow_task_id_and_created_at"
+    t.index ["workflow_task_id"], name: "index_task_comments_on_workflow_task_id"
+  end
+
   create_table "taxes", force: :cascade do |t|
     t.bigint "organization_id", null: false
     t.string "name", null: false
@@ -987,6 +1012,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_120100) do
   add_foreign_key "property_sites", "organizations"
   add_foreign_key "saved_listing_views", "organizations"
   add_foreign_key "saved_listing_views", "users"
+  add_foreign_key "task_checklist_items", "users", column: "completed_by_id"
+  add_foreign_key "task_checklist_items", "workflow_tasks"
+  add_foreign_key "task_comments", "users", column: "author_id"
+  add_foreign_key "task_comments", "workflow_tasks"
   add_foreign_key "taxes", "organizations"
   add_foreign_key "travel_fees", "organizations"
   add_foreign_key "user_group_memberships", "user_groups"

@@ -1,4 +1,18 @@
 class Api::V1::WorkflowTasksController < Api::V1::BaseController
+  def self.serialize_comment(comment, capabilities: [])
+    comment.slice(:id, :body, :created_at, :edited_at).merge(
+      author: comment.author.slice(:id, :name, :role),
+      capabilities:
+    )
+  end
+
+  def self.serialize_checklist_item(item)
+    item.slice(:id, :title, :position, :completed_at).merge(
+      done: item.done?,
+      completed_by: item.completed_by&.slice(:id, :name)
+    )
+  end
+
   def index
     if params[:listing_id].present?
       listing = policy_scope(Listing).find(params[:listing_id])
@@ -8,15 +22,24 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
       else
         listing.workflow_tasks.where(customer_visible: true).where(board: Board.where(client_visible: true))
       end
-      tasks = tasks.includes(:assignee, :board).order(:position)
+      tasks = tasks.includes(:assignee, :board, :task_comments, :task_checklist_items).order(:position)
     else
       authorize WorkflowTask, :index?
-      tasks = policy_scope(WorkflowTask).includes(:listing, :assignee, :board)
+      tasks = policy_scope(WorkflowTask).includes(:listing, :assignee, :board, :reporter, :task_comments, :task_checklist_items)
       tasks = tasks.where(board_id: params[:board_id]) if params[:board_id].present?
       tasks = tasks.order(:board_id, :status, :position, :created_at)
     end
 
     render json: { workflow_tasks: tasks.map { |task| serialize(task) } }
+  end
+
+  def show
+    task = policy_scope(WorkflowTask).includes(:board, :listing, :assignee, :reporter,
+                                               task_comments: :author,
+                                               task_checklist_items: :completed_by).find(params[:id])
+    authorize task
+
+    render json: { workflow_task: serialize(task, detailed: true) }
   end
 
   def create
@@ -84,7 +107,7 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     )
   end
 
-  def serialize(task)
+  def serialize(task, detailed: false)
     column = columns_by_board_and_key[[ task.board_id, task.status ]]
     data = task.slice(:id, :board_id, :listing_id, :title, :description, :status, :stage, :priority,
                       :customer_visible, :position, :due_at, :completed_at, :labels, :external_ref).merge(
@@ -94,10 +117,25 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     )
     return data unless current_user.internal?
 
-    data.merge(
+    # Board cards show how much detail a task carries without loading it, so
+    # the index sends counts and the detail endpoint sends the contents.
+    data = data.merge(
       assignee_id: task.assignee_id,
       assignee: task.assignee && task.assignee.slice(:id, :name, :email, :role),
+      reporter: task.reporter&.slice(:id, :name),
+      comment_count: task.task_comments.size,
+      checklist_total: task.task_checklist_items.size,
+      checklist_done: task.task_checklist_items.count(&:done?),
       capabilities: capabilities_for(task)
+    )
+    return data unless detailed
+
+    data.merge(
+      comments: task.task_comments.sort_by(&:created_at).map do |comment|
+        self.class.serialize_comment(comment, capabilities: capabilities_for(comment))
+      end,
+      checklist_items: task.task_checklist_items.sort_by { |item| [ item.position, item.id ] }
+                           .map { |item| self.class.serialize_checklist_item(item) }
     )
   end
 

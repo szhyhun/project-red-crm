@@ -81,7 +81,10 @@ Rails.application.routes.draw do
       end
       resources :payroll_items, only: %i[update destroy]
       resources :listing_feedbacks, only: :update
-      resources :workflow_tasks, only: %i[index update destroy]
+      resources :workflow_tasks, only: %i[index show update destroy] do
+        resources :comments, only: %i[create update destroy], controller: "task_comments"
+        resources :checklist_items, only: %i[create update destroy], controller: "task_checklist_items"
+      end
       resources :workflow_columns, only: %i[index create update destroy]
       resources :boards, only: %i[index show create update destroy] do
         resources :members, only: %i[index create destroy], controller: "board_memberships"

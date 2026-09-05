@@ -4,6 +4,8 @@ class WorkflowTask < ApplicationRecord
   belongs_to :board
   belongs_to :assignee, class_name: "User", optional: true
   belongs_to :reporter, class_name: "User", optional: true
+  has_many :task_comments, dependent: :destroy
+  has_many :task_checklist_items, dependent: :destroy
 
   enum :priority, { low: "low", normal: "normal", high: "high", urgent: "urgent" }, validate: true
 
