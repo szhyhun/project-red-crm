@@ -83,6 +83,14 @@ Rails.application.routes.draw do
       resources :listing_feedbacks, only: :update
       resources :workflow_tasks, only: %i[index update destroy]
       resources :workflow_columns, only: %i[index create update destroy]
+      resources :boards, only: %i[index show create update destroy] do
+        resources :members, only: %i[index create destroy], controller: "board_memberships"
+        resources :workflow_columns, only: %i[index create update destroy]
+        resources :workflow_tasks, only: %i[index create]
+      end
+      resources :user_groups, only: %i[index create update destroy] do
+        resources :members, only: %i[create destroy], controller: "user_group_memberships"
+      end
       resources :saved_listing_views, only: %i[index create update destroy] do
         patch :preference, on: :collection
       end

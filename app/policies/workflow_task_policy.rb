@@ -1,17 +1,37 @@
-class WorkflowTaskPolicy < OrganizationRecordPolicy
+class WorkflowTaskPolicy < ApplicationPolicy
+  def view?
+    board_policy.view?
+  end
+
   def index?
-    true
+    user.internal?
   end
 
   def create?
-    user.organization_admin? || user.manager?
+    board_policy.update?
   end
 
+  # An assignee can always move their own work, even on a board where they only
+  # hold viewer access.
   def update?
-    belongs_to_current_organization? && (user.organization_admin? || user.manager? || record.assignee_id == user.id)
+    board_policy.update? || (board_policy.view? && record.assignee_id == user.id)
   end
 
   def destroy?
-    belongs_to_current_organization? && (user.organization_admin? || user.manager?)
+    board_policy.manage? || (board_policy.update? && user.manager?)
+  end
+
+  class Scope < Scope
+    def resolve
+      return scope.none unless user.internal?
+
+      scope.where(board_id: BoardPolicy::Scope.new(user, Board).resolve.select(:id))
+    end
+  end
+
+  private
+
+  def board_policy
+    @board_policy ||= BoardPolicy.new(user, record.board)
   end
 end
