@@ -36,7 +36,16 @@ module Capabilities
       model = model_name.safe_constantize
       next result[key] = [] if model.blank?
 
-      result[key] = Pundit::PolicyFinder.new(model).policy!.new(user, model).capabilities
+      policy = Pundit::PolicyFinder.new(model).policy!.new(user, model)
+      result[key] = policy.class::CAPABILITIES.filter_map do |capability|
+        capability if policy.public_send(:"#{capability}?")
+      rescue NoMethodError
+        # A session answer is asked at the resource-class level, so policies
+        # that need a concrete record cannot answer every question here. Keep
+        # the role-level answers (for example BoardPolicy#create?) and omit
+        # only the record-dependent question instead of losing the whole map.
+        raise unless policy.record.is_a?(Class)
+      end
     rescue Pundit::NotDefinedError, NameError
       result[key] = []
     end

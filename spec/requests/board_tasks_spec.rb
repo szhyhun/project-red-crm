@@ -48,6 +48,19 @@ RSpec.describe "Board tasks", type: :request do
     expect(ids).not_to include(other.id)
   end
 
+  it "hides restricted-board tasks from the listing task feed" do
+    restricted_board = organization.boards.create!(name: "Private Production", kind: "internal", visibility: "restricted",
+                                                    requires_listing: true, client_visible: false, position: 2)
+    WorkflowColumn::DEFAULTS.each { |attributes| restricted_board.workflow_columns.create!(attributes.merge(organization:)) }
+    restricted_board.workflow_tasks.create!(organization:, listing:, title: "Private QA", stage: "review", status: "todo")
+    production_board.workflow_tasks.create!(organization:, listing:, title: "Public QA", stage: "review", status: "todo")
+
+    get "/api/v1/listings/#{listing.id}/workflow_tasks"
+
+    titles = JSON.parse(response.body).fetch("workflow_tasks").pluck("title")
+    expect(titles).to contain_exactly("Public QA")
+  end
+
   # Creating from a listing predates boards. It has to keep working without a
   # board id, resolving to the organization's default board.
   it "still accepts a task created from a listing" do

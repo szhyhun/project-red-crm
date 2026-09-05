@@ -3,8 +3,12 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     if params[:listing_id].present?
       listing = policy_scope(Listing).find(params[:listing_id])
       authorize listing, :view?
-      tasks = listing.workflow_tasks.includes(:assignee, :board).order(:position)
-      tasks = tasks.where(customer_visible: true).where(board: Board.where(client_visible: true)) unless current_user.internal?
+      tasks = if current_user.internal?
+        policy_scope(WorkflowTask).where(listing_id: listing.id)
+      else
+        listing.workflow_tasks.where(customer_visible: true).where(board: Board.where(client_visible: true))
+      end
+      tasks = tasks.includes(:assignee, :board).order(:position)
     else
       authorize WorkflowTask, :index?
       tasks = policy_scope(WorkflowTask).includes(:listing, :assignee, :board)

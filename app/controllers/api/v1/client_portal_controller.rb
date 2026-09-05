@@ -60,7 +60,9 @@ class Api::V1::ClientPortalController < Api::V1::BaseController
       scheduled_at: listing.scheduled_at,
       delivered_at: listing.delivered_at,
       customer_first_viewed_at: listing.customer_first_viewed_at,
-      progress: listing.workflow_tasks.where(customer_visible: true).order(:position).map { |task| task.slice(:id, :title, :status, :stage, :completed_at) },
+      progress: listing.workflow_tasks.where(customer_visible: true)
+        .where(board: Board.where(client_visible: true)).order(:position)
+        .map { |task| task.slice(:id, :title, :status, :stage, :completed_at) },
       appointments: listing.appointments.where.not(status: :cancelled).order(:starts_at).map { |appointment| serialize_client_appointment(appointment) },
       media_assets: listing.media_assets.final.ready.where(customer_visible: true, hidden: false).order(:created_at).map { |asset| serialize_asset(asset) },
       invoices: listing.invoices.order(created_at: :desc).map do |invoice|
