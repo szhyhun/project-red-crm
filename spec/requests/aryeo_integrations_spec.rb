@@ -54,7 +54,7 @@ RSpec.describe "Aryeo integrations", type: :request do
     expect(response).to have_http_status(:accepted)
     run = connection.integration_import_runs.order(:id).last
     expect(run.requested_resources).to eq(%w[clients listings orders])
-    expect(run.listing_start_date).to eq(Date.new(2026, 1, 1))
+    expect(run.import_start_date).to eq(Date.new(2026, 1, 1))
     expect(run.conflict_resolution).to eq("overwrite")
     expect(JSON.parse(response.body).dig("import_run", "import_start_date")).to eq("2026-01-01")
   end

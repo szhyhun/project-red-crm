@@ -16,7 +16,7 @@ module Aryeo
     RESOURCE_KEYS = ENDPOINTS.keys.map(&:to_s).freeze
     DATE_FILTERED_RESOURCES = %i[listings orders appointments].freeze
 
-    def initialize(run:, client: nil, resources: nil, import_start_date: nil, listing_start_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
+    def initialize(run:, client: nil, resources: nil, import_start_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
       @run = run
       @connection = run.integration_connection
       @organization = run.organization
@@ -24,8 +24,7 @@ module Aryeo
       @listing_limit = listing_limit.to_i.positive? ? listing_limit.to_i : nil
       requested_resources = resources.nil? ? ENDPOINTS.keys.map(&:to_s) : Array(resources).map(&:to_s)
       @resources = requested_resources.intersection(RESOURCE_KEYS).map(&:to_sym).to_set - skip_resources.map(&:to_sym).to_set
-      requested_start_date = import_start_date.presence || listing_start_date
-      @import_start_date = requested_start_date.present? ? Date.iso8601(requested_start_date.to_s) : nil
+      @import_start_date = import_start_date.present? ? Date.iso8601(import_start_date.to_s) : nil
       @conflict_resolution = conflict_resolution.presence || run.conflict_resolution || "skip"
       @counts = Hash.new(0)
       @conflict_counts = Hash.new(0)

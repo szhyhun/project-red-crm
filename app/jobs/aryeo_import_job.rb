@@ -6,7 +6,7 @@ class AryeoImportJob < ApplicationJob
     Aryeo::Importer.new(
       run:,
       resources: run.requested_resources,
-      import_start_date: run.listing_start_date,
+      import_start_date: run.import_start_date,
       conflict_resolution: run.conflict_resolution
     ).call
   end

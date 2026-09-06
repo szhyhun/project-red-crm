@@ -332,7 +332,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_180000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.jsonb "requested_resources", default: [], null: false
-    t.date "listing_start_date"
+    t.date "import_start_date"
     t.string "conflict_resolution", default: "skip", null: false
     t.index ["integration_connection_id"], name: "index_integration_import_runs_on_integration_connection_id"
     t.index ["organization_id", "provider", "created_at"], name: "idx_on_organization_id_provider_created_at_7ddb91d344"

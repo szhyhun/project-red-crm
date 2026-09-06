@@ -85,7 +85,7 @@ RSpec.describe Aryeo::Importer do
     end
 
     run = import_run(resources: [ "listings" ])
-    described_class.new(run:, client:, resources: [ "listings" ], listing_start_date: "2026-01-01").call
+    described_class.new(run:, client:, resources: [ "listings" ], import_start_date: "2026-01-01").call
 
     expect(run.reload.error_details).to be_empty
     expect(run.coverage.fetch("listings")).to include("count" => 1, "filtered_before_date" => 1)
