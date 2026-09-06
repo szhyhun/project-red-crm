@@ -70,6 +70,24 @@ class BoardStorage
       Aws::S3::Presigner.new(client: s3_client).presigned_url(:get_object, **options)
     end
 
+    # Preview responses stay on the authorized API origin. Redirecting a
+    # credentialed image or video request to S3 makes the browser apply the
+    # bucket's CORS policy to the final response, which is not the board access
+    # boundary and causes previews to fail in the portal.
+    def stream(key)
+      return enum_for(__method__, key) unless block_given?
+
+      if s3?
+        s3_client.get_object(bucket: board_media_bucket, key:) { |chunk| yield chunk }
+      else
+        File.open(path_for(key), "rb") do |file|
+          yield chunk while (chunk = file.read(16 * 1024))
+        end
+      end
+    rescue Aws::S3::Errors::NotFound
+      raise MissingFile, "Board attachment is missing"
+    end
+
     def s3?
       board_media_bucket.present?
     end

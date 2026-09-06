@@ -38,6 +38,26 @@ The following are still required before production media delivery is complete:
 3. A worker that probes/transcodes media and writes image/video variants.
 4. CloudFront cache invalidation/versioned keys where transformed files change.
 
+## Board attachment delivery
+
+Board attachments use a separate private storage boundary from listing delivery
+media. The API serializes `preview_path` and `download_path` as authorized
+`/api/v1/workflow_tasks/.../attachments/...` routes and never exposes a board
+storage key as a browser URL.
+
+Preview requests are authorized by Rails and stream from the API origin. Do not
+change previews back to a raw S3 or CloudFront URL: credentialed `<img>` and
+`<video>` requests can follow an API redirect to another origin and then fail
+against the bucket's CORS policy. Downloads may use a short-lived S3 URL after
+the same authorization check.
+
+The portal must resolve the returned paths through its shared `apiUrl`/
+`mediaAssetUrl` helpers. Never use `preview_path` or `download_path` directly
+as a relative URL from the CRM UI origin. If the temporary `sslip.io` hosts are
+used, the UI build-time `NEXT_PUBLIC_CRM_API_URL` and API `CRM_UI_ORIGINS` must
+refer to the matching temporary API and CRM hosts; restore the real DNS names
+only together.
+
 ## Property sites
 
 A listing can have one `PropertySite` with a slug and publishing status. The

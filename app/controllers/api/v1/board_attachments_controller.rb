@@ -29,7 +29,7 @@ class Api::V1::BoardAttachmentsController < Api::V1::BaseController
     authorize attachment, :view?
     return render json: { error: "attachment_not_ready" }, status: :unprocessable_entity unless attachment.ready?
 
-    return redirect_to BoardStorage.temporary_url(attachment.storage_key, content_type: attachment.content_type, disposition: "inline"), allow_other_host: true if BoardStorage.s3?
+    return stream_preview(attachment) if BoardStorage.s3?
 
     send_file BoardStorage.path_for(attachment.storage_key),
               type: attachment.content_type,
@@ -72,6 +72,18 @@ class Api::V1::BoardAttachmentsController < Api::V1::BaseController
 
   def find_attachment
     @task.board_attachments.find(params[:id])
+  end
+
+  def stream_preview(attachment)
+    return render json: { error: "attachment_missing" }, status: :not_found unless BoardStorage.exist?(attachment.storage_key)
+
+    response.headers["Content-Type"] = attachment.content_type
+    response.headers["Content-Length"] = attachment.byte_size.to_s
+    response.headers["Content-Disposition"] = ActionDispatch::Http::ContentDisposition.format(
+      disposition: "inline", filename: attachment.filename
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    self.response_body = BoardStorage.stream(attachment.storage_key)
   end
 
   def upload_files(comment:)

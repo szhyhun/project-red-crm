@@ -49,4 +49,21 @@ RSpec.describe "Board attachments", type: :request do
   ensure
     upload&.close!
   end
+
+  it "streams an S3 preview through the authorized API origin" do
+    attachment = task.board_attachments.create!(organization:, board:, uploaded_by: editor, status: :ready,
+                                                 storage_key: "organizations/#{organization.id}/boards/#{board.id}/preview.png",
+                                                 filename: "preview.png", content_type: "image/png", byte_size: 5)
+    allow(BoardStorage).to receive(:s3?).and_return(true)
+    allow(BoardStorage).to receive(:exist?).with(attachment.storage_key).and_return(true)
+    allow(BoardStorage).to receive(:stream).with(attachment.storage_key).and_return([ "image" ])
+
+    sign_in editor
+    get "/api/v1/workflow_tasks/#{task.id}/attachments/#{attachment.id}/preview"
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq("image/png")
+    expect(response.headers["Content-Disposition"]).to include("inline")
+    expect(response.body).to eq("image")
+  end
 end
