@@ -18,10 +18,13 @@ unrun, say that plainly rather than implying it passed.
 
 `rubocop` is cheap; run it freely.
 
-## Do not watch CI
+## CI and deployment monitoring
 
-No `gh run watch`, and no polling `gh run list` for a run to finish. Push, say
-what the push will trigger, and stop. The maintainer reads the result.
+It is okay to inspect and watch the GitHub Actions run for this repository,
+including deployment progress, with `gh run view` or `gh run watch`. When a run
+fails, inspect the failed job logs before making another push. A successful
+deployment should be verified on the production host when the task includes a
+production change.
 
 ## Specs
 

@@ -57,7 +57,10 @@ development:
 # Do not set this db to the same as development or production.
 test:
   <<: *default
-  url: <%= ENV["TEST_DATABASE_URL"].presence || ENV["DATABASE_URL"]&.sub(%r{/[^/]+\z}, "/project_red_crm_test") %>
+  # Keep the database name as structured config instead of appending it to a
+  # URL. URI 1.1 treats the underscore in project_red_crm_test as an invalid
+  # registry when Rails rewrites a host-only DATABASE_URL.
+  url: <%= ENV["TEST_DATABASE_URL"].presence %>
   database: project_red_crm_test
 
 # As with config/credentials.yml, you never want to store sensitive information,
