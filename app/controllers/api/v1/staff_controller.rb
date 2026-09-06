@@ -19,7 +19,7 @@ class Api::V1::StaffController < Api::V1::BaseController
 
   def update
     user = Current.organization.users.where(role: manageable_roles).find(params[:id])
-    authorize user
+    authorize user, :manage?
     attributes = update_params
 
     if user == current_user && changes_access?(user, attributes)
@@ -59,7 +59,7 @@ class Api::V1::StaffController < Api::V1::BaseController
   end
 
   def manageable_roles
-    %w[organization_admin manager production_staff]
+    UserPolicy::MANAGEABLE_ROLES
   end
 
   def changes_access?(user, attributes)
