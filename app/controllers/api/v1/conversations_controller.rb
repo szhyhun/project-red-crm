@@ -80,6 +80,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     message_visibility = current_user.internal? ? (visibility || :participants) : :participants
     message = conversation.messages.create!(author: current_user, body: body, body_html: body_html, visibility: message_visibility)
     conversation.update!(last_message_at: message.created_at)
+    Conversations::Notifier.call(message:)
     message
   end
 
