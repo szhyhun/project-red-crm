@@ -53,6 +53,17 @@ RSpec.describe "Board labels", type: :request do
     expect(label.fetch("capabilities")).to include("manage")
   end
 
+  it "includes configured labels when listing boards" do
+    board.board_labels.create!(name: "backend", color: "#e8f0ff")
+    sign_in manager
+
+    get "/api/v1/boards"
+
+    expect(response).to have_http_status(:ok)
+    board_json = JSON.parse(response.body).fetch("boards").find { |item| item.fetch("id") == board.id }
+    expect(board_json.fetch("labels")).to include(a_hash_including("name" => "backend", "board_id" => board.id))
+  end
+
   it "keeps the same label name separate on different boards" do
     first = board.board_labels.create!(name: "backend", color: "#e8f0ff")
     second = other_board.board_labels.create!(name: "backend", color: "#fde7e3")

@@ -81,6 +81,6 @@ class Api::V1::BoardsController < Api::V1::BaseController
   end
 
   def serialize_label(label)
-    BoardLabelsController.serialize_label(label, capabilities: capabilities_for(label))
+    Api::V1::BoardLabelsController.serialize_label(label, capabilities: capabilities_for(label))
   end
 end
