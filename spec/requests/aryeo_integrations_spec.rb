@@ -46,7 +46,7 @@ RSpec.describe "Aryeo integrations", type: :request do
     expect {
       post "/api/v1/aryeo_integration/import", params: {
         resources: %w[clients listings orders],
-        listing_start_date: "2026-01-01",
+        import_start_date: "2026-01-01",
         conflict_resolution: "overwrite"
       }
     }.to have_enqueued_job(AryeoImportJob)
@@ -56,6 +56,7 @@ RSpec.describe "Aryeo integrations", type: :request do
     expect(run.requested_resources).to eq(%w[clients listings orders])
     expect(run.listing_start_date).to eq(Date.new(2026, 1, 1))
     expect(run.conflict_resolution).to eq("overwrite")
+    expect(JSON.parse(response.body).dig("import_run", "import_start_date")).to eq("2026-01-01")
   end
 
   it "requires at least one known resource" do

@@ -14,8 +14,9 @@ module Aryeo
       tasks: "tasks"
     }.freeze
     RESOURCE_KEYS = ENDPOINTS.keys.map(&:to_s).freeze
+    DATE_FILTERED_RESOURCES = %i[listings orders appointments].freeze
 
-    def initialize(run:, client: nil, resources: nil, listing_start_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
+    def initialize(run:, client: nil, resources: nil, import_start_date: nil, listing_start_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
       @run = run
       @connection = run.integration_connection
       @organization = run.organization
@@ -23,7 +24,8 @@ module Aryeo
       @listing_limit = listing_limit.to_i.positive? ? listing_limit.to_i : nil
       requested_resources = resources.nil? ? ENDPOINTS.keys.map(&:to_s) : Array(resources).map(&:to_s)
       @resources = requested_resources.intersection(RESOURCE_KEYS).map(&:to_sym).to_set - skip_resources.map(&:to_sym).to_set
-      @listing_start_date = listing_start_date.present? ? Date.iso8601(listing_start_date.to_s) : nil
+      requested_start_date = import_start_date.presence || listing_start_date
+      @import_start_date = requested_start_date.present? ? Date.iso8601(requested_start_date.to_s) : nil
       @conflict_resolution = conflict_resolution.presence || run.conflict_resolution || "skip"
       @counts = Hash.new(0)
       @conflict_counts = Hash.new(0)
@@ -60,14 +62,22 @@ module Aryeo
       count_before = @counts[name]
       if limit
         payloads = []
-        @client.paginate(endpoint) { |payload| payloads << stringify(payload) }
+        paginate_collection(name, endpoint) { |payload| payloads << stringify(payload) }
+        payloads = payloads.filter_map do |payload|
+          if payload_on_or_after_start_date?(name, payload)
+            payload
+          else
+            @filtered_counts[name] += 1
+            nil
+          end
+        end
         payloads.sort_by { |payload| [ source_timestamp(payload), external_id(payload) ] }.reverse.first(limit).each do |payload|
           import_resource(name, payload)
         end
       else
-        @client.paginate(endpoint) do |payload|
+        paginate_collection(name, endpoint) do |payload|
           payload = stringify(payload)
-          if name == :listings && @listing_start_date && !listing_on_or_after?(payload)
+          unless payload_on_or_after_start_date?(name, payload)
             @filtered_counts[name] += 1
             next
           end
@@ -425,13 +435,60 @@ module Aryeo
       @connection.update!(status: :connected, last_imported_at: Time.current, endpoint_coverage: @coverage)
     end
 
-    def listing_on_or_after?(payload)
-      raw_timestamp = value(payload, "updated_at", "created_at")
+    def paginate_collection(name, endpoint, &block)
+      params = api_date_filter_params(name)
+      return @client.paginate(endpoint, &block) if params.empty?
+
+      @client.paginate(endpoint, params:, &block)
+    end
+
+    def api_date_filter_params(name)
+      return {} unless @import_start_date
+
+      case name
+      when :appointments
+        { "filter[start_at_gte]" => import_start_timestamp }
+      when :orders
+        { "filter[appointment_start_at_gte]" => import_start_timestamp }
+      else
+        {}
+      end
+    end
+
+    def import_start_timestamp
+      @import_start_timestamp ||= @import_start_date.in_time_zone.beginning_of_day.utc.iso8601
+    end
+
+    def payload_on_or_after_start_date?(name, payload)
+      return true unless @import_start_date && DATE_FILTERED_RESOURCES.include?(name)
+
+      raw_timestamp = resource_start_timestamp(name, payload)
       return false if raw_timestamp.blank?
 
-      Date.parse(raw_timestamp.to_s) >= @listing_start_date
+      Date.parse(raw_timestamp.to_s) >= @import_start_date
     rescue Date::Error
       false
+    end
+
+    def resource_start_timestamp(name, payload)
+      case name
+      when :listings
+        value(payload, "updated_at", "created_at")
+      when :appointments
+        value(payload, "start_at", "starts_at", "scheduled_at", "start_time", "created_at")
+      when :orders
+        appointment_timestamps(payload).min || value(payload, "appointment_start_at", "scheduled_at", "created_at")
+      end
+    end
+
+    def appointment_timestamps(payload)
+      appointments = payload["appointments"] || payload["unconfirmed_appointments"] || payload["appointment"]
+      appointments = appointments.is_a?(Array) ? appointments : [ appointments ]
+      appointments.filter_map do |appointment|
+        next unless appointment.is_a?(Hash)
+
+        value(stringify(appointment), "start_at", "starts_at", "scheduled_at", "start_time")
+      end
     end
 
     def record_for(resource_type, external)

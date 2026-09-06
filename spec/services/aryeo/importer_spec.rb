@@ -93,6 +93,21 @@ RSpec.describe Aryeo::Importer do
     expect(connection.reload.endpoint_coverage.fetch("listings")).to include("filtered_before_date" => 1)
   end
 
+  it "uses Aryeo date filters for appointments and orders while keeping other resources unfiltered" do
+    client = instance_double(Aryeo::Client)
+    allow(client).to receive(:paginate)
+
+    run = import_run(resources: %w[staff products listings orders appointments])
+    described_class.new(run:, client:, resources: run.requested_resources, import_start_date: "2026-07-03").call
+
+    start_timestamp = Date.new(2026, 7, 3).in_time_zone.beginning_of_day.utc.iso8601
+    expect(client).to have_received(:paginate).with("appointments", params: { "filter[start_at_gte]" => start_timestamp })
+    expect(client).to have_received(:paginate).with("orders", params: { "filter[appointment_start_at_gte]" => start_timestamp })
+    expect(client).to have_received(:paginate).with("listings")
+    expect(client).to have_received(:paginate).with("staff")
+    expect(client).to have_received(:paginate).with("products")
+  end
+
   it "skips or overwrites records previously imported from the same Aryeo ID" do
     first_client = instance_double(Aryeo::Client)
     allow(first_client).to receive(:paginate) do |endpoint, &block|

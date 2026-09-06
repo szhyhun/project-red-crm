@@ -42,22 +42,24 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
       return render json: { error: "aryeo_import_conflict_resolution_invalid" }, status: :unprocessable_entity
     end
 
-    listing_start_date = params[:listing_start_date].presence
-    unless listing_start_date.blank? || Date.iso8601(listing_start_date)
-      return render json: { error: "aryeo_import_listing_start_date_invalid" }, status: :unprocessable_entity
+    import_start_date = params[:import_start_date].presence || params[:listing_start_date].presence
+    unless import_start_date.blank? || Date.iso8601(import_start_date)
+      return render json: { error: "aryeo_import_start_date_invalid" }, status: :unprocessable_entity
     end
 
     run = @connection.integration_import_runs.create!(
       organization: Current.organization,
       provider: :aryeo,
       requested_resources: resources,
-      listing_start_date: listing_start_date,
+      # Keep accepting the old request key while the persisted column is
+      # shared by the broader date-filtered import option.
+      listing_start_date: import_start_date,
       conflict_resolution: conflict_resolution
     )
     AryeoImportJob.perform_later(run.id)
     render json: { import_run: serialize_run(run) }, status: :accepted
   rescue Date::Error
-    render json: { error: "aryeo_import_listing_start_date_invalid" }, status: :unprocessable_entity
+    render json: { error: "aryeo_import_start_date_invalid" }, status: :unprocessable_entity
   end
 
   def destroy
@@ -90,6 +92,7 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
 
   def serialize_run(run)
     run.slice(:id, :status, :phase, :counts, :coverage, :requested_resources, :listing_start_date,
-              :conflict_resolution, :started_at, :completed_at, :created_at).merge(errors: run.error_details)
+              :conflict_resolution, :started_at, :completed_at, :created_at)
+       .merge(import_start_date: run.listing_start_date, errors: run.error_details)
   end
 end
