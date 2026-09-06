@@ -66,6 +66,19 @@ RSpec.describe "Task detail", type: :request do
       expect(reply.fetch("body_html")).not_to include("script")
     end
 
+    it "rejects a reply to another reply" do
+      parent = task.task_comments.create!(author: editor, body: "Parent comment")
+      reply = task.task_comments.create!(author: editor, parent_comment: parent, body: "First reply")
+
+      sign_in editor
+      post "/api/v1/workflow_tasks/#{task.id}/comments",
+           params: { task_comment: { body: "Nested reply", parent_comment_id: reply.id } }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(JSON.parse(response.body).dig("details", "parent_comment")).to include("cannot be a reply")
+      expect(task.task_comments.where(body: "Nested reply")).to be_empty
+    end
+
     it "refuses to let one person edit another's comment" do
       comment = task.task_comments.create!(author: editor, body: "Mine")
       board.board_memberships.create!(member: manager, access: "manager")

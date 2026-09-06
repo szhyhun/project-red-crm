@@ -7,6 +7,7 @@ class TaskComment < ApplicationRecord
 
   validates :body, presence: true
   validate :parent_belongs_to_same_task
+  validate :parent_must_be_top_level
   before_validation :normalize_body_content
 
   scope :chronological, -> { order(:created_at, :id) }
@@ -28,5 +29,11 @@ class TaskComment < ApplicationRecord
     return if parent_comment.blank? || parent_comment.workflow_task_id == workflow_task_id
 
     errors.add(:parent_comment, "must belong to the same workflow task")
+  end
+
+  def parent_must_be_top_level
+    return if parent_comment.blank? || parent_comment.parent_comment_id.blank?
+
+    errors.add(:parent_comment, "cannot be a reply")
   end
 end
