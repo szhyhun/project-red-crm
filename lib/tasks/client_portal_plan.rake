@@ -10,7 +10,8 @@ namespace :project_red do
 
         Done when: the frontend consumes `useCapabilities()` or `<Can>` instead of role comparisons, handles the API's 403 message, and the server remains the authorization boundary.
       DESCRIPTION
-      labels: %w[backend frontend security]
+      labels: %w[backend frontend security],
+      status: "in_progress"
     },
     {
       external_ref: "T2",
@@ -44,7 +45,7 @@ namespace :project_red do
       description: <<~DESCRIPTION.strip,
         Data task: create an idempotent `project_red:sync_plan_tasks` rake task that reads the numbered T1–T13 briefs and the B1 board-content follow-up, then upserts one record per `external_ref` on the selected engineering board. Set the full title, actionable description, position, board-owned area/brief labels, and `listing_id: nil`; rerunning it must update metadata without duplicating issues or changing manually selected positions.
 
-        Workflow: map T2, T3, T4, and B1 to the board's completed column because those slices are already delivered. Leave T1 and T5–T13 in their current or default open status, and fail clearly if the board has no workflow columns or completed column.
+        Workflow: map T2, T3, T4, and B1 to the board's completed column because those slices are already delivered. Keep T1 in progress while its frontend capability migration remains, and leave T5–T13 in their current or default open status. Fail clearly if the board has no workflow columns or completed column.
 
         Done when: the sync is safe for every organization with an Engineering board, can be rerun after plan edits, and the board contains all portal issues plus the board-content follow-up with the plan's descriptions and labels.
       DESCRIPTION
@@ -203,7 +204,7 @@ namespace :project_red do
           description: definition.fetch(:description),
           listing_id: nil,
           position: task.persisted? ? task.position : position,
-          status: completed ? completed_status : (task.status.presence || default_status),
+          status: completed ? completed_status : (definition[:status] || task.status.presence || default_status),
           completed_at: completed ? (task.completed_at || Time.current) : task.completed_at
         )
         task.save!

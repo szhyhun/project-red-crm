@@ -23,8 +23,10 @@ RSpec.describe "project_red:sync_plan_tasks", type: :task do
     Rake::Task["project_red:sync_plan_tasks"].invoke
 
     task = board.workflow_tasks.find_by!(external_ref: "T3")
+    authorization_task = board.workflow_tasks.find_by!(external_ref: "T1")
 
     expect(task.board_labels.pluck(:name)).to contain_exactly("backend", "frontend", "schema")
     expect(task.board_labels.pluck(:board_id).uniq).to eq([ board.id ])
+    expect(authorization_task.status).to eq("in_progress")
   end
 end
