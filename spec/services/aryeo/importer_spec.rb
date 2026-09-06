@@ -104,7 +104,7 @@ RSpec.describe Aryeo::Importer do
     expect(client).to have_received(:paginate).with("appointments", params: { "filter[start_at_gte]" => start_timestamp })
     expect(client).to have_received(:paginate).with("orders", params: { "filter[appointment_start_at_gte]" => start_timestamp })
     expect(client).to have_received(:paginate).with("listings")
-    expect(client).to have_received(:paginate).with("staff")
+    expect(client).to have_received(:paginate).with("company-team-members")
     expect(client).to have_received(:paginate).with("products")
   end
 
