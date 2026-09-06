@@ -6,7 +6,7 @@ media page + revision workflow — read against the schema at version
 
 This file is the tracked version of the plan. Update the task checkboxes and the
 rulings as work lands; the numbered task IDs (T1–T13) are the handles used on the
-`Engineering` board. The three source PDFs are product/design briefs: their prose
+selected engineering board (currently `CRM Development`). The three source PDFs are product/design briefs: their prose
 defines behavior and data requirements, while their screenshots are visual references
 for hierarchy and interaction rather than pixel-perfect implementation instructions.
 
@@ -386,18 +386,19 @@ rough working days for one engineer.
     the board's `client_visible`.
 - [x] **T3 · Task detail: comments, checklists, labels** — 3d — *T2*
   - Task descriptions and comments remain editable, board-authorized, and capable of
-    carrying rich media references; board attachments are tracked separately in B1.
+    carrying sanitized rich media references; comments allow one reply level, and board
+    attachments are tracked separately in B1.
 
 ### Phase B — Put the plan on the board
 
-- [x] **T4 · Seed the Engineering board from these briefs** — 1d — *T3*
+- [x] **T4 · Seed the selected engineering board from these briefs** — 1d — *T3*
   - Idempotent rake task, with `BOARD_SLUG` selecting the board object when an
     organization uses a different current board name. Labels `backend`, `frontend`,
     `schema`, `brief-1/2/3`.
 
 ### Board platform follow-up
 
-- [ ] **B1 · Rich issue content and board attachments** — 5d — *T3*
+- [x] **B1 · Rich issue content and board attachments** — 5d — *T3* — **delivered in the current board release**
   - Allow issue descriptions and comments to contain safe rich text plus attached images,
     video, and supporting files. Store attachment metadata and board/organization ownership
     in the API, upload bytes to a dedicated board-media S3 bucket behind the existing CDN,
@@ -470,8 +471,26 @@ rough working days for one engineer.
     or mobile full-screen composer, staff ownership/queue, and client-safe download/review
     transitions.
 
-**Roughly 62 engineering days for the portal slices, plus the B1 board-content
-follow-up.** Critical path T1 → T2 → T6 → T8 → T12 → T13. T1 has the widest
+### Source brief coverage check
+
+Every requirement from the three source briefs is assigned to at least one board issue;
+the PDFs are the product source, while the task descriptions translate them into
+implementation boundaries.
+
+| Brief area | Board issues |
+| --- | --- |
+| Client dashboard shell, navigation, quick actions, listing cards, search, mobile/accessibility, and AI entry point | T8 |
+| Property facts, client-safe property/production status, listing creation, and account financial summary | T6, T7, T8 |
+| Property-first listings index and durable listing workspace navigation | T9 |
+| Team invitations, membership visibility, and permission scopes | T11 |
+| Central branding, social profiles, reusable assets, previews, replacement, and version history | T10 |
+| Service-level media tracker, delivery states, ETAs, downloads, and request changes | T5, T12 |
+| Contextual revision threads, selected assets, timestamps/locators, attachments, versions, staff queue, and lifecycle | B1, T13 |
+
+No brief requirement is intentionally left without an owner; if a requirement changes,
+update the owning issue and this matrix together.
+
+**Roughly 62 engineering days for the remaining portal slices.** Critical path T1 → T2 → T6 → T8 → T12 → T13. T1 has the widest
 blast radius; T5 carries the most uncertainty, so start the spike early even though
 nothing in Phases D–F waits on it.
 
