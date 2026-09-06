@@ -69,14 +69,14 @@ else
     end
 
     [
-      [ "Confirm access details", "intake", :todo, :high, 0, admin, false ],
-      [ "Capture photo and video", "shoot", :in_progress, :urgent, 0, staff, false ],
-      [ "Edit final gallery", "post_production", :todo, :normal, 1, staff, false ],
-      [ "Client review", "review", :blocked, :normal, 0, admin, true ]
-    ].each do |title, stage, status, priority, position, assignee, customer_visible|
+      [ "Confirm access details", :todo, :high, 0, admin, false ],
+      [ "Capture photo and video", :in_progress, :urgent, 0, staff, false ],
+      [ "Edit final gallery", :todo, :normal, 1, staff, false ],
+      [ "Client review", :blocked, :normal, 0, admin, true ]
+    ].each do |title, status, priority, position, assignee, customer_visible|
       find_or_create.call(listing.workflow_tasks, title:) do |record|
         record.assign_attributes(
-          organization:, stage:, status:, priority:, position:, assignee:, customer_visible:,
+          organization:, status:, priority:, position:, assignee:, customer_visible:,
           due_at: shoot_start + 1.day
         )
       end

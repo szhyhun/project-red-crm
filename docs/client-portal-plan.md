@@ -6,7 +6,7 @@ media page + revision workflow — read against the schema at version
 
 This file is the tracked version of the plan. Update the task checkboxes and the
 rulings as work lands; the numbered task IDs (T1–T13) are the handles used on the
-`CRM Development` board.
+`Engineering` board.
 
 ## Status summary
 
@@ -158,7 +158,7 @@ access, editing the catalog.
 ```jsonc
 // Per record
 GET /api/v1/boards/7
-{ "board": { "id": 7, "name": "CRM Development",
+{ "board": { "id": 7, "name": "Engineering",
              "capabilities": ["view", "update", "manage"] } }
 
 // Per session
@@ -386,7 +386,7 @@ rough working days for one engineer.
 
 ### Phase B — Put the plan on the board
 
-- [ ] **T4 · Seed the CRM Development board from these briefs** — 1d — *T3*
+- [ ] **T4 · Seed the Engineering board from these briefs** — 1d — *T3*
   - Idempotent rake task. Labels `backend`, `frontend`, `schema`, `brief-1/2/3`.
 
 ### Phase C — Research

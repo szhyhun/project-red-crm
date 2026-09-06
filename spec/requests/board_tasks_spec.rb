@@ -26,11 +26,12 @@ RSpec.describe "Board tasks", type: :request do
     expect(response).to have_http_status(:created)
     task = JSON.parse(response.body).fetch("workflow_task")
     expect(task).to include("listing_id" => nil, "board_id" => internal_board.id, "external_ref" => "T2")
+    expect(task).not_to have_key("stage")
   end
 
   it "still requires a listing on a production board" do
     post "/api/v1/boards/#{production_board.id}/workflow_tasks", params: {
-      workflow_task: { title: "Edit hero video", stage: "editing" }
+      workflow_task: { title: "Edit hero video" }
     }
 
     expect(response).to have_http_status(:unprocessable_entity)
@@ -38,8 +39,8 @@ RSpec.describe "Board tasks", type: :request do
   end
 
   it "keeps identical column keys on separate boards apart" do
-    task = internal_board.workflow_tasks.create!(organization:, title: "Ship boards", stage: "build", status: "todo")
-    other = production_board.workflow_tasks.create!(organization:, listing:, title: "Edit", stage: "editing", status: "todo")
+    task = internal_board.workflow_tasks.create!(organization:, title: "Ship boards", status: "todo")
+    other = production_board.workflow_tasks.create!(organization:, listing:, title: "Edit", status: "todo")
 
     get "/api/v1/boards/#{internal_board.id}/workflow_tasks"
 
@@ -52,8 +53,8 @@ RSpec.describe "Board tasks", type: :request do
     restricted_board = organization.boards.create!(name: "Private Production", kind: "internal", visibility: "restricted",
                                                     requires_listing: true, client_visible: false, position: 2)
     WorkflowColumn::DEFAULTS.each { |attributes| restricted_board.workflow_columns.create!(attributes.merge(organization:)) }
-    restricted_board.workflow_tasks.create!(organization:, listing:, title: "Private QA", stage: "review", status: "todo")
-    production_board.workflow_tasks.create!(organization:, listing:, title: "Public QA", stage: "review", status: "todo")
+    restricted_board.workflow_tasks.create!(organization:, listing:, title: "Private QA", status: "todo")
+    production_board.workflow_tasks.create!(organization:, listing:, title: "Public QA", status: "todo")
 
     get "/api/v1/listings/#{listing.id}/workflow_tasks"
 
@@ -84,7 +85,7 @@ RSpec.describe "Board tasks", type: :request do
   # board id, resolving to the organization's default board.
   it "still accepts a task created from a listing" do
     post "/api/v1/listings/#{listing.id}/workflow_tasks", params: {
-      workflow_task: { title: "Colour grade", stage: "editing" }
+      workflow_task: { title: "Colour grade" }
     }
 
     expect(response).to have_http_status(:created)
@@ -107,9 +108,9 @@ RSpec.describe "Board tasks", type: :request do
                                password: "long-enough-password", role: :client_admin)
     ClientMembership.create!(client_account:, user: client_user)
     internal_board.update!(requires_listing: true)
-    internal_board.workflow_tasks.create!(organization:, listing:, title: "Internal", stage: "build",
+    internal_board.workflow_tasks.create!(organization:, listing:, title: "Internal",
                                           status: "todo", customer_visible: true)
-    production_board.workflow_tasks.create!(organization:, listing:, title: "Retouch", stage: "editing",
+    production_board.workflow_tasks.create!(organization:, listing:, title: "Retouch",
                                             status: "todo", customer_visible: true)
 
     sign_out manager

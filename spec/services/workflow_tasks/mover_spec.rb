@@ -6,9 +6,9 @@ RSpec.describe WorkflowTasks::Mover do
     client = ClientAccount.create!(organization:, name: "Avery Agent", kind: :agent)
     listing = Listing.create!(organization:, client_account: client, address_line_1: "111 Oak Bay Avenue")
     board = organization.default_board
-    first = WorkflowTask.create!(organization:, board:, listing:, title: "Shoot", stage: "shoot", status: :todo, position: 0)
-    moved = WorkflowTask.create!(organization:, board:, listing:, title: "Edit", stage: "editing", status: :todo, position: 1)
-    target = WorkflowTask.create!(organization:, board:, listing:, title: "Review", stage: "review", status: :in_progress, position: 0)
+    first = WorkflowTask.create!(organization:, board:, listing:, title: "Shoot", status: :todo, position: 0)
+    moved = WorkflowTask.create!(organization:, board:, listing:, title: "Edit", status: :todo, position: 1)
+    target = WorkflowTask.create!(organization:, board:, listing:, title: "Review", status: :in_progress, position: 0)
 
     described_class.new(task: moved, attributes: { status: "in_progress", position: 0 }).move!
 
@@ -22,7 +22,7 @@ RSpec.describe WorkflowTasks::Mover do
     client = ClientAccount.create!(organization:, name: "Avery Agent", kind: :agent)
     listing = Listing.create!(organization:, client_account: client, address_line_1: "111 Oak Bay Avenue")
     board = organization.default_board
-    task = WorkflowTask.create!(organization:, board:, listing:, title: "Shoot", stage: "shoot", status: :todo, position: 0)
+    task = WorkflowTask.create!(organization:, board:, listing:, title: "Shoot", status: :todo, position: 0)
 
     expect { described_class.new(task:, attributes: { position: "not-a-number" }).move! }
       .to raise_error(ActiveRecord::RecordInvalid, /Position must be an integer/)
@@ -34,7 +34,7 @@ RSpec.describe WorkflowTasks::Mover do
     listing = Listing.create!(organization:, client_account: client, address_line_1: "111 Oak Bay Avenue")
     board = organization.default_board
     approved = board.workflow_columns.create!(organization:, name: "Approved", color: "#3cb371", category: :completed, position: 4)
-    task = WorkflowTask.create!(organization:, board:, listing:, title: "Review", stage: "review", status: :todo, position: 0)
+    task = WorkflowTask.create!(organization:, board:, listing:, title: "Review", status: :todo, position: 0)
 
     described_class.new(task:, attributes: { status: approved.key, position: 0 }).move!
 

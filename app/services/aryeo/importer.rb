@@ -356,7 +356,7 @@ module Aryeo
       task ||= @organization.workflow_tasks.build(listing: listing, metadata: { "aryeo_id" => external })
       task.assign_attributes(listing: listing, title: value(payload, "title", "name").presence || "Aryeo task #{external}",
                              description: value(payload, "description", "notes"), assignee: staff_for(payload),
-                             status: workflow_status(payload), stage: value(payload, "stage", "category").presence || "imported",
+                             status: workflow_status(payload),
                              priority: task_priority(payload), customer_visible: false,
                              due_at: time_value(payload, "due_at", "due_date"), completed_at: time_value(payload, "completed_at"),
                              origin: :aryeo, metadata: task.metadata.merge("aryeo_id" => external))

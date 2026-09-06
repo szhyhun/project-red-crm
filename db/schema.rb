@@ -891,7 +891,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_130000) do
     t.bigint "assignee_id"
     t.string "title", null: false
     t.string "status", default: "todo", null: false
-    t.string "stage", default: "intake", null: false
     t.boolean "customer_visible", default: false, null: false
     t.integer "position", default: 0, null: false
     t.datetime "due_at"
@@ -913,7 +912,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_130000) do
     t.index ["labels"], name: "index_workflow_tasks_on_labels", using: :gin
     t.index ["listing_id"], name: "index_workflow_tasks_on_listing_id"
     t.index ["organization_id", "status", "position"], name: "idx_on_organization_id_status_position_3a4fef4137"
-    t.index ["organization_id", "status", "stage"], name: "index_workflow_tasks_on_organization_id_and_status_and_stage"
     t.index ["organization_id"], name: "index_workflow_tasks_on_organization_id"
     t.index ["origin"], name: "index_workflow_tasks_on_origin"
     t.index ["reporter_id"], name: "index_workflow_tasks_on_reporter_id"

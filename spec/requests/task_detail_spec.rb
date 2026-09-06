@@ -13,7 +13,7 @@ RSpec.describe "Task detail", type: :request do
     end
   end
   let!(:task) do
-    board.workflow_tasks.create!(organization:, title: "Ship task detail", stage: "build", status: "todo")
+    board.workflow_tasks.create!(organization:, title: "Ship task detail", status: "todo")
   end
 
   def staff(email, role)

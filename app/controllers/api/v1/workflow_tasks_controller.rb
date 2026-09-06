@@ -106,14 +106,14 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
 
   def task_params
     params.require(:workflow_task).permit(
-      :title, :description, :status, :stage, :assignee_id, :customer_visible,
+      :title, :description, :status, :assignee_id, :customer_visible,
       :position, :due_at, :priority, :listing_id, :external_ref, labels: []
     )
   end
 
   def serialize(task, detailed: false)
     column = columns_by_board_and_key[[ task.board_id, task.status ]]
-    data = task.slice(:id, :board_id, :listing_id, :title, :description, :status, :stage, :priority,
+    data = task.slice(:id, :board_id, :listing_id, :title, :description, :status, :priority,
                       :customer_visible, :position, :due_at, :completed_at, :labels, :external_ref).merge(
       listing_address: task.listing&.address,
       workflow_column_id: column&.id,

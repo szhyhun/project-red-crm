@@ -14,8 +14,8 @@ property site from that workspace.
 
 ## Tasks and calendar
 
-- `WorkflowTask` tracks title, stage, status, assignee, due date, ordering, and
-  whether the task is customer-visible.
+- `WorkflowTask` belongs to a board and tracks title, status, assignee, due
+  date, ordering, and whether the task is customer-visible.
 - `Appointment` tracks a listing, assigned user, start/end times, notes, and
   status.
 - `ListingAssignment` records staff roles such as photographer, videographer,
@@ -27,8 +27,8 @@ The portal renders an overview, listings table, weekly production calendar, and
 ordered status board. Calendar appointments can be dragged to a new date/time,
 edited, reassigned, cancelled, or deleted. The API prevents overlapping active
 appointments for one staff member. Board cards can be reordered and moved
-between `todo`, `in_progress`, `blocked`, and `done`; details include stage,
-priority, assignee, due date, description, and client visibility.
+between `todo`, `in_progress`, `blocked`, and `done`; details include priority,
+assignee, due date, description, and client visibility.
 
 ## Catalog, orders, and invoices
 

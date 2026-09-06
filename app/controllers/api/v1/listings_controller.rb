@@ -239,7 +239,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
 
   def serialize_task(task)
     column = workflow_columns_by_key[task.status]
-    { id: task.id, title: task.title, status: task.status, stage: task.stage, assignee_id: task.assignee_id,
+    { id: task.id, title: task.title, status: task.status, assignee_id: task.assignee_id,
       customer_visible: task.customer_visible, due_at: task.due_at, workflow_column_id: column&.id,
       column_category: column&.category, assignee: task.assignee && task.assignee.slice(:id, :name, :role) }
   end

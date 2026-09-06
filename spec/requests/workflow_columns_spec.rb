@@ -49,7 +49,7 @@ RSpec.describe "Workflow columns", type: :request do
   it "moves existing tasks to the chosen replacement before deleting a column" do
     custom = board.workflow_columns.create!(organization:, name: "Quality Check", color: "#aec7f7", position: 4)
     replacement = organization.workflow_columns.find_by!(key: "done")
-    task = WorkflowTask.create!(organization:, board:, listing:, title: "Final QA", stage: "review", status: custom.key)
+    task = WorkflowTask.create!(organization:, board:, listing:, title: "Final QA", status: custom.key)
 
     delete "/api/v1/workflow_columns/#{custom.id}", params: { replacement_column_id: replacement.id }
 
