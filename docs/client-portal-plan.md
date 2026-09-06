@@ -363,11 +363,15 @@ product for a different audience with a hard accessibility floor.
 ## Tasks
 
 Vertical slices — schema, API and interface for a single capability. Sizes are
-rough working days for one engineer.
+rough working days for one engineer. The synced board copy is intentionally
+human-first: each issue starts with the user problem and expected behaviour,
+then records the technical proposal, source brief (when applicable), and done
+conditions. `lib/tasks/client_portal_plan.rake` is the canonical source for the
+titles and descriptions written to the Engineering board.
 
 ### Phase A — Authorization and boards
 
-- [~] **T1 · Capability-based authorization, enforced by default** — 4d — *no deps* — **backend done, frontend outstanding**
+- [~] **T1 · Protect every CRM action with server-side authorization** — 4d — *no deps* — **backend done, frontend outstanding**
   - `verify_authorized` / `verify_policy_scoped` as `after_action` in `Api::V1::BaseController`,
     explicit skips on webhook, sign-up and public site endpoints.
   - CI request spec walking every route, asserting each action authorizes or skips.
@@ -378,27 +382,27 @@ rough working days for one engineer.
   - Frontend `useCapabilities()` / `<Can>`; remove every `role === …` check from
     `page.tsx`, `shell.tsx`, `listing-workspace.tsx`; handle 403 by showing the API
     message and refreshing `/auth/me`.
-- [x] **T2 · Multiple boards with per-person and per-group access** — 7d — *T1*
+- [x] **T2 · Create separate boards with clear team access** — 7d — *T1*
   - Schema, backfill, `BoardPolicy` + scope, board-scoped endpoints and
     back-compat routes: done.
   - Switcher, create/edit modal, member manager and groups panel: done.
   - `WorkflowTasks::Mover` repositions within a board; `customer_visible` gated on
     the board's `client_visible`.
-- [x] **T3 · Task detail: comments, checklists, labels** — 3d — *T2*
+- [x] **T3 · Make issue details useful for planning and discussion** — 3d — *T2*
   - Task descriptions and comments remain editable, board-authorized, and capable of
     carrying sanitized rich media references; labels are shared board configuration,
     comments allow one reply level, and board attachments are tracked separately in B1.
 
 ### Phase B — Put the plan on the board
 
-- [x] **T4 · Seed the selected engineering board from these briefs** — 1d — *T3*
+- [x] **T4 · Keep the Engineering board plan synchronized** — 1d — *T3*
   - Idempotent rake task, with `BOARD_SLUG` selecting the board object when an
     organization uses a different current board name. Labels `backend`, `frontend`,
     `schema`, `brief-1/2/3`.
 
 ### Board platform follow-up
 
-- [x] **B1 · Rich issue content and board attachments** — 5d — *T3* — **delivered in the current board release**
+- [x] **B1 · Add rich issue content and attachments** — 5d — *T3* — **delivered in the current board release**
   - Allow issue descriptions and comments to contain safe rich text plus attached images,
     video, and supporting files. Store attachment metadata and board/organization ownership
     in the API, upload bytes to a dedicated board-media S3 bucket behind the existing CDN,
@@ -410,11 +414,11 @@ rough working days for one engineer.
 
 ### Phase C — Research
 
-- [ ] **T5 · Deliverable services design spike** — 3d timeboxed — *no deps* — **blocks Phase G**
+- [ ] **T5 · Define how each property service moves from order to delivery** — 3d timeboxed — *no deps* — **blocks Phase G**
 
 ### Phase D — Portal data
 
-- [ ] **T6 · Portal listing API: property facts, dashboard, listing creation** — 5d — *T1*
+- [ ] **T6 · Give clients a property-first listings API** — 5d — *T1*
   - `property_status`, `property_type`, `price_cents`, `bedrooms`, `bathrooms`,
     `square_feet`, `lot_acres`, `parking`, `year_built`, `mls_number`, and
     `mls_live_date`, with client values such as Coming Soon, For Sale, For Lease,
@@ -424,13 +428,13 @@ rough working days for one engineer.
   - `GET /portal/dashboard`, listing index/detail, `POST /portal/listings`, and retirement
     of `client_portal#show`; new listings begin as draft/booking requests and remain
     property-first rather than order-first.
-- [ ] **T7 · Account financials: credit, benefits, order codes** — 3d — *T1*
+- [ ] **T7 · Show clients what they owe and what benefits they have** — 3d — *T1*
   - Dashboard-visible amount due across unpaid invoices/outstanding orders, credit or bonus
     balance, active/permanent discounts, brokerage or referral code, and expiry when relevant.
 
 ### Phase E — Portal interface
 
-- [ ] **T8 · Portal shell and dashboard home** — 8d — *T6, T7*
+- [ ] **T8 · Build a clear, property-first client home page** — 8d — *T6, T7*
   - Property-first HOME/LISTINGS/CREATE/PROMOTE/ACCOUNT navigation, welcome/CTA, quick
     actions, active listing cards with hero image, search/filter, upcoming shoots, and
     recently delivered work. Keep property marketing status separate from production status.
@@ -439,31 +443,31 @@ rough working days for one engineer.
     spacing, large targets, high contrast, mobile card layouts, and no hidden primary actions.
   - Includes the AI assistant entry point (button + context payload only); no AI answer
     backend is in scope.
-- [ ] **T9 · Listings index and listing workspace shell** — 4d — *T8*
+- [ ] **T9 · Give each property one workspace for all its work** — 4d — *T8*
   - Make each property the durable workspace entry point for Overview, Media, Revisions,
     Property & MLS Details, Property Website, Marketing, Orders/Services, Payments, and
     Activity navigation. Do not make clients choose an internal order number.
 
 ### Phase F — Brand and team
 
-- [ ] **T10 · Account area: branding, social profiles, billing** — 6d — *T8*
+- [ ] **T10 · Let clients manage their brand and social profiles once** — 6d — *T8*
   - Centralize logos, headshots, brokerage/team assets, social links, and public contact
     data so future property websites, marketing materials, promotion, social content, and
     feature sheets reuse the current profile. Show previews, completeness/attention state,
     replace actions, and preserve older assets for historical materials.
-- [ ] **T11 · Client team management and permission scopes** — 3d — *T1, T8*
+- [ ] **T11 · Let clients manage who can access their account** — 3d — *T1, T8*
   - Support invite/list/revoke and simple scopes for full account, listing-only, media,
     billing, and marketing access; prevent revoked or cross-account members from reading
     listings, media, or actions.
 
 ### Phase G — Media and revisions
 
-- [ ] **T12 · Media page: per-service delivery and downloads** — 7d — *T5, T9*
+- [ ] **T12 · Show every ordered service with status and downloads** — 7d — *T5, T9*
   - Keep every ordered service visible in a property workspace: Photography, Video, Vertical
     Reel, Drone, Floor Plan, Matterport/3D Tour, Property Website assets, Files, and future
     service types. Show service-specific status, ETA/delivery time, asset count, View/Watch,
     Download, and Request Changes without exposing queued/rendering/pipeline terminology.
-- [ ] **T13 · Revision threads, versioning and the staff queue** — 8d — *T12*
+- [ ] **T13 · Let clients request and track changes by service** — 8d — *T12*
   - One open contextual thread per Listing + Service, with selected-photo references,
     video timestamps, floor/room/page locators, attachments, messages, ETA, status, and
     version history. Reuse the thread for follow-up messages, prevent duplicate open

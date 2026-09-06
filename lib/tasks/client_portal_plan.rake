@@ -2,176 +2,194 @@ namespace :project_red do
   PLAN_TASKS = [
     {
       external_ref: "T1",
-      title: "Capability-based authorization, enforced by default",
+      title: "Protect every CRM action with server-side authorization",
       description: <<~DESCRIPTION.strip,
-        Scope: Make Pundit authorization the default for every API request. Add `view?`, `create?`, `update?`, `destroy?`, and `manage?` to the shared policy contract, with `show?` and `index?` aliases and serialized capabilities.
+        What the user needs: Every person should see and change only the CRM records they are allowed to use. Staff should be able to work in the boards granted to them, clients should see only their own account and listings, and an unauthorized request should return a clear "not allowed" response. Hiding a button in the interface must never be the thing that protects the data.
 
-        Implementation: enforce `verify_authorized` and `verify_policy_scoped` as API after-actions; convert dashboard and client-portal guards to policies; expose per-record capabilities, the `/auth/me` session capability map, and structured 403 responses containing the resource, action, and message. Add route coverage that requires every action to authorize or declare an explicit skip for public, webhook, sign-up, or authentication endpoints.
+        Technical proposal: Make Pundit the default boundary for every API request. Use a shared `view?`, `create?`, `update?`, `destroy?`, and `manage?` contract, serialize per-record capabilities plus the `/auth/me` capability map, and return structured 403 responses. Convert dashboard and client-portal guards to policies. Add route coverage so every action authorizes or declares an explicit skip for public, webhook, sign-up, or authentication endpoints.
 
-        Done when: the frontend consumes `useCapabilities()` or `<Can>` instead of role comparisons, handles the API's 403 message, and the server remains the authorization boundary.
+        Done when: the frontend uses capabilities instead of role comparisons, displays the API's 403 message, and the server remains the final authorization boundary.
       DESCRIPTION
       labels: %w[backend frontend security],
       status: "in_progress"
     },
     {
       external_ref: "T2",
-      title: "Multiple boards with per-person and per-group access",
+      title: "Create separate boards with clear team access",
       description: <<~DESCRIPTION.strip,
-        Schema: Add first-class `boards`, `user_groups`, group memberships, and polymorphic board memberships. Move workflow-column uniqueness to `(board_id, key)`, add `board_id` to columns and tasks, make `workflow_tasks.listing_id` nullable, and add `requires_listing` and `client_visible` board flags. Backfill a Production board, repoint existing records, and enforce the new foreign keys.
+        What the user needs: An organization should be able to keep separate work queues such as Production and CRM Development. A manager should choose which people or groups can see and manage each board. Tasks and columns from one board must never appear on another board, and clients must not see internal boards.
 
-        API and access: provide board CRUD/archive, member and group management, board-scoped column/task endpoints, and compatible visible-task reads. Organization-visible boards are readable by internal staff; restricted boards require direct or group membership; organization admins retain management access. Client users never reach internal boards, and customer-visible tasks are gated by the board.
+        Technical proposal: Add first-class boards, user groups, and board memberships. Scope columns and tasks by `board_id`, allow listing-free internal tasks, and add board flags for `requires_listing` and `client_visible`. Provide board CRUD/archive, member/group management, and board-scoped column/task endpoints. Keep organization-visible and restricted-board rules explicit in policies and scopes.
 
-        Done when: policies and scopes make board isolation unconditional, task movement stays inside one board, and a user who cannot view a board receives no task data from it.
+        Done when: a user who cannot view a board receives no task data from it, task movement stays inside one board, and managers can administer board membership without changing staff permissions elsewhere.
       DESCRIPTION
       labels: %w[backend frontend schema security],
       completed: true
     },
     {
       external_ref: "T3",
-      title: "Task detail: comments, checklists, labels",
+      title: "Make issue details useful for planning and discussion",
       description: <<~DESCRIPTION.strip,
-        Schema and API: add `task_comments` and `task_checklist_items` with author/completion metadata, ordering, and timestamps. Store labels as board-owned records and assign only labels configured on the task's board through the task update endpoint. Add create/update/delete endpoints for comments and checklist items, all authorized through the parent task's board.
+        What the user needs: Opening an issue should explain what needs to happen without forcing the team to hunt through a separate system. People should be able to read and edit the description, see status/priority/assignee/due date, select labels already configured for the board, keep a checklist, and discuss the work in comments. A comment may have replies, but replies cannot create another reply level.
 
-        Interface: expose a task detail view that can read and edit a multiline description, labels, comments, and checklist. Comments support one level of replies; descriptions and comments use sanitized rich text, while B1 owns the board attachment upload/storage flow. Return only comment/checklist counts in board-card payloads and include full detail collections on the detail endpoint.
+        Technical proposal: Add task comments and checklist items with author/completion metadata, ordering, and timestamps. Store labels as board-owned records and assign only labels from the task's board. Add authorized create/update/delete endpoints, one-level comment replies, sanitized rich text, and a detail endpoint that returns full collections while board cards return counts only. B1 owns the attachment upload/storage flow.
 
-        Done when: every detail mutation is denied outside the board's access rules, checklist completion is attributable, labels are filterable on the board, descriptions/comments are usable for implementation notes, and card payloads stay lightweight.
+        Done when: the issue detail is readable and editable, checklist completion is attributable, labels can be filtered on the board, reply nesting stops at one level, and every mutation follows the board access rules.
       DESCRIPTION
       labels: %w[backend frontend schema],
       completed: true
     },
     {
       external_ref: "T4",
-      title: "Seed the selected engineering board from these briefs",
+      title: "Keep the Engineering board plan synchronized",
       description: <<~DESCRIPTION.strip,
-        Data task: create an idempotent `project_red:sync_plan_tasks` rake task that reads the numbered T1–T13 briefs and the B1 board-content follow-up, then upserts one record per `external_ref` on the selected engineering board. Set the full title, actionable description, position, board-owned area/brief labels, and `listing_id: nil`; rerunning it must update metadata without duplicating issues or changing manually selected positions.
+        What the user needs: The Engineering board should contain one understandable issue for every agreed plan item, with useful titles, matching labels, and the correct workflow status. Running the plan sync again should refresh stale wording without creating duplicate issues or unexpectedly moving work that a person has already arranged.
 
-        Workflow: map T2, T3, T4, and B1 to the board's completed column because those slices are already delivered. Keep T1 in progress while its frontend capability migration remains, and leave T5–T13 in their current or default open status. Fail clearly if the board has no workflow columns or completed column.
+        Technical proposal: Make `project_red:sync_plan_tasks` idempotently upsert T1–T13 and B1 by `external_ref` on the selected board. Sync title, human-first description, labels, and initial status; preserve existing positions and deliberate status changes on reruns. Fail clearly when the target board has no workflow columns or completed column.
 
-        Done when: the sync is safe for every organization with an Engineering board, can be rerun after plan edits, and the board contains all portal issues plus the board-content follow-up with the plan's descriptions and labels.
+        Done when: the board has exactly one issue for each plan item, the issue copy stays aligned with the source plan, and rerunning the sync is safe for every organization with an Engineering board.
       DESCRIPTION
       labels: %w[backend schema data brief-1 brief-2 brief-3],
       completed: true
     },
     {
       external_ref: "B1",
-      title: "Rich issue content and board attachments",
+      title: "Add rich issue content and attachments",
       description: <<~DESCRIPTION.strip,
-        Product need: make board issues useful as implementation briefs, not one-line tickets. Allow descriptions and comments to contain safe rich text plus attached images, videos, and supporting files so screenshots, reference photos, screen recordings, replacement logos, and documents can stay with the discussion.
+        What the user needs: An issue should be able to carry the material needed to understand and implement it. People should be able to format the description or comment, paste or drag in screenshots, photos, screen recordings, videos, and documents, preview what was attached, and remove or download an attachment without leaving the issue.
 
-        Storage/API: add attachment metadata owned by the organization, board, task, and comment; upload bytes to a dedicated board-media S3 bucket behind the existing CDN/storage boundary; return authorized preview and download URLs instead of raw bucket paths. Support image previews and video metadata such as content type, duration, and poster/thumbnail when available. Validate size, MIME type, filename, and upload completion, and make replacement/removal auditable.
+        Technical proposal: Store attachment metadata with organization, board, task, and comment ownership. Upload bytes to a dedicated private board-media S3 bucket behind the existing CDN/storage boundary and return authorized preview/download URLs, never raw bucket paths. Validate MIME type, size, filename, and upload completion; retain video metadata such as duration and poster/thumbnail where available. Provide upload progress, retry, preview, remove, and accessible caption/alt-text controls.
 
-        Authorization/UI: every read, upload, replace, and delete must pass the parent board/task/comment policy, with no cross-organization references. Add a composer with paste/select, upload progress, retry, preview, remove, and accessible alt text/caption controls. Done when unauthorized users cannot infer or fetch an attachment, and request specs cover board isolation and failed uploads.
+        Done when: issue descriptions and comments can carry safe rich content and media, failed uploads can be retried, and unauthorized users cannot infer or fetch an attachment. Request specs must cover board isolation and failed uploads.
       DESCRIPTION
       labels: %w[backend frontend schema security media],
       completed: true
     },
     {
       external_ref: "T5",
-      title: "Deliverable services design spike",
+      title: "Define how each property service moves from order to delivery",
       description: <<~DESCRIPTION.strip,
-        Research spike: decide whether a deliverable is its own record or an `order_item` state, how cancelled and off-order services (for example a reshoot or goodwill re-edit) enter the workflow, and whether service types are fixed or catalog-configurable. Define the production state and ETA vocabulary that the portal can safely expose without showing queued, rendering, worker, or pipeline terminology.
+        What the user needs: Before the client-facing Media page is built, the team needs one clear answer to a simple question: for a property, how do we show every ordered service - photography, video, drone, floor plan, 3D tour, website assets, and files - from the first appointment through delivery? The client should see honest stages and useful ETAs, including reshoots or extra work, without seeing internal pipeline jargon.
 
-        Schema/API output: evaluate a `listing_services` model linking an organization and listing to an optional order item, with client-facing name, service type, production state, ETA, delivered timestamp, asset count, position, and metadata. Cover Photography, Video, Vertical Reel, Drone, Floor Plan, Matterport/3D Tour, Property Website assets, Files, and future services. Document how Aryeo products map into it and how `media_assets.category` can migrate without breaking DeliveryArchive or the public property site.
+        Technical proposal: Time-box a decision between a dedicated `listing_services` record and an `order_item` state. Define how cancelled, reshoot, goodwill, and off-order services enter the workflow; whether service types are fixed or catalog-configurable; and a closed client-facing vocabulary for state and ETA. Evaluate a `listing_services` model with listing/order-item link, service type, production state, ETA, delivered timestamp, asset count, position, and metadata. Document Aryeo mapping and a safe migration from generic `media_assets.category` without breaking DeliveryArchive or the public property site.
 
-        Done when: the spike produces a written decision, migration/API implications, client-safe status mapping, ETA rules, and sized follow-up tasks for Phase G; do not start the media implementation until those decisions are recorded.
+        Product reference: CRM Client Portal - Media Page & Revision Workflow Design Brief. It requires every ordered service to remain visible, with statuses such as Upcoming Shoot, Editing, Ready for Review, and Delivered, and it explicitly rejects queued/rendering/pipeline language and artificial percentages.
+
+        Done when: the written decision covers the data model, migration/API implications, status mapping, ETA rules, Aryeo mapping, and sized follow-up tasks for the Media and Revision work.
       DESCRIPTION
       labels: %w[backend schema research brief-2]
     },
     {
       external_ref: "T6",
-      title: "Portal listing API: property facts, dashboard, listing creation",
+      title: "Give clients a property-first listings API",
       description: <<~DESCRIPTION.strip,
-        Schema/API: add the client-facing property facts `property_status`, `property_type`, `price_cents`, `bedrooms`, `bathrooms`, `square_feet`, `lot_acres`, `parking`, `year_built`, `mls_number`, and `mls_live_date`. Support the property vocabulary Coming Soon, For Sale, For Lease, Pending Sale, Pending Lease, For Rent, Sold, and List Off Market, with a property-created listing starting as a draft or booking request according to the approved lifecycle.
+        What the user needs: A client should be able to create a property and later find it by address, then see the facts that matter to a real-estate listing: status, price, MLS information, beds, baths, square footage, lot, parking, year built, and property type. Property marketing status such as For Sale must remain separate from the production status of the media work.
 
-        Presentation boundary: derive a separate closed production lifecycle from appointments, delivery, and internal service state. Serialize only client language such as Coming Soon, Shoot Scheduled, Shoot Completed, In Progress, Editing, Ready for Review, Partially Delivered, Delivered/Complete, Action Required, and Live; internal workflow-column names and raw `listing.status` values must never leak. Retire `client_portal#show` after the new endpoint is equivalent and policy-authorized.
+        Technical proposal: Add the client-facing property fields `property_status`, `property_type`, `price_cents`, `bedrooms`, `bathrooms`, `square_feet`, `lot_acres`, `parking`, `year_built`, `mls_number`, and `mls_live_date`. Support Coming Soon, For Sale, For Lease, Pending Sale, Pending Lease, For Rent, Sold, and List Off Market. Add authorized listing index/detail/create endpoints. Derive a separate closed production lifecycle from appointments, delivery, and service state; never serialize internal board column names or raw `listing.status` values to clients. Retire `client_portal#show` after the replacement is equivalent and policy-authorized.
 
-        Done when: API request and serializer specs cover authorization, creation, dashboard data, property/production status separation, and the no-internal-status guarantee, with capabilities included in the response.
+        Product reference: CRM Client Portal - First Dashboard Page Design Brief. It says the product must be property/listing first rather than order first, and that property marketing status and production status should be shown separately.
+
+        Done when: a client can create and retrieve a listing by property, API specs cover authorization and the dashboard data, and no internal status string leaks through the client serializer.
       DESCRIPTION
       labels: %w[backend api portal schema brief-3]
     },
     {
       external_ref: "T7",
-      title: "Account financials: credit, benefits, order codes",
+      title: "Show clients what they owe and what benefits they have",
       description: <<~DESCRIPTION.strip,
-        Schema: add append-only `credit_transactions` with signed `amount_cents`, kind, reason, invoice linkage, and actor; calculate balance as the sum rather than storing a mutable balance column. Add `account_benefits` as the client-facing display beside pricing plans, with a single client account or customer team owner, rate basis points, order code, permanence, expiry, and active state.
+        What the user needs: At a glance, a client should know how much they owe, whether they have account or bonus credit, what discount or partner benefit is active, and which brokerage/order code they can use. A zero balance should be reassuring and explicit, and temporary benefits should show when they expire. The client should not have to search through billing pages for this context.
 
-        API and dashboard: expose current amount due across unpaid invoices/outstanding orders, credit or bonus balance, active/permanent discount, brokerage or referral/order code, and expiry when relevant. Apply credits and benefits server-side to commerce flows while leaving `pricing_plans` authoritative for order pricing; reject expired, inactive, cross-account, or unauthorized applications.
+        Technical proposal: Add append-only `credit_transactions` with signed integer cents and audit context, and calculate the balance from the ledger. Add `account_benefits` for discount rate, order/referral code, permanence, expiry, active state, and client-account/customer-team ownership. Expose amount due across unpaid invoices/outstanding orders, credit, active benefits, code, and expiry in the dashboard. Apply credits and benefits server-side while keeping `pricing_plans` authoritative for order pricing; reject expired, inactive, cross-account, or unauthorized use.
 
-        Done when: financial mutations are auditable and append-only, money remains integer cents, access is covered by negative policy specs, and the first dashboard can answer what the client owes, has in credit, receives as a discount, and can use as a brokerage code without opening a deep settings page.
+        Product reference: CRM Client Portal - First Dashboard Page Design Brief. It explicitly asks for Amount Due, Account Credit/Bonus Credit, active or permanent discount, brokerage/order code, and expiry near the first dashboard.
+
+        Done when: financial mutations are auditable, money stays integer cents, negative policy specs cover account isolation, and the dashboard can answer all four questions without a deep settings click.
       DESCRIPTION
       labels: %w[backend api billing brief-3]
     },
     {
       external_ref: "T8",
-      title: "Portal shell and dashboard home",
+      title: "Build a clear, property-first client home page",
       description: <<~DESCRIPTION.strip,
-        Frontend: create an isolated `app/(portal)/` route group with its own layout and stylesheet rather than extending the staff SPA's role logic. Use property-first HOME/LISTINGS/CREATE/PROMOTE/ACCOUNT navigation, minimal Help/AI/Notifications/Profile utilities, a compact welcome, and a prominent `Create New Listing` CTA. Meet the accessibility floor: 17px minimum body text, 44px targets, AA contrast in both themes, and no hover-only or icon-only primary actions. The dashboard brief's hierarchy is a visual reference, not a pixel-perfect mandate.
+        What the user needs: Within a few seconds of signing in, the client should understand which properties they are working on, what is ready, what needs attention, what is coming up, and where to start a new listing. The page should feel calm and property-focused rather than like a dense software dashboard. Home, Listings, Create, Promote, and Account should be obvious, and important actions should remain easy on a phone.
 
-        Dashboard: build account summary (amount due, credit/bonus, discount/benefit, brokerage code), quick actions, active listing cards with prominent property imagery, address, property status, separate production status, media readiness, action-needed copy, and `Open Listing`. Add search by address/customer/order reference, simple status/date filters, upcoming shoots, and secondary recently delivered cards using one reusable `ListingCard` at the required densities. Add one `ServiceStatus` component that owns the closed client lifecycle and color mapping; raw internal status strings rendered outside it are a bug.
+        Technical proposal: Build an isolated `app/(portal)/` route group with its own layout and stylesheet. Add compact welcome and account-summary areas, prominent `Create New Listing`, property-first navigation, quick actions, active listing cards with hero imagery, address, marketing status, separate production status, media readiness, attention copy, and `Open Listing`. Add address/customer/order search, simple status/date filters, upcoming shoots, recently delivered cards, and reusable `ListingCard` and `ServiceStatus` components. Include Help/AI/Notifications/Profile utilities and send only the current account/listing context to the AI entry point; no answer backend is in scope. Use 17px body text, 44px targets, AA contrast, clear focus states, responsive card layouts, and no hover-only primary actions.
 
-        Integration: consume the T6/T7 portal APIs and capabilities. Ship the AI assistant button plus a context payload for the current account/listing only; no AI answering backend is part of this task. Done when keyboard, responsive, loading, empty, forbidden, mobile two-column quick-action, vertical-card, and full-width CTA states are covered without turning the page into a dense SaaS table.
+        Product reference: CRM Client Portal - First Dashboard Page Design Brief. It requires a property-first overview, visible account summary, quick actions, active listings, upcoming shoots, recently delivered work, simple navigation, and a mobile layout that is intentionally designed rather than merely shrunk.
+
+        Done when: keyboard, loading, empty, forbidden, responsive, mobile quick-action, vertical-card, and full-width CTA states work without turning the page into a dense SaaS table.
       DESCRIPTION
       labels: %w[frontend portal api brief-3]
     },
     {
       external_ref: "T9",
-      title: "Listings index and listing workspace shell",
+      title: "Give each property one workspace for all its work",
       description: <<~DESCRIPTION.strip,
-        Frontend/API slice: build the portal listings index and a property-first listing workspace that gives a client one place to understand a property. Include the hero image/address, property facts and MLS context, customer/account context, production activity, appointments/shoot details, media, delivery, and the navigation seams for Overview, Media, Revisions, Property & MLS Details, Property Website, Marketing, Orders/Services, Payments, and Activity. The client should enter `123 Main Street`, not choose an internal order number. The listings-index screenshot from the dashboard brief is attached as a hierarchy and density reference.
+        What the user needs: Clicking a property should open one durable workspace for that property. From there the client should be able to find the address and facts, understand appointments and production progress, and reach media, revisions, property details, website, marketing, orders/services, payments, and activity without choosing an internal order number or losing the property context.
 
-        Reuse the dashboard's `ListingCard` and `ServiceStatus` components so cards and workspace headers use the same client vocabulary. Keep property marketing status separate from production status, surface action-required states without aggressive error styling, and fetch only listings the current account and team scope may view; do not expose internal board columns or unrelated organization records.
+        Technical proposal: Build the portal listings index and stable property workspace route. Include hero image/address, property and MLS facts, customer/account context, production activity, appointments/shoot details, media/delivery, and navigation seams for Overview, Media, Revisions, Property & MLS Details, Property Website, Marketing, Orders/Services, Payments, and Activity. Reuse `ListingCard` and `ServiceStatus`; keep marketing and production status separate; fetch only listings allowed by the current account/team scope.
 
-        Done when: the index links to a stable listing workspace, the workspace can be extended by media and revision slices, API/policy specs cover cross-account access, and the UI works at all supported card densities and mobile layouts.
+        Product reference: CRM Client Portal - First Dashboard Page Design Brief. It says the client should think "123 Main Street," not "Order #18482," and that every property should become its own workspace. The supplied listings-index screenshot is a hierarchy and density reference.
+
+        Done when: the index opens a stable property workspace, media and revision slices have clear seams, cross-account access is denied, and the index/workspace work at supported card densities and mobile widths.
       DESCRIPTION
       labels: %w[frontend backend portal brief-3]
     },
     {
       external_ref: "T10",
-      title: "Account area: branding, social profiles, billing",
+      title: "Let clients manage their brand and social profiles once",
       description: <<~DESCRIPTION.strip,
-        Schema: add one `brand_profile` per client account for display name, title, brokerage, office, phone, email, websites, bio, and social links for Instagram, Facebook, LinkedIn, YouTube, TikTok, X/Twitter, and future platforms. Add versioned `brand_assets` linked to media assets with slots such as primary logo, alternate logo, brokerage logo, headshot, and team logo; enforce one current asset per profile and slot with a partial unique index. The team, branding, and social-profiles brief is the source of these requirements.
+        What the user needs: A client should upload a logo, headshot, brokerage/team logo, public contact details, and social links once. They should see what is active, preview it, replace it without deleting everything first, and know that future property websites, marketing materials, social content, and feature sheets will use the current information. Older assets should remain available for work that was already produced.
 
-        API/UI: build authorized account pages plus a compact dashboard Brand Profile card with preview, brokerage name, completeness/attention state, and `Manage Branding`. Replacing an asset creates a new version and flips `current`; it must not destroy the previous material. Current profile data must be reusable by future property websites, marketing materials, promotions, social content, and feature sheets, while older versions remain associated with historical output. Keep organization/admin and client-account boundaries explicit, and keep pricing-plan authority separate from display settings.
+        Technical proposal: Add one `brand_profile` per client account for name, title, brokerage, office, phone, email, websites, bio, and Instagram, Facebook, LinkedIn, YouTube, TikTok, X/Twitter, and future social links. Add versioned `brand_assets` linked to media assets for primary/alternate/brokerage/team logos and headshot, with one current asset per profile/slot enforced by a partial unique index. Build authorized account pages and a compact dashboard Brand Profile card with preview, brokerage name, completeness/attention state, and `Manage Branding`. Replacing an asset creates a new current version without destroying history; future outputs read current profile data while historical outputs retain their old references.
 
-        Done when: clients can answer what logo/headshot/social data is active and whether future materials will use it, old versions remain recoverable, current-slot conflicts are impossible at the database level, and policy specs prevent another account from reading or changing branding or billing data.
+        Product reference: Additional Dashboard Requirements - Team Settings, Branding & Social Profiles. It requires centralized client assets, previews, Replace/Update actions, social links, public contact information, a Brand Profile card, and historical versions that do not change when the current profile is updated.
+
+        Done when: clients can answer what brand data is active and whether future materials will use it, old versions remain recoverable, current-slot conflicts are impossible, and another account cannot read or change the profile.
       DESCRIPTION
       labels: %w[frontend backend portal brief-1 brief-3]
     },
     {
       external_ref: "T11",
-      title: "Client team management and permission scopes",
+      title: "Let clients manage who can access their account",
       description: <<~DESCRIPTION.strip,
-        Access model: add client-team invitations and membership records with simple permission scopes for full account, listing-only, media, billing, and marketing access. A member may be limited to selected listings or granted account-wide access according to the approved scope vocabulary; invitation acceptance must not cross organization or client-account boundaries. These scopes and Team Settings behavior come from the team, branding, and social-profiles brief.
+        What the user needs: An account owner should be able to see who has access, invite an assistant or co-agent, remove access, and choose a simple scope such as full account, listings only, media, billing, or marketing. A person with limited access should see only the listings and actions granted to them.
 
-        API/UI: provide Team Settings listing, `Add Team Member`, invite, revoke, and scope-management endpoints plus an account settings panel that clearly shows who has access. Serialize capabilities for the current user, authorize every mutation on the server, and keep staff board permissions separate from client-team permissions.
+        Technical proposal: Add client-team invitations and membership records with account-wide or selected-listing scopes. Provide Team Settings listing, `Add Team Member`, invite, revoke, and scope-management endpoints. Serialize capabilities for the current user, authorize every mutation server-side, prevent cross-organization/client-account acceptance, and keep client-team permissions separate from staff board permissions.
 
-        Done when: a client manager can answer who has account access and administer their own team, a scoped member sees only permitted listings/media/actions, expired or revoked invitations cannot be used, and negative policy/request specs prove cross-account access is denied.
+        Product reference: Additional Dashboard Requirements - Team Settings, Branding & Social Profiles. It asks for a simple Team Settings area, visible members, an obvious `+ Add Team Member` action, and future-friendly full/listing/media/billing/marketing permission scopes.
+
+        Done when: an account manager can administer their team, a scoped member sees only permitted listings/media/actions, expired or revoked invitations cannot be used, and negative policy/request specs prove cross-account access is denied.
       DESCRIPTION
       labels: %w[backend frontend security brief-1]
     },
     {
       external_ref: "T12",
-      title: "Media page: per-service delivery and downloads",
+      title: "Show every ordered service with status and downloads",
       description: <<~DESCRIPTION.strip,
-        Data/API: implement the `listing_services` and media-delivery boundary decided in T5. Keep every ordered service visible in the property workspace, including Photography, Video, Vertical Reel, Drone, Floor Plan, Matterport/3D Tour, Property Website assets, and Files. Each service must carry a client-safe type, production state, ETA when known, delivered timestamp, asset count, and links to its delivered `media_assets`; do not overload the old generic category.
+        What the user needs: Inside a property, the client should see every service they ordered, even if it is not finished yet. Each card should answer what the service is, whether it is scheduled/in progress/ready/delivered, when it should be ready, how many assets exist, and what the client can do. Ready media should be easy to view or download, and the client should have a clear Request Changes action without being told that a worker or pipeline is running.
 
-        Frontend: build a property header with hero image/address/overall status and a `3 of 5 services ready` summary, followed by a production and delivery tracker and large service cards. Cards show service name, count, closed client status, ETA or delivery time, View/Watch/Download, and Request Changes. Add Download Ready Media/Download All Available without pretending that unfinished services are ready. Do not expose queued/rendering/worker/pipeline statuses or artificial percentages. The media-page screenshot from the media and revision brief is attached as a hierarchy reference.
+        Technical proposal: Implement the `listing_services` and media-delivery boundary decided in T5. Keep Photography, Video, Vertical Reel, Drone, Floor Plan, Matterport/3D Tour, Property Website assets, Files, and future services visible. Store client-safe type, production state, ETA, delivered timestamp, asset count, position, and links to delivered `media_assets`. Build a property header with hero/address/overall status and a `3 of 5 services ready` summary, a tracker, and reusable service cards with View/Watch/Download, Download Ready Media/Download All Available, and Request Changes. Never expose queued/rendering/worker/pipeline terms or invented percentages.
 
-        Done when: a client cannot see another account's assets or staff-only media, each service's delivery state is traceable to its assets, downloads use the existing storage/CDN boundary, and storage/migration behavior plus client-safe status serialization is covered by integration specs.
+        Product reference: CRM Client Portal - Media Page & Revision Workflow Design Brief. It requires property-first service cards, client-friendly statuses and ETAs, every ordered service visible during production, ready-media downloads, and no artificial progress percentages. The supplied media-page screenshot is a hierarchy reference.
+
+        Done when: a client cannot see another account's assets or staff-only media, every service state is traceable to its assets, downloads use the existing storage/CDN boundary, and client-safe serialization is covered by integration specs.
       DESCRIPTION
       labels: %w[backend frontend media brief-2]
     },
     {
       external_ref: "T13",
-      title: "Revision threads, versioning and the staff queue",
+      title: "Let clients request and track changes by service",
       description: <<~DESCRIPTION.strip,
-        Schema: add `revision_requests` with listing/service, opener, status, kind, ETA, cycle, and opened/closed timestamps; add `revision_messages` with visibility and attachments; add `revision_references` for selected media assets, video timecodes, floor/room/page locators, and notes. Enforce one open request per listing service with a partial unique index while allowing completed history. The media-page and revision-workflow brief is the source for this service-level conversation model.
+        What the user needs: A client should click Request Changes on the service that needs work and get a conversation that already knows the property and service. They should be able to select several photos, point to a video timestamp, identify a floor/room/page, or attach a screenshot/document, then send one clear request. Staff should be able to reply, ask questions, upload an updated version, and show whether the request is being reviewed or is ready for client review.
 
-        Workflow/API: let clients submit a service-level revision or pre-delivery message from a side panel/full-screen mobile composer without retyping the property or service. For Photography, support multi-select images with thumbnails and one shared request; for Video/Vertical Reel, timestamped comments; for Floor Plans, floor/room/page references; and for other services, the same contextual thread with precise asset references. Allow screenshots, reference photos, replacement logos, documents, and music references, and keep follow-up messages in the same thread.
+        Technical proposal: Add `revision_requests` for listing/service, opener, status, kind, ETA, cycle, and timestamps; `revision_messages` for visibility and attachments; and `revision_references` for selected assets, video timecodes, floor/room/page locators, and notes. Enforce one open request per listing/service while retaining completed history. Provide a contextual desktop side panel and mobile full-screen composer. Use multi-select thumbnails for Photography, timestamps for Video/Vertical Reel, locators for Floor Plans, and the same service context for other media. Keep follow-up messages in the same thread.
 
-        Lifecycle/UI: show Submitted, Reviewing, Revision in Progress, Updated Version Ready, Client Review, or Completed on the service card. Preserve the originally delivered version, let staff reply/ask questions/upload an updated version, prevent duplicate requests by changing Request Changes to Open Request/Continue Conversation, and let a later cycle reopen or create history after completion. Give staff ownership, queue, ETA, and audit history.
+        Lifecycle/UI: show Submitted, Reviewing, Revision in Progress, Updated Version Ready, Client Review, or Completed on the service card. Preserve the originally delivered version, prevent duplicate open requests by changing Request Changes to Open Request/Continue Conversation, and let a later cycle reopen or create history after completion. Give staff ownership, queue, ETA, and audit history.
 
-        Done when: open-request state is truthful, revision status participates in the delivery lifecycle, client/staff visibility is policy-scoped, asset versions remain inspectable, and request/message/reference mutations have negative authorization coverage.
+        Product reference: CRM Client Portal - Media Page & Revision Workflow Design Brief. It specifies one service-level thread per listing/service with asset-level references, attachments, status on the service card, version history, and no ticket per individual message or photo.
+
+        Done when: the open-request state is truthful, revision status participates in delivery, client/staff visibility is policy-scoped, versions remain inspectable, and request/message/reference mutations have negative authorization coverage.
       DESCRIPTION
       labels: %w[backend frontend media workflow brief-2]
     }
