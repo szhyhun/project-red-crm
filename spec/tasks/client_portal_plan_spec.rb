@@ -1,7 +1,7 @@
 require "rake"
 require "rails_helper"
 
-load Rails.root.join("lib/tasks/client_portal_plan.rake").to_s unless Rake::Task.task_defined?("project_red:sync_plan_tasks")
+Rails.application.load_tasks unless Rake::Task.task_defined?("environment")
 
 RSpec.describe "project_red:sync_plan_tasks", type: :task do
   let!(:organization) { Organization.create!(name: "Plan Agency", slug: "plan-task-sync") }
