@@ -81,6 +81,38 @@ RSpec.describe "Board tasks", type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
+  it "does not assign a restricted-board task to a user without board access" do
+    restricted_board = organization.boards.create!(name: "Private Engineering", kind: "internal", visibility: "restricted",
+                                                    requires_listing: false, client_visible: false, position: 2).tap do |board|
+      WorkflowColumn::DEFAULTS.each { |attributes| board.workflow_columns.create!(attributes.merge(organization:)) }
+      board.board_memberships.create!(member: manager, access: "manager")
+    end
+    outsider = User.create!(organization:, name: "Outside", email: "outside-assignee@example.test",
+                            password: "long-enough-password", role: :production_staff)
+
+    post "/api/v1/boards/#{restricted_board.id}/workflow_tasks", params: {
+      workflow_task: { title: "Keep Taylor off engineering work", assignee_id: outsider.id }
+    }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body).dig("details", "assignee")).to include("must have access to this board")
+  end
+
+  it "allows a restricted-board task to be assigned to a granted user" do
+    restricted_board = organization.boards.create!(name: "Private Engineering", kind: "internal", visibility: "restricted",
+                                                    requires_listing: false, client_visible: false, position: 2).tap do |board|
+      WorkflowColumn::DEFAULTS.each { |attributes| board.workflow_columns.create!(attributes.merge(organization:)) }
+      board.board_memberships.create!(member: manager, access: "manager")
+    end
+
+    post "/api/v1/boards/#{restricted_board.id}/workflow_tasks", params: {
+      workflow_task: { title: "Assign engineering work", assignee_id: manager.id }
+    }
+
+    expect(response).to have_http_status(:created)
+    expect(JSON.parse(response.body).dig("workflow_task", "assignee_id")).to eq(manager.id)
+  end
+
   # Creating from a listing predates boards. It has to keep working without a
   # board id, resolving to the organization's default board.
   it "still accepts a task created from a listing" do

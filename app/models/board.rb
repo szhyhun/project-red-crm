@@ -24,6 +24,14 @@ class Board < ApplicationRecord
     board_memberships.where(member_type:).pluck(:member_id)
   end
 
+  def assignable_user?(user)
+    return false unless user&.internal? && user.organization_id == organization_id
+    return true if visible_to_organization?
+
+    board_memberships.where(member_type: "User", member_id: user.id).exists? ||
+      board_memberships.where(member_type: "UserGroup", member_id: user.user_group_ids).exists?
+  end
+
   private
 
   def assign_slug

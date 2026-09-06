@@ -12,6 +12,7 @@ class WorkflowTask < ApplicationRecord
   validates :title, :status, presence: true
   validate :status_matches_board_column
   validate :listing_present_when_board_requires_one
+  validate :assignee_can_work_on_board
 
   private
 
@@ -28,5 +29,11 @@ class WorkflowTask < ApplicationRecord
     return if board.blank? || !board.requires_listing? || listing_id.present?
 
     errors.add(:listing, "is required on this board")
+  end
+
+  def assignee_can_work_on_board
+    return if assignee.blank? || board.blank? || board.assignable_user?(assignee)
+
+    errors.add(:assignee, "must have access to this board")
   end
 end
