@@ -18,6 +18,15 @@ unrun, say that plainly rather than implying it passed.
 
 `rubocop` is cheap; run it freely.
 
+### Running specs locally
+
+The RSpec suite uses the local PostgreSQL test database on `localhost:5432`.
+In a sandboxed Codex session, grant the command local-service/elevated access
+before the first invocation of `bundle exec rspec`; do not run an unprivileged
+attempt first because the sandbox will fail during Rails boot with
+`Operation not permitted` before any examples load. Run the suite once after
+the feature is complete and report the exact example/failure count.
+
 ## CI and deployment monitoring
 
 It is okay to inspect and watch the GitHub Actions run for this repository,
