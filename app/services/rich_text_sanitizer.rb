@@ -1,4 +1,5 @@
 require "cgi"
+require "loofah"
 
 # Task content is rendered back into the portal, so the server owns the allow
 # list even when the browser already sanitizes its preview. This keeps old
@@ -6,6 +7,11 @@ require "cgi"
 class RichTextSanitizer
   ALLOWED_TAGS = %w[p div br strong b em i u s h2 h3 blockquote pre code ul ol li a].freeze
   ALLOWED_ATTRIBUTES = %w[href target rel].freeze
+  REMOVED_TAGS = %w[script style iframe object embed template].freeze
+
+  REMOVE_UNSAFE_CONTENT = Loofah::Scrubber.new do |node|
+    node.remove if node.element? && REMOVED_TAGS.include?(node.name)
+  end
 
   class << self
     def sanitize(html)
@@ -14,7 +20,8 @@ class RichTextSanitizer
       ActionController::Base.helpers.sanitize(
         html.to_s,
         tags: ALLOWED_TAGS,
-        attributes: ALLOWED_ATTRIBUTES
+        attributes: ALLOWED_ATTRIBUTES,
+        scrubber: REMOVE_UNSAFE_CONTENT
       ).to_str
     end
 
