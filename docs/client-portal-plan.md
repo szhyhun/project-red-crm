@@ -6,7 +6,9 @@ media page + revision workflow — read against the schema at version
 
 This file is the tracked version of the plan. Update the task checkboxes and the
 rulings as work lands; the numbered task IDs (T1–T13) are the handles used on the
-`Engineering` board.
+`Engineering` board. The three source PDFs are product/design briefs: their prose
+defines behavior and data requirements, while their screenshots are visual references
+for hierarchy and interaction rather than pixel-perfect implementation instructions.
 
 ## Status summary
 
@@ -383,11 +385,25 @@ rough working days for one engineer.
   - `WorkflowTasks::Mover` repositions within a board; `customer_visible` gated on
     the board's `client_visible`.
 - [x] **T3 · Task detail: comments, checklists, labels** — 3d — *T2*
+  - Task descriptions and comments remain editable, board-authorized, and capable of
+    carrying rich media references; board attachments are tracked separately in B1.
 
 ### Phase B — Put the plan on the board
 
 - [x] **T4 · Seed the Engineering board from these briefs** — 1d — *T3*
   - Idempotent rake task. Labels `backend`, `frontend`, `schema`, `brief-1/2/3`.
+
+### Board platform follow-up
+
+- [ ] **B1 · Rich issue content and board attachments** — 5d — *T3*
+  - Allow issue descriptions and comments to contain safe rich text plus attached images,
+    video, and supporting files. Store attachment metadata and board/organization ownership
+    in the API, upload bytes to a dedicated board-media S3 bucket behind the existing CDN,
+    and return authorized preview/download URLs rather than raw bucket paths.
+  - Enforce board access for every attachment read, upload, replacement, and deletion;
+    validate content type, size, and filename, and prevent cross-organization references.
+    Add request specs for unauthorized access and a UI composer that supports previews,
+    progress, retry, remove, and video poster/duration metadata where available.
 
 ### Phase C — Research
 
@@ -396,32 +412,66 @@ rough working days for one engineer.
 ### Phase D — Portal data
 
 - [ ] **T6 · Portal listing API: property facts, dashboard, listing creation** — 5d — *T1*
-  - `property_status`, `property_type`, `price_cents`, `lot_acres`, `parking`,
-    `year_built`, `mls_live_date`.
+  - `property_status`, `property_type`, `price_cents`, `bedrooms`, `bathrooms`,
+    `square_feet`, `lot_acres`, `parking`, `year_built`, `mls_number`, and
+    `mls_live_date`, with client values such as Coming Soon, For Sale, For Lease,
+    Pending Sale, Pending Lease, For Rent, Sold, and List Off Market.
   - Closed client lifecycle enum + presenter boundary, derived from appointments
     and `delivered_at` for now.
-  - `GET /portal/dashboard`, `POST /portal/listings`, retire `client_portal#show`.
+  - `GET /portal/dashboard`, listing index/detail, `POST /portal/listings`, and retirement
+    of `client_portal#show`; new listings begin as draft/booking requests and remain
+    property-first rather than order-first.
 - [ ] **T7 · Account financials: credit, benefits, order codes** — 3d — *T1*
+  - Dashboard-visible amount due across unpaid invoices/outstanding orders, credit or bonus
+    balance, active/permanent discounts, brokerage or referral code, and expiry when relevant.
 
 ### Phase E — Portal interface
 
 - [ ] **T8 · Portal shell and dashboard home** — 8d — *T6, T7*
-  - Includes the AI assistant entry point (button + context payload only).
+  - Property-first HOME/LISTINGS/CREATE/PROMOTE/ACCOUNT navigation, welcome/CTA, quick
+    actions, active listing cards with hero image, search/filter, upcoming shoots, and
+    recently delivered work. Keep property marketing status separate from production status.
+  - Show the account summary without a deep settings click: amount due, credit/bonus,
+    discount/benefit, and brokerage order code. Use readable client statuses, generous
+    spacing, large targets, high contrast, mobile card layouts, and no hidden primary actions.
+  - Includes the AI assistant entry point (button + context payload only); no AI answer
+    backend is in scope.
 - [ ] **T9 · Listings index and listing workspace shell** — 4d — *T8*
+  - Make each property the durable workspace entry point for Overview, Media, Revisions,
+    Property & MLS Details, Property Website, Marketing, Orders/Services, Payments, and
+    Activity navigation. Do not make clients choose an internal order number.
 
 ### Phase F — Brand and team
 
 - [ ] **T10 · Account area: branding, social profiles, billing** — 6d — *T8*
+  - Centralize logos, headshots, brokerage/team assets, social links, and public contact
+    data so future property websites, marketing materials, promotion, social content, and
+    feature sheets reuse the current profile. Show previews, completeness/attention state,
+    replace actions, and preserve older assets for historical materials.
 - [ ] **T11 · Client team management and permission scopes** — 3d — *T1, T8*
+  - Support invite/list/revoke and simple scopes for full account, listing-only, media,
+    billing, and marketing access; prevent revoked or cross-account members from reading
+    listings, media, or actions.
 
 ### Phase G — Media and revisions
 
 - [ ] **T12 · Media page: per-service delivery and downloads** — 7d — *T5, T9*
+  - Keep every ordered service visible in a property workspace: Photography, Video, Vertical
+    Reel, Drone, Floor Plan, Matterport/3D Tour, Property Website assets, Files, and future
+    service types. Show service-specific status, ETA/delivery time, asset count, View/Watch,
+    Download, and Request Changes without exposing queued/rendering/pipeline terminology.
 - [ ] **T13 · Revision threads, versioning and the staff queue** — 8d — *T12*
+  - One open contextual thread per Listing + Service, with selected-photo references,
+    video timestamps, floor/room/page locators, attachments, messages, ETA, status, and
+    version history. Reuse the thread for follow-up messages, prevent duplicate open
+    requests, and expose the thread status on its service card. Support a client side panel
+    or mobile full-screen composer, staff ownership/queue, and client-safe download/review
+    transitions.
 
-**Roughly 62 engineering days.** Critical path T1 → T2 → T6 → T8 → T12 → T13. T1
-has the widest blast radius; T5 carries the most uncertainty, so start the spike
-early even though nothing in Phases D–F waits on it.
+**Roughly 62 engineering days for the portal slices, plus the B1 board-content
+follow-up.** Critical path T1 → T2 → T6 → T8 → T12 → T13. T1 has the widest
+blast radius; T5 carries the most uncertainty, so start the spike early even though
+nothing in Phases D–F waits on it.
 
 ## Open decisions
 
