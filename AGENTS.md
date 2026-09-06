@@ -74,6 +74,23 @@ organization. Column keys are unique per board, and `workflow_tasks.listing_id`
 is nullable — whether a task needs a property is `Board#requires_listing`.
 Client-visible tasks additionally require `Board#client_visible`.
 
+## Media and attachment URLs
+
+- Listing media may use its configured public CDN URL; board and chat
+  attachments are private and use separate storage boundaries.
+- Serializers must expose authorized API-relative `preview_path` and
+  `download_path` values. Never expose a storage key, construct an S3 URL in a
+  React component, or point a browser tag at a private bucket directly.
+- Preview routes must authorize the parent record before streaming from the API
+  origin. Download routes may redirect to a short-lived signed URL only after
+  the same authorization check.
+- The UI must resolve serialized paths through `apiUrl`, `mediaAssetUrl`, and
+  `mediaAssetDownloadUrl`; credentialed API previews must also be recognized by
+  `apiMediaNeedsCredentials` when used in `<img>` or `<video>` tags.
+- When adding an attachment type, update the storage boundary, serializer,
+  API/UI types, URL helper, renderer, and a negative access-control spec
+  together. Do not repeat the old raw-path/CDN-host mistake.
+
 ## Conventions
 
 - Money is integer cents; rates are basis points.

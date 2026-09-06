@@ -146,6 +146,35 @@ RSpec.describe "Delivery portal", type: :request do
     expect(JSON.parse(response.body).fetch("conversations")).to be_empty
   end
 
+  it "reports the newest unread message separately from a newer read message" do
+    manager = User.create!(organization: organization, name: "Morgan Manager", email: "unread-manager@example.test", password: "long-enough-password", role: :manager)
+    teammate = User.create!(organization: organization, name: "Parker Teammate", email: "unread-teammate@example.test", password: "long-enough-password", role: :production_staff)
+    first_room = Conversation.create!(organization: organization, kind: :internal, subject: "First room")
+    second_room = Conversation.create!(organization: organization, kind: :internal, subject: "Second room")
+    first_membership = ConversationMembership.create!(conversation: first_room, user: manager, role: :manager)
+    ConversationMembership.create!(conversation: first_room, user: teammate)
+    second_membership = ConversationMembership.create!(conversation: second_room, user: manager, role: :manager)
+    ConversationMembership.create!(conversation: second_room, user: teammate)
+
+    base_time = Time.zone.parse("2026-09-06 10:00:00")
+    first_unread = first_room.messages.create!(author: teammate, body: "Unread first")
+    first_unread.update_columns(created_at: base_time + 4.hours, updated_at: base_time + 4.hours)
+    first_read = first_room.messages.create!(author: manager, body: "Read later")
+    first_read.update_columns(created_at: base_time + 5.hours, updated_at: base_time + 5.hours)
+    second_unread = second_room.messages.create!(author: teammate, body: "Unread second")
+    second_unread.update_columns(created_at: base_time + 2.hours, updated_at: base_time + 2.hours)
+    first_membership.update_columns(last_read_at: base_time + 3.hours, updated_at: base_time + 3.hours)
+    second_membership.update_columns(last_read_at: base_time + 1.hour, updated_at: base_time + 1.hour)
+
+    sign_in manager
+    get "/api/v1/conversations"
+
+    expect(response).to have_http_status(:ok)
+    conversations = JSON.parse(response.body).fetch("conversations").index_by { |conversation| conversation.fetch("id") }
+    expect(conversations.fetch(first_room.id)).to include("unread_count" => 1, "last_unread_message_at" => first_unread.reload.created_at.utc.iso8601(3))
+    expect(conversations.fetch(second_room.id)).to include("unread_count" => 1, "last_unread_message_at" => second_unread.reload.created_at.utc.iso8601(3))
+  end
+
 
   it "allows a room manager to invite and remove an organization participant" do
     manager = User.create!(organization: organization, name: "Morgan Manager", email: "room-manager@example.test", password: "long-enough-password", role: :manager)

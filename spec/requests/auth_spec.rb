@@ -21,4 +21,33 @@ RSpec.describe "CRM authentication", type: :request do
     expect(response).to have_http_status(:unauthorized)
     expect(JSON.parse(response.body)).to eq("error" => "invalid_credentials")
   end
+
+  it "publishes role-independent session capabilities" do
+    organization = Organization.create!(name: "North Star Media", slug: "north-star-media")
+    admin = User.create!(organization:, name: "Avery Owner", email: "avery@example.test",
+                         password: "long-enough-password", role: :organization_admin)
+
+    sign_in admin
+    get "/api/v1/auth/me"
+
+    capabilities = JSON.parse(response.body).fetch("user").fetch("capabilities")
+    expect(capabilities.fetch("dashboard")).to include("view")
+    expect(capabilities.fetch("client_portal")).to be_empty
+    expect(capabilities.fetch("boards")).to include("create")
+    expect(capabilities.fetch("staff")).to include("create", "manage")
+    expect(capabilities.fetch("products")).to include("create")
+  end
+
+  it "identifies client portal access without exposing the internal dashboard" do
+    organization = Organization.create!(name: "North Star Media", slug: "north-star-media")
+    client = User.create!(organization:, name: "Avery Client", email: "client@example.test",
+                          password: "long-enough-password", role: :client_member)
+
+    sign_in client
+    get "/api/v1/auth/me"
+
+    capabilities = JSON.parse(response.body).fetch("user").fetch("capabilities")
+    expect(capabilities.fetch("client_portal")).to include("view", "update")
+    expect(capabilities.fetch("dashboard")).to be_empty
+  end
 end

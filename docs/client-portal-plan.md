@@ -15,7 +15,7 @@ for hierarchy and interaction rather than pixel-perfect implementation instructi
 | | Count |
 | --- | --- |
 | Brief requirements | 47 |
-| Fully built | 4 |
+| Fully built | 6 |
 | Partial | 13 |
 | Not started | 30 |
 | New tables | 13 + deliverable services, pending research |
@@ -371,7 +371,7 @@ database reference back to this file.
 
 ### Phase A — Authorization and boards
 
-- [~] **T1 · Protect every CRM action with server-side authorization** — 4d — *no deps* — **backend done, frontend outstanding**
+- [x] **T1 · Protect every CRM action with server-side authorization** — 4d — *no deps*
   - `verify_authorized` / `verify_policy_scoped` as `after_action` in `Api::V1::BaseController`,
     explicit skips on webhook, sign-up and public site endpoints.
   - CI request spec walking every route, asserting each action authorizes or skips.
@@ -418,7 +418,7 @@ database reference back to this file.
 
 ### Phase D — Portal data
 
-- [ ] **T6 · Give clients a property-first listings API** — 5d — *T1*
+- [x] **T6 · Give clients a property-first listings API** — 5d — *T1*
   - `property_status`, `property_type`, `price_cents`, `bedrooms`, `bathrooms`,
     `square_feet`, `lot_acres`, `parking`, `year_built`, `mls_number`, and
     `mls_live_date`, with client values such as Coming Soon, For Sale, For Lease,
@@ -428,6 +428,10 @@ database reference back to this file.
   - `GET /portal/dashboard`, listing index/detail, `POST /portal/listings`, and retirement
     of `client_portal#show`; new listings begin as draft/booking requests and remain
     property-first rather than order-first.
+  - Implemented: the portal now exposes scoped dashboard, listing index/detail, and
+    client-created draft listings; marketing property status is separate from the
+    closed client lifecycle presenter, so internal workflow status never crosses the
+    portal boundary.
 - [ ] **T7 · Show clients what they owe and what benefits they have** — 3d — *T1*
   - Dashboard-visible amount due across unpaid invoices/outstanding orders, credit or bonus
     balance, active/permanent discounts, brokerage or referral code, and expiry when relevant.

@@ -58,6 +58,19 @@ used, the UI build-time `NEXT_PUBLIC_CRM_API_URL` and API `CRM_UI_ORIGINS` must
 refer to the matching temporary API and CRM hosts; restore the real DNS names
 only together.
 
+## Chat attachment delivery
+
+Chat files use a separate private bucket (`PROJECT_RED_CHAT_MEDIA_BUCKET`) or
+the local `storage/chat_media` directory. Chat serializers return only
+authorized API-relative `preview_path` and `download_path` values. The storage
+key is never a browser URL, and chat previews must not be changed to raw S3 or
+CloudFront URLs: the API origin is the authorization and streaming boundary.
+
+The UI renders chat files with the same `mediaAssetUrl`,
+`mediaAssetDownloadUrl`, and `apiMediaNeedsCredentials` contract used by board
+attachments. If a new chat surface is added, it must render the serialized
+attachment list and use the shared helpers rather than reconstructing paths.
+
 ## Property sites
 
 A listing can have one `PropertySite` with a slug and publishing status. The

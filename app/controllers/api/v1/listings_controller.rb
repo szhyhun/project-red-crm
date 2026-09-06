@@ -75,7 +75,8 @@ class Api::V1::ListingsController < Api::V1::BaseController
     params.require(:listing).permit(
       :client_account_id, :status, :public_slug, :address_line_1, :address_line_2, :city,
       :province, :postal_code, :country, :square_feet, :bedrooms, :bathrooms, :scheduled_at,
-      :delivery_status, :zillow_showcase, :mls_number, tags: []
+      :delivery_status, :zillow_showcase, :mls_number, :property_status, :property_type,
+      :price_cents, :lot_acres, :parking, :year_built, :mls_live_date, tags: []
     )
   end
 
@@ -108,6 +109,13 @@ class Api::V1::ListingsController < Api::V1::BaseController
       delivery_status: listing.delivery_status,
       zillow_showcase: listing.zillow_showcase,
       mls_number: listing.mls_number,
+      property_status: listing.property_status,
+      property_type: listing.property_type,
+      price_cents: listing.price_cents,
+      lot_acres: listing.lot_acres,
+      parking: listing.parking,
+      year_built: listing.year_built,
+      mls_live_date: listing.mls_live_date,
       tags: listing.tags,
       client_account: listing.client_account.slice(:id, :name, :email, :phone, :brokerage_name, :kind),
       listing_customers: listing.listing_customers.map { |customer| serialize_listing_customer(customer) },

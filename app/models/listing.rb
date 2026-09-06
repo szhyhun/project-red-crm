@@ -25,8 +25,16 @@ class Listing < ApplicationRecord
     review: "review", delivered: "delivered", cancelled: "cancelled"
   }, validate: true
   enum :delivery_status, { undelivered: "undelivered", delivered: "delivered" }, prefix: :delivery, validate: true
+  enum :property_status, {
+    coming_soon: "coming_soon", for_sale: "for_sale", for_lease: "for_lease",
+    pending_sale: "pending_sale", pending_lease: "pending_lease", for_rent: "for_rent",
+    sold: "sold", off_market: "off_market"
+  }, validate: true
 
   validates :address_line_1, presence: true
+  validates :price_cents, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :lot_acres, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :year_built, numericality: { only_integer: true, greater_than: 1_700, less_than_or_equal_to: ->(_listing) { Time.current.year + 2 } }, allow_nil: true
   validate :client_account_belongs_to_organization
   after_save :sync_primary_listing_customer
 

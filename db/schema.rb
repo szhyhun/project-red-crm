@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_06_010000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_06_030000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -203,6 +203,29 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_06_010000) do
     t.index ["client_account_id", "user_id"], name: "index_client_memberships_on_client_and_user", unique: true
     t.index ["client_account_id"], name: "index_client_memberships_on_client_account_id"
     t.index ["user_id"], name: "index_client_memberships_on_user_id"
+  end
+
+  create_table "conversation_attachments", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "message_id", null: false
+    t.bigint "uploaded_by_id"
+    t.string "status", default: "pending", null: false
+    t.string "storage_key", null: false
+    t.string "filename", null: false
+    t.string "content_type", null: false
+    t.bigint "byte_size", default: 0, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "processed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["conversation_id", "created_at"], name: "idx_on_conversation_id_created_at_6f99b48142"
+    t.index ["conversation_id"], name: "index_conversation_attachments_on_conversation_id"
+    t.index ["message_id", "created_at"], name: "index_conversation_attachments_on_message_id_and_created_at"
+    t.index ["message_id"], name: "index_conversation_attachments_on_message_id"
+    t.index ["organization_id"], name: "index_conversation_attachments_on_organization_id"
+    t.index ["storage_key"], name: "index_conversation_attachments_on_storage_key", unique: true
+    t.index ["uploaded_by_id"], name: "index_conversation_attachments_on_uploaded_by_id"
   end
 
   create_table "conversation_memberships", force: :cascade do |t|
@@ -476,9 +499,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_06_010000) do
     t.string "tags", default: [], null: false, array: true
     t.datetime "customer_first_viewed_at"
     t.string "origin", default: "native", null: false
+    t.string "property_status", default: "coming_soon", null: false
+    t.string "property_type"
+    t.integer "price_cents"
+    t.decimal "lot_acres", precision: 8, scale: 3
+    t.string "parking"
+    t.integer "year_built"
+    t.date "mls_live_date"
     t.index ["client_account_id"], name: "index_listings_on_client_account_id"
     t.index ["customer_first_viewed_at"], name: "index_listings_on_customer_first_viewed_at"
     t.index ["organization_id", "delivery_status"], name: "index_listings_on_organization_id_and_delivery_status"
+    t.index ["organization_id", "property_status"], name: "index_listings_on_organization_id_and_property_status"
     t.index ["organization_id", "public_slug"], name: "index_listings_on_organization_id_and_public_slug", unique: true
     t.index ["organization_id", "status"], name: "index_listings_on_organization_id_and_status"
     t.index ["organization_id"], name: "index_listings_on_organization_id"
@@ -566,7 +597,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_06_010000) do
     t.bigint "author_id", null: false
     t.text "body", null: false
     t.string "visibility", default: "participants", null: false
-    t.jsonb "attachments", default: [], null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.text "body_html"
@@ -995,6 +1025,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_06_010000) do
   add_foreign_key "client_accounts", "organizations"
   add_foreign_key "client_memberships", "client_accounts"
   add_foreign_key "client_memberships", "users"
+  add_foreign_key "conversation_attachments", "conversations"
+  add_foreign_key "conversation_attachments", "messages"
+  add_foreign_key "conversation_attachments", "organizations"
+  add_foreign_key "conversation_attachments", "users", column: "uploaded_by_id"
   add_foreign_key "conversation_memberships", "conversations"
   add_foreign_key "conversation_memberships", "users"
   add_foreign_key "conversations", "client_accounts"

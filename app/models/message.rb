@@ -1,6 +1,7 @@
 class Message < ApplicationRecord
   belongs_to :conversation
   belongs_to :author, class_name: "User"
+  has_many :conversation_attachments, dependent: :destroy
 
   enum :visibility, { participants: "participants", staff_only: "staff_only" }, validate: true
 

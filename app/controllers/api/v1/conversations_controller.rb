@@ -7,7 +7,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def show
-    conversation = policy_scope(Conversation).includes(conversation_memberships: :user, messages: :author).find(params[:id])
+    conversation = policy_scope(Conversation).includes(conversation_memberships: :user, messages: [ :author, :conversation_attachments ]).find(params[:id])
     authorize conversation
     mark_read!(conversation)
     render json: { conversation: serialize(conversation, include_messages: true) }
@@ -85,7 +85,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def visible_messages(conversation)
-    messages = conversation.messages.includes(:author).order(:created_at)
+    messages = conversation.messages.includes(:author, :conversation_attachments).order(:created_at)
     current_user.internal? ? messages : messages.participants
   end
 
@@ -98,24 +98,37 @@ class Api::V1::ConversationsController < Api::V1::BaseController
 
   # One grouped query for the whole list rather than a count per conversation.
   # A membership with a null last_read_at has never been opened, so every
-  # message in it is unread.
-  def unread_counts
-    @unread_counts ||= begin
-      scope = Message
-              .joins("INNER JOIN conversation_memberships cm ON cm.conversation_id = messages.conversation_id")
-              .where("cm.user_id = ?", current_user.id)
-              .where("messages.created_at > COALESCE(cm.last_read_at, '-infinity'::timestamp)")
-              .where.not(messages: { author_id: current_user.id })
-      scope = scope.participants unless current_user.internal?
-      scope.group("messages.conversation_id").count
+  # message in it is unread. The timestamp lets clients put the conversation
+  # with the newest unread message first even when a newer read message exists.
+  def unread_message_stats
+    @unread_message_stats ||= begin
+      rows = unread_message_scope
+             .group("messages.conversation_id")
+             .pluck("messages.conversation_id", Arel.sql("COUNT(messages.id)"), Arel.sql("MAX(messages.created_at)"))
+      rows.to_h do |conversation_id, count, last_unread_message_at|
+        [ conversation_id, { count:, last_unread_message_at: } ]
+      end
     end
   end
 
+  def unread_message_scope
+    scope = Message
+            .joins("INNER JOIN conversation_memberships cm ON cm.conversation_id = messages.conversation_id")
+            .where("cm.user_id = ?", current_user.id)
+            .where("messages.created_at > COALESCE(cm.last_read_at, '-infinity'::timestamp)")
+            .where.not(messages: { author_id: current_user.id })
+    scope = scope.participants unless current_user.internal?
+    scope
+  end
+
   def serialize(conversation, include_messages: false)
+    unread = unread_message_stats.fetch(conversation.id, { count: 0, last_unread_message_at: nil })
     data = conversation.slice(:id, :listing_id, :client_account_id, :kind, :subject, :last_message_at, :created_at).merge(
-      unread_count: unread_counts.fetch(conversation.id, 0),
+      unread_count: unread[:count],
+      last_unread_message_at: unread[:last_unread_message_at],
       listing: conversation.listing && { id: conversation.listing.id, address: conversation.listing.address },
       client_account: conversation.client_account && conversation.client_account.slice(:id, :name),
+      can_delete: policy(conversation).destroy?,
       members: conversation.conversation_memberships.sort_by { |membership| membership.user.name }.map do |membership|
         membership.user.slice(:id, :name, :email, :role).merge(membership_id: membership.id, membership_role: membership.role)
       end,
@@ -127,6 +140,9 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def serialize_message(message)
-    message.slice(:id, :body, :body_html, :visibility, :attachments, :created_at).merge(author: message.author.slice(:id, :name, :role))
+    message.slice(:id, :body, :body_html, :visibility, :created_at).merge(
+      attachments: message.conversation_attachments.order(:created_at, :id).map { |attachment| ConversationAttachment.serialize(attachment) },
+      author: message.author.slice(:id, :name, :role)
+    )
   end
 end

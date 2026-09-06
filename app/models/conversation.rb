@@ -5,6 +5,7 @@ class Conversation < ApplicationRecord
   has_many :conversation_memberships, dependent: :destroy
   has_many :users, through: :conversation_memberships
   has_many :messages, dependent: :destroy
+  has_many :conversation_attachments, dependent: :destroy
 
   enum :kind, { internal: "internal", client: "client" }, validate: true
 

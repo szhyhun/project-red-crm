@@ -38,8 +38,11 @@ Rails.application.routes.draw do
         post :payment_intent, on: :member
         post :send_reminder, on: :member
       end
-      get "client_portal", to: "client_portal#show"
-      post "client_portal/appointments/:id/reschedule", to: "client_portal#request_reschedule"
+      get "portal/dashboard", to: "portal#dashboard"
+      get "portal/listings", to: "portal#listings"
+      get "portal/listings/:id", to: "portal#show_listing"
+      post "portal/listings", to: "portal#create_listing"
+      post "portal/appointments/:id/reschedule", to: "portal#request_reschedule"
       resources :media_assets, only: %i[index create update destroy] do
         post :upload, on: :collection
         post :link, on: :collection
@@ -53,6 +56,10 @@ Rails.application.routes.draw do
         post :messages, on: :member, action: :create_message
         resources :members, only: %i[create destroy], controller: "conversation_memberships"
       end
+      post "conversations/:conversation_id/messages/:message_id/attachments", to: "conversation_attachments#create"
+      get "conversations/:conversation_id/messages/:message_id/attachments/:id/preview", to: "conversation_attachments#preview"
+      get "conversations/:conversation_id/messages/:message_id/attachments/:id/download", to: "conversation_attachments#download"
+      delete "conversations/:conversation_id/messages/:message_id/attachments/:id", to: "conversation_attachments#destroy"
       get "dashboard", to: "dashboard#show"
       resources :client_accounts, only: %i[index create update] do
         post :invite, on: :member

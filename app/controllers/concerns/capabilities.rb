@@ -27,12 +27,20 @@ module Capabilities
     pricing_plans: "PricingPlan"
   }.freeze
 
+  # These endpoints authorize a resource name rather than a persisted model.
+  # Keep them in the same session payload without inventing database-backed
+  # marker models solely for capability serialization.
+  SESSION_HEADLESS_POLICIES = {
+    dashboard: "DashboardPolicy",
+    client_portal: "ClientPortalPolicy"
+  }.freeze
+
   def capabilities_for(record)
     policy(record).capabilities
   end
 
   def session_capabilities(user)
-    SESSION_RESOURCES.each_with_object({}) do |(key, model_name), result|
+    capabilities = SESSION_RESOURCES.each_with_object({}) do |(key, model_name), result|
       model = model_name.safe_constantize
       next result[key] = [] if model.blank?
 
@@ -49,5 +57,16 @@ module Capabilities
     rescue Pundit::NotDefinedError, NameError
       result[key] = []
     end
+
+    SESSION_HEADLESS_POLICIES.each do |key, policy_name|
+      policy = policy_name.constantize.new(user, Object)
+      capabilities[key] = policy.class::CAPABILITIES.filter_map do |capability|
+        capability if policy.public_send(:"#{capability}?")
+      end
+    rescue Pundit::NotDefinedError, NameError
+      capabilities[key] = []
+    end
+
+    capabilities
   end
 end

@@ -1,15 +1,50 @@
-class Api::V1::ClientPortalController < Api::V1::BaseController
-  def show
+class Api::V1::PortalController < Api::V1::BaseController
+  def dashboard
     authorize :client_portal, :view?
 
-    listings = policy_scope(Listing).includes(:property_site, :invoices, :workflow_tasks, :media_assets, appointments: :appointment_events).order(created_at: :desc)
-    conversations = policy_scope(Conversation).includes(:listing).order(last_message_at: :desc, created_at: :desc).limit(20)
+    render json: portal_payload
+  end
 
-    render json: {
-      client_accounts: current_user.client_accounts.order(:name).map { |account| account.slice(:id, :name, :kind, :brokerage_name) },
-      listings: listings.map { |listing| serialize_listing(listing) },
-      conversations: conversations.map { |conversation| serialize_conversation(conversation) }
-    }
+  def listings
+    authorize Listing, :index?
+
+    render json: { listings: portal_listings.map { |listing| serialize_listing(listing) } }
+  end
+
+  def show_listing
+    listing = policy_scope(Listing).includes(
+      :property_site,
+      :invoices,
+      { workflow_tasks: { board: :workflow_columns } },
+      :media_assets,
+      appointments: :appointment_events
+    ).find(params[:id])
+    authorize listing, :view?
+
+    render json: { listing: serialize_listing(listing, include_details: true) }
+  end
+
+  def create_listing
+    authorize :client_portal, :update?
+
+    account = current_user.client_accounts.where(organization: Current.organization).find_by(id: portal_listing_params[:client_account_id])
+    account ||= current_user.client_accounts.where(organization: Current.organization).order(:id).first
+    return render json: { error: "client_account_required" }, status: :unprocessable_entity if account.blank?
+
+    listing = Current.organization.listings.build(
+      portal_listing_params.except(:client_account_id).merge(
+        client_account: account,
+        status: :draft,
+        delivery_status: :undelivered
+      )
+    )
+
+    if listing.save
+      ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: listing, event_type: "listing.booking_requested")
+      render json: { listing: serialize_listing(listing) }, status: :created
+    else
+      render_validation_errors(listing)
+    end
   end
 
   def request_reschedule
@@ -46,23 +81,46 @@ class Api::V1::ClientPortalController < Api::V1::BaseController
 
   private
 
-  def serialize_listing(listing)
+  def portal_payload
+    {
+      client_accounts: current_user.client_accounts.order(:name).map { |account| account.slice(:id, :name, :kind, :brokerage_name) },
+      listings: portal_listings.map { |listing| serialize_listing(listing) },
+      conversations: policy_scope(Conversation).includes(:listing, messages: [ :author, :conversation_attachments ])
+        .order(last_message_at: :desc, created_at: :desc).limit(20)
+        .map { |conversation| serialize_conversation(conversation) }
+    }
+  end
+
+  def portal_listings
+    @portal_listings ||= policy_scope(Listing)
+      .includes(
+        :property_site,
+        :invoices,
+        { workflow_tasks: { board: :workflow_columns } },
+        :media_assets,
+        appointments: :appointment_events
+      )
+      .order(created_at: :desc)
+  end
+
+  def portal_listing_params
+    params.require(:listing).permit(
+      :client_account_id, :address_line_1, :address_line_2, :city, :province, :postal_code, :country,
+      :property_status, :property_type, :price_cents, :bedrooms, :bathrooms, :square_feet,
+      :lot_acres, :parking, :year_built, :mls_number, :mls_live_date
+    )
+  end
+
+  def serialize_listing(listing, include_details: false)
     mark_first_delivery_view(listing)
     feedback = listing.listing_feedbacks
                       .where(client_account_id: current_user.client_account_ids)
                       .order(Arel.sql("submitted_at IS NULL DESC"), requested_at: :desc)
                       .first
-    {
-      id: listing.id,
-      address: listing.address,
-      status: listing.status,
-      square_feet: listing.square_feet,
-      scheduled_at: listing.scheduled_at,
-      delivered_at: listing.delivered_at,
-      customer_first_viewed_at: listing.customer_first_viewed_at,
+    data = ClientPortal::ListingPresenter.new(listing).to_h.merge(
       progress: listing.workflow_tasks.where(customer_visible: true)
         .where(board: Board.where(client_visible: true)).order(:position)
-        .map { |task| task.slice(:id, :title, :status, :completed_at) },
+        .map { |task| serialize_progress_task(task) },
       appointments: listing.appointments.where.not(status: :cancelled).order(:starts_at).map { |appointment| serialize_client_appointment(appointment) },
       media_assets: listing.media_assets.final.ready.where(customer_visible: true, hidden: false).order(:created_at).map { |asset| serialize_asset(asset) },
       invoices: listing.invoices.order(created_at: :desc).map do |invoice|
@@ -71,7 +129,27 @@ class Api::V1::ClientPortalController < Api::V1::BaseController
       end,
       property_site: serialize_property_site(listing.property_site),
       feedback: feedback && serialize_feedback(feedback)
-    }
+    )
+    return data unless include_details
+
+    data.merge(
+      workflow_tasks: data[:progress]
+    )
+  end
+
+  def serialize_progress_task(task)
+    column = task.board&.workflow_columns&.find { |entry| entry.key == task.status }
+    status = if column&.completed?
+      "complete"
+    elsif column&.blocked?
+      "attention"
+    elsif task.status == "todo"
+      "upcoming"
+    else
+      "in_progress"
+    end
+
+    { id: task.id, title: task.title, status:, completed_at: task.completed_at }
   end
 
   def serialize_asset(asset)
@@ -89,10 +167,8 @@ class Api::V1::ClientPortalController < Api::V1::BaseController
   end
 
   def serialize_feedback(feedback)
-    feedback.slice(
-      :id, :delivery_rating, :service_rating, :media_rating, :comment,
-      :follow_up_status, :requested_at, :submitted_at
-    )
+    feedback.slice(:id, :delivery_rating, :service_rating, :media_rating, :comment,
+                   :follow_up_status, :requested_at, :submitted_at)
   end
 
   def serialize_client_appointment(appointment)
@@ -134,8 +210,11 @@ class Api::V1::ClientPortalController < Api::V1::BaseController
   def serialize_conversation(conversation)
     conversation.slice(:id, :listing_id, :subject, :last_message_at).merge(
       listing_address: conversation.listing&.address,
-      messages: conversation.messages.participants.includes(:author).order(created_at: :desc).limit(20).reverse.map do |message|
-        message.slice(:id, :body, :body_html, :created_at).merge(author: message.author.slice(:id, :name, :role))
+      messages: conversation.messages.participants.includes(:author, :conversation_attachments).order(created_at: :desc).limit(20).reverse.map do |message|
+        message.slice(:id, :body, :body_html, :created_at).merge(
+          attachments: message.conversation_attachments.order(:created_at, :id).map { |attachment| ConversationAttachment.serialize(attachment) },
+          author: message.author.slice(:id, :name, :role)
+        )
       end
     )
   end

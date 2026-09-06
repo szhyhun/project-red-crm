@@ -44,6 +44,10 @@ the existing infrastructure:
   `PROJECT_RED_BOARD_MEDIA_BUCKET` and `PROJECT_RED_BOARD_MEDIA_CDN_URL`.
   The API authorizes every preview/download request before issuing a temporary
   URL; local development stores them under `storage/board_media`.
+- Chat attachments use their own private S3 bucket configured with
+  `PROJECT_RED_CHAT_MEDIA_BUCKET`. The API authorizes every preview/download
+  request and streams previews through the API origin; local development
+  stores them under `storage/chat_media`.
 - Rails API on port `3003`, behind Nginx as `api.projectred.ca`.
 - Resque worker: `project-red-crm-worker`.
 

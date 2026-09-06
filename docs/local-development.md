@@ -88,6 +88,14 @@ default. To exercise the production storage path, set
 `AWS_REGION` in the API environment. The production bucket should remain
 private; the API returns authorized temporary preview/download URLs.
 
+Chat attachments use a separate private boundary. Local development stores
+them under `storage/chat_media` by default. To exercise the production path,
+set `PROJECT_RED_CHAT_MEDIA_BUCKET` and `AWS_REGION`; do not add a public CDN
+URL for chat files. The API serializes authorized relative `preview_path` and
+`download_path` values, and the UI must resolve them with its shared asset URL
+helpers. The API origin performs the membership check before streaming a
+preview, while downloads may use a short-lived signed S3 URL after that check.
+
 ## Stripe test payments
 
 Set the Rails variables `STRIPE_SECRET_KEY=sk_test_...` and

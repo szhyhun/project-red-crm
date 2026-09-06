@@ -27,6 +27,7 @@ class Organization < ApplicationRecord
   has_many :property_sites, dependent: :destroy
   has_many :marketing_materials, dependent: :destroy
   has_many :conversations, dependent: :destroy
+  has_many :conversation_attachments, dependent: :destroy
   has_many :saved_listing_views, dependent: :destroy
 
   validates :name, :slug, presence: true

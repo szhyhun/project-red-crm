@@ -11,6 +11,13 @@ class UserPolicy < ApplicationPolicy
     user.internal?
   end
 
+  # The session capability map asks this policy at class level. Keeping the
+  # invite permission under the shared `create` capability lets the interface
+  # render team-management controls without re-implementing role rules.
+  def create?
+    invite?
+  end
+
   def invite?
     user.organization_admin? || user.platform_owner?
   end
@@ -23,6 +30,8 @@ class UserPolicy < ApplicationPolicy
   end
 
   def manage?
+    return invite? if record.is_a?(Class)
+
     invite? && same_organization? && record.role.in?(MANAGEABLE_ROLES)
   end
 
