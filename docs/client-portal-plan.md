@@ -376,17 +376,17 @@ rough working days for one engineer.
   - Frontend `useCapabilities()` / `<Can>`; remove every `role === …` check from
     `page.tsx`, `shell.tsx`, `listing-workspace.tsx`; handle 403 by showing the API
     message and refreshing `/auth/me`.
-- [~] **T2 · Multiple boards with per-person and per-group access** — 7d — *T1* — **backend done, UI outstanding**
+- [x] **T2 · Multiple boards with per-person and per-group access** — 7d — *T1*
   - Schema, backfill, `BoardPolicy` + scope, board-scoped endpoints and
     back-compat routes: done.
-  - Switcher, create/edit modal, member manager and groups panel: outstanding.
+  - Switcher, create/edit modal, member manager and groups panel: done.
   - `WorkflowTasks::Mover` repositions within a board; `customer_visible` gated on
     the board's `client_visible`.
-- [ ] **T3 · Task detail: comments, checklists, labels** — 3d — *T2*
+- [x] **T3 · Task detail: comments, checklists, labels** — 3d — *T2*
 
 ### Phase B — Put the plan on the board
 
-- [ ] **T4 · Seed the Engineering board from these briefs** — 1d — *T3*
+- [x] **T4 · Seed the Engineering board from these briefs** — 1d — *T3*
   - Idempotent rake task. Labels `backend`, `frontend`, `schema`, `brief-1/2/3`.
 
 ### Phase C — Research

@@ -10,19 +10,22 @@ namespace :project_red do
       external_ref: "T2",
       title: "Multiple boards with per-person and per-group access",
       description: "Introduce first-class boards with board-scoped workflow columns and tasks. Support per-board visibility, direct and group memberships, and policy-scoped reads and writes so a user who cannot view a board cannot view its tasks.",
-      labels: %w[backend frontend schema security]
+      labels: %w[backend frontend schema security],
+      completed: true
     },
     {
       external_ref: "T3",
       title: "Task detail: comments, checklists, labels",
       description: "Add task detail interactions for comments, checklists, and labels. Keep task detail board-authorized and return counts on cards so the board remains lightweight.",
-      labels: %w[backend frontend]
+      labels: %w[backend frontend],
+      completed: true
     },
     {
       external_ref: "T4",
       title: "Seed the Engineering board from these briefs",
       description: "Seed the Engineering board from the client portal briefs with idempotent T1–T13 records. Keep these engineering issues independent of listings and label them by area and brief.",
-      labels: %w[backend schema data brief-1 brief-2 brief-3]
+      labels: %w[backend schema data brief-1 brief-2 brief-3],
+      completed: true
     },
     {
       external_ref: "T5",
@@ -94,9 +97,12 @@ namespace :project_red do
 
       default_status = board.workflow_columns.ordered.first&.key
       raise "#{board.name} has no workflow columns" if default_status.blank?
+      completed_status = board.workflow_columns.find_by(category: "completed")&.key
+      raise "#{board.name} has no completed column" if completed_status.blank?
 
       PLAN_TASKS.each_with_index do |definition, position|
         task = board.workflow_tasks.find_or_initialize_by(external_ref: definition.fetch(:external_ref))
+        completed = definition.fetch(:completed, false)
         task.assign_attributes(
           organization:,
           title: definition.fetch(:title),
@@ -104,7 +110,8 @@ namespace :project_red do
           labels: definition.fetch(:labels),
           listing_id: nil,
           position: task.persisted? ? task.position : position,
-          status: task.status.presence || default_status
+          status: completed ? completed_status : (task.status.presence || default_status),
+          completed_at: completed ? (task.completed_at || Time.current) : task.completed_at
         )
         task.save!
       end
