@@ -17,6 +17,7 @@ RSpec.describe "Media uploads", type: :request do
     post "/api/v1/media_assets/upload", params: { listing_id: listing.id, kind: "final", file: file }
 
     expect(response).to have_http_status(:created)
+    expect(response.parsed_body.fetch("media_asset")).not_to have_key("storage_key")
     asset = MediaAsset.order(:id).last
     expect(asset).to be_pending
     expect(asset.storage_key).to include("organizations/#{organization.id}/listings/#{listing.id}/")
@@ -39,7 +40,7 @@ RSpec.describe "Media uploads", type: :request do
     post "/api/v1/media_assets/upload", params: { listing_id: listing.id, kind: "final", file: file }
 
     expect(response).to have_http_status(:unprocessable_entity)
-    expect(MediaAsset.order(:id).last).to have_attributes(status: "failed", metadata: include("processing_error" => "disk full"))
+    expect(MediaAsset.order(:id).last).to have_attributes(status: "failed", metadata: include("processing_error" => "upload_failed"))
   ensure
     upload&.close!
   end

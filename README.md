@@ -85,6 +85,14 @@ Runtime secrets live only on the host in `/etc/project-red-crm/api.env`
 settings, permitted origins, and future SMTP/Stripe credentials. Do not commit
 this file or `config/master.key`.
 
+The API uses two separate CORS boundaries. `CRM_UI_ORIGINS` (or
+`CRM_UI_ORIGIN`) is the credentialed CRM UI and Action Cable allowlist. The
+optional `PUBLIC_SITE_ORIGINS`/`PUBLIC_SITE_ORIGIN` allowlist can call only the
+unauthenticated `/api/v1/public/*` resources and never receives session
+credentials. Keep the temporary CRM `sslip.io` origin and the final CRM DNS
+origin together while migrating; see [the security contract](docs/security.md)
+for the storage, upload, and webhook rules that go with this boundary.
+
 After changing the host environment file, validate its shell syntax and
 restart the API and worker through AWS Systems Manager:
 

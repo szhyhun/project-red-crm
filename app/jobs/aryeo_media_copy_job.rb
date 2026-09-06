@@ -10,10 +10,11 @@ class AryeoMediaCopyJob < ApplicationJob
     Aryeo::RemoteMediaCopy.call(asset:, source_url: external_record.metadata["media_url"])
     external_record.update!(sync_status: :copied)
   rescue Aryeo::RemoteMediaCopy::RetryableError => error
-    metadata = external_record.metadata.merge("media_copy_error" => error.message)
+    Rails.logger.warn("Aryeo media copy failed: #{error.class}: #{error.message}")
+    metadata = external_record.metadata.merge("media_copy_error" => "media_copy_failed")
     if executions.to_i >= 5
       external_record.update!(sync_status: :failed, metadata:)
-      asset&.update!(status: :failed, metadata: asset.metadata.merge("processing_error" => error.message))
+      asset&.update!(status: :failed, metadata: asset.metadata.merge("processing_error" => "media_copy_failed"))
     else
       external_record.update!(metadata:)
     end

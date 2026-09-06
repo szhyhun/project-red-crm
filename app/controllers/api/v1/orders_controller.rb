@@ -74,7 +74,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
                       :total_cents, :balance_due_cents, :due_on, :sent_at, :paid_at).merge(
           can_pay: policy(invoice).pay?,
           payments: invoice.payments.order(created_at: :desc).map do |payment|
-            payment.slice(:id, :provider, :provider_payment_id, :status, :amount_cents, :currency, :created_at)
+            payment.slice(:id, :provider, :status, :amount_cents, :currency, :created_at)
           end
         )
       end

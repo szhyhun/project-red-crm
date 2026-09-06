@@ -29,9 +29,10 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     authorize MediaAsset, :create?
     files = Array(params[:files]).presence || [ params.require(:file) ]
     assets = files.map { |uploaded_file| upload_one(listing, uploaded_file) }
-    render json: { media_assets: assets.map { |asset| serialize(asset) }, media_asset: assets.first }, status: :created
+    render json: { media_assets: assets.map { |asset| serialize(asset) }, media_asset: serialize(assets.first) }, status: :created
   rescue DeliveryStorage::MissingFile, DeliveryStorage::WriteError => error
-    render json: { error: "upload_failed", details: error.message }, status: :unprocessable_entity
+    Rails.logger.warn("Media asset upload failed: #{error.class}: #{error.message}")
+    render json: { error: "upload_failed" }, status: :unprocessable_entity
   end
 
   def link
@@ -76,12 +77,14 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     uploaded_file = params.require(:file)
     old_key = asset.storage_key
     new_key = DeliveryStorage.key_for(organization: Current.organization, listing: asset.listing, filename: uploaded_file.original_filename)
-    content_type = upload_content_type(uploaded_file)
+    content_type = UploadContentType.for(uploaded_file)
+    return render json: { error: "unsupported_content_type" }, status: :unprocessable_entity unless MediaAsset.safe_storage_content_type?(content_type)
 
     DeliveryStorage.write(upload: uploaded_file.tempfile, key: new_key, content_type: content_type)
     asset.update!(
       status: :pending,
       storage_key: new_key,
+      source_url: nil,
       filename: uploaded_file.original_filename,
       content_type: content_type,
       byte_size: uploaded_file.size,
@@ -95,7 +98,8 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     render json: { media_asset: serialize(asset) }
   rescue DeliveryStorage::MissingFile, DeliveryStorage::WriteError => error
     DeliveryStorage.delete(new_key) if defined?(new_key) && new_key.present?
-    render json: { error: "replace_failed", details: error.message }, status: :unprocessable_entity
+    Rails.logger.warn("Media asset replacement failed: #{error.class}: #{error.message}")
+    render json: { error: "replace_failed" }, status: :unprocessable_entity
   end
 
   def retry
@@ -109,7 +113,7 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
   def upload_one(listing, uploaded_file)
     storage_key = DeliveryStorage.key_for(organization: Current.organization, listing: listing, filename: uploaded_file.original_filename)
     category = requested_category(uploaded_file)
-    content_type = upload_content_type(uploaded_file)
+    content_type = UploadContentType.for(uploaded_file)
     asset = Current.organization.media_assets.build(
       listing: listing,
       uploaded_by: current_user,
@@ -125,6 +129,11 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
       **source_records
     )
 
+    unless MediaAsset.safe_storage_content_type?(content_type)
+      asset.errors.add(:content_type, "is not supported for delivery media")
+      raise ActiveRecord::RecordInvalid, asset
+    end
+
     if asset.save
       DeliveryStorage.write(upload: uploaded_file.tempfile, key: storage_key, content_type: content_type)
       MediaAssets::VerifyUploadJob.perform_later(asset.id)
@@ -136,7 +145,8 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     end
   rescue DeliveryStorage::MissingFile, DeliveryStorage::WriteError => error
     DeliveryStorage.delete(storage_key) if storage_key.present?
-    asset&.update(status: :failed, metadata: asset.metadata.merge("processing_error" => error.message))
+    Rails.logger.warn("Media asset storage failed: #{error.class}: #{error.message}")
+    asset&.update(status: :failed, metadata: asset.metadata.merge("processing_error" => "upload_failed"))
     raise
   end
 
@@ -157,11 +167,19 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     authorize asset, :show?
     return redirect_to asset.source_url, allow_other_host: true if asset.external? && asset.ready?
     return render json: { error: "asset_not_ready" }, status: :unprocessable_entity unless asset.ready?
-    return redirect_to DeliveryStorage.temporary_url(asset.storage_key, content_type: asset.content_type), allow_other_host: true if DeliveryStorage.s3?
+    if DeliveryStorage.s3?
+      if MediaAsset.safe_inline_content_type?(asset.content_type)
+        return redirect_to DeliveryStorage.temporary_url(asset.storage_key, content_type: asset.content_type), allow_other_host: true
+      end
 
+      return redirect_to DeliveryStorage.temporary_url(asset.storage_key, content_type: "application/octet-stream", disposition: "attachment"), allow_other_host: true
+    end
+
+    disposition = MediaAsset.safe_inline_content_type?(asset.content_type) ? "inline" : "attachment"
+    response_type = disposition == "inline" ? asset.content_type : "application/octet-stream"
     send_file DeliveryStorage.path_for(asset.storage_key),
-              type: asset.content_type.presence || "application/octet-stream",
-              disposition: "inline",
+              type: response_type,
+              disposition: disposition,
               filename: asset.filename
   rescue DeliveryStorage::MissingFile
     render json: { error: "asset_missing" }, status: :not_found
@@ -198,7 +216,7 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
 
   def create_params
     params.require(:media_asset).permit(
-      :listing_id, :kind, :status, :storage_key, :source_url, :filename, :content_type, :byte_size,
+      :listing_id, :kind, :status, :source_url, :filename, :content_type, :byte_size,
       :width, :height, :duration_seconds, :category, :customer_visible, :order_id, :order_item_id, metadata: {}
     )
   end
@@ -209,7 +227,7 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
   end
 
   def serialize(asset)
-    asset.slice(:id, :listing_id, :kind, :status, :storage_key, :source_url, :filename, :content_type,
+    asset.slice(:id, :listing_id, :kind, :status, :source_url, :filename, :content_type,
                 :byte_size, :width, :height, :duration_seconds, :category, :customer_visible,
                 :position, :cover, :hidden, :metadata, :processed_at, :created_at, :order_id, :order_item_id, :media_group_id).merge(
       cdn_url: asset.ready? ? (asset.source_url.presence || cdn_url_for(asset.storage_key)) : nil,
@@ -232,13 +250,6 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
     return "videos" if content_type.start_with?("video/")
 
     "files"
-  end
-
-  def upload_content_type(uploaded_file)
-    declared_type = uploaded_file.content_type.presence
-    return declared_type if declared_type.present? && declared_type != "application/octet-stream"
-
-    Marcel::MimeType.for(name: uploaded_file.original_filename).presence || declared_type || "application/octet-stream"
   end
 
   def link_params

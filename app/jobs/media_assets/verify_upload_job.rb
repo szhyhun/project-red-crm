@@ -15,7 +15,8 @@ module MediaAssets
         asset.update!(status: :ready, processed_at: Time.current, metadata: asset.metadata.except("processing_error"))
       end
     rescue DeliveryStorage::MissingFile => error
-      asset&.update(status: :failed, metadata: asset.metadata.merge("processing_error" => error.message))
+      Rails.logger.warn("Media asset verification failed: #{error.class}: #{error.message}")
+      asset&.update(status: :failed, metadata: asset.metadata.merge("processing_error" => "upload_missing"))
     end
   end
 end

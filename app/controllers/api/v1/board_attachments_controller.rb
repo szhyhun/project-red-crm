@@ -9,7 +9,8 @@ class Api::V1::BoardAttachmentsController < Api::V1::BaseController
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
   rescue BoardStorage::MissingFile, BoardStorage::WriteError => error
-    render json: { error: "upload_failed", details: error.message }, status: :unprocessable_entity
+    Rails.logger.warn("Board attachment upload failed: #{error.class}: #{error.message}")
+    render json: { error: "upload_failed" }, status: :unprocessable_entity
   end
 
   def create_comment
@@ -21,7 +22,8 @@ class Api::V1::BoardAttachmentsController < Api::V1::BaseController
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
   rescue BoardStorage::MissingFile, BoardStorage::WriteError => error
-    render json: { error: "upload_failed", details: error.message }, status: :unprocessable_entity
+    Rails.logger.warn("Board attachment upload failed: #{error.class}: #{error.message}")
+    render json: { error: "upload_failed" }, status: :unprocessable_entity
   end
 
   def preview
@@ -31,9 +33,11 @@ class Api::V1::BoardAttachmentsController < Api::V1::BaseController
 
     return stream_preview(attachment) if BoardStorage.s3?
 
+    disposition = PrivateAttachmentContentType.safe_inline?(attachment.content_type) ? "inline" : "attachment"
+    response_type = disposition == "inline" ? attachment.content_type : "application/octet-stream"
     send_file BoardStorage.path_for(attachment.storage_key),
-              type: attachment.content_type,
-              disposition: "inline",
+              type: response_type,
+              disposition:,
               filename: attachment.filename
   rescue BoardStorage::MissingFile
     render json: { error: "attachment_missing" }, status: :not_found
@@ -77,10 +81,11 @@ class Api::V1::BoardAttachmentsController < Api::V1::BaseController
   def stream_preview(attachment)
     return render json: { error: "attachment_missing" }, status: :not_found unless BoardStorage.exist?(attachment.storage_key)
 
-    response.headers["Content-Type"] = attachment.content_type
+    safe_inline = PrivateAttachmentContentType.safe_inline?(attachment.content_type)
+    response.headers["Content-Type"] = safe_inline ? attachment.content_type : "application/octet-stream"
     response.headers["Content-Length"] = attachment.byte_size.to_s
     response.headers["Content-Disposition"] = ActionDispatch::Http::ContentDisposition.format(
-      disposition: "inline", filename: attachment.filename
+      disposition: safe_inline ? "inline" : "attachment", filename: attachment.filename
     )
     response.headers["Cache-Control"] = "private, no-store"
     self.response_body = BoardStorage.stream(attachment.storage_key)
@@ -92,7 +97,7 @@ class Api::V1::BoardAttachmentsController < Api::V1::BaseController
   end
 
   def upload_one(uploaded_file, comment:)
-    content_type = upload_content_type(uploaded_file)
+    content_type = UploadContentType.for(uploaded_file)
     storage_key = BoardStorage.key_for(
       organization: Current.organization,
       board: @task.board,
@@ -110,6 +115,11 @@ class Api::V1::BoardAttachmentsController < Api::V1::BaseController
       content_type:,
       byte_size: uploaded_file.size
     )
+    unless content_type.match?(BoardAttachment::ALLOWED_CONTENT_TYPES)
+      attachment.errors.add(:content_type, "is not supported for board attachments")
+      raise ActiveRecord::RecordInvalid, attachment
+    end
+
     authorize attachment, :create?
     attachment.save!
 
@@ -118,15 +128,9 @@ class Api::V1::BoardAttachmentsController < Api::V1::BaseController
     attachment
   rescue BoardStorage::MissingFile, BoardStorage::WriteError => error
     BoardStorage.delete(storage_key) if storage_key.present?
-    attachment&.update(status: :failed, metadata: attachment.metadata.merge("processing_error" => error.message))
+    Rails.logger.warn("Board attachment storage failed: #{error.class}: #{error.message}")
+    attachment&.update(status: :failed, metadata: attachment.metadata.merge("processing_error" => "upload_failed"))
     raise
-  end
-
-  def upload_content_type(uploaded_file)
-    declared_type = uploaded_file.content_type.presence
-    return declared_type if declared_type.present? && declared_type != "application/octet-stream"
-
-    Marcel::MimeType.for(name: uploaded_file.original_filename).presence || declared_type || "application/octet-stream"
   end
 
   def record_activity(event_type, payload = {})

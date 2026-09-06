@@ -25,7 +25,8 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
     render json: { integration: serialize(@connection), valid: true }
   rescue Aryeo::Client::Error => error
     @connection.update!(status: :invalid) if @connection.persisted?
-    render json: { error: "aryeo_validation_failed", details: error.message }, status: :unprocessable_entity
+    Rails.logger.warn("Aryeo validation failed: #{error.class}: #{error.message}")
+    render json: { error: "aryeo_validation_failed" }, status: :unprocessable_entity
   end
 
   def import

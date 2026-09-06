@@ -22,10 +22,18 @@ unrun, say that plainly rather than implying it passed.
 
 The RSpec suite uses the local PostgreSQL test database on `localhost:5432`.
 In a sandboxed Codex session, grant the command local-service/elevated access
-before the first invocation of `bundle exec rspec`; do not run an unprivileged
-attempt first because the sandbox will fail during Rails boot with
-`Operation not permitted` before any examples load. Run the suite once after
-the feature is complete and report the exact example/failure count.
+before the first invocation; do not run an unprivileged attempt first because
+the sandbox will fail during Rails boot with `Operation not permitted` before
+any examples load. Clear the development URL so Rails cannot point the test
+environment at the development database:
+
+```bash
+env -u DATABASE_URL TEST_DATABASE_URL=postgresql://localhost/project_red_crm_test \
+  RAILS_ENV=test bundle exec rspec
+```
+
+Run the suite once after the feature is complete and report the exact
+example/failure count.
 
 ## CI and deployment monitoring
 

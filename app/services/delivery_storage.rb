@@ -57,11 +57,12 @@ class DeliveryStorage
       "#{media_cdn_url.chomp("/")}/#{escape_key(key)}"
     end
 
-    def temporary_url(key, content_type: nil)
+    def temporary_url(key, content_type: nil, disposition: nil)
       return unless s3? && key.present?
 
       options = { bucket: media_bucket, key: key, expires_in: 15.minutes.to_i }
       options[:response_content_type] = content_type if content_type.present?
+      options[:response_content_disposition] = disposition if disposition.present?
       Aws::S3::Presigner.new(client: s3_client).presigned_url(:get_object, **options)
     end
 

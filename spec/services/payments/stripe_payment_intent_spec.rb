@@ -14,6 +14,7 @@ RSpec.describe Payments::StripePaymentIntent do
     )
     expect(result.client_secret).to eq("pi_test_secret")
     expect(result.payment).to have_attributes(provider: "stripe", amount_cents: 47_250, provider_payment_id: "pi_test_4242")
+    expect(result.payment.reload.provider_payload).not_to have_key("payment_method")
   end
 
   def create_invoice

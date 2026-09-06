@@ -153,7 +153,7 @@ class Api::V1::PortalController < Api::V1::BaseController
   end
 
   def serialize_asset(asset)
-    asset.slice(:id, :filename, :content_type, :storage_key, :metadata).merge(
+    asset.slice(:id, :filename, :content_type, :byte_size, :width, :height, :duration_seconds).merge(
       cdn_url: asset.source_url.presence || DeliveryStorage.public_url(asset.storage_key),
       preview_path: asset.external? ? nil : preview_api_v1_media_asset_path(asset),
       download_path: download_api_v1_media_asset_path(asset)

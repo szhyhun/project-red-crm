@@ -15,8 +15,11 @@ RSpec.describe "Delivery portal", type: :request do
     get "/api/v1/public/property_sites/#{organization.slug}/#{site.slug}"
 
     expect(response).to have_http_status(:ok)
-    expect(JSON.parse(response.body).dig("property_site", "media_assets").map { |asset| asset.fetch("storage_key") }).to eq([ "final/photo.jpg" ])
-    expect(JSON.parse(response.body).dig("property_site", "media_assets", 0, "url")).to eq("https://cdn.example.test/final/photo.jpg")
+    assets = JSON.parse(response.body).dig("property_site", "media_assets")
+    expect(assets.map { |asset| asset.fetch("filename") }).to eq([ "photo.jpg" ])
+    expect(assets.first).not_to have_key("storage_key")
+    expect(assets.first).not_to have_key("metadata")
+    expect(assets.first.fetch("url")).to eq("https://cdn.example.test/final/photo.jpg")
   end
 
   it "does not expose staff-only messages to a client participant" do

@@ -61,7 +61,9 @@ RSpec.describe "Client portal", type: :request do
     )
     expect(listing.fetch("status")).not_to eq("in_production")
     expect(listing.fetch("progress").map { |task| task.fetch("title") }).to eq([ "Edit photos" ])
-    expect(listing.fetch("media_assets").map { |asset| asset.fetch("storage_key") }).to eq([ "final/photo.jpg" ])
+    expect(listing.fetch("media_assets").map { |asset| asset.fetch("filename") }).to eq([ "photo.jpg" ])
+    expect(listing.fetch("media_assets").first).not_to have_key("storage_key")
+    expect(listing.fetch("media_assets").first).not_to have_key("metadata")
     expect(listing.dig("media_assets", 0, "cdn_url")).to eq("https://cdn.example.test/final/photo.jpg")
     expect(listing.fetch("customer_first_viewed_at")).to be_present
     expect(own_listing.reload.customer_first_viewed_at).to be_present

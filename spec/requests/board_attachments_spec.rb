@@ -50,6 +50,22 @@ RSpec.describe "Board attachments", type: :request do
     upload&.close!
   end
 
+  it "rejects SVG uploads before they reach private storage" do
+    upload = Tempfile.new([ "unsafe", ".svg" ])
+    upload.write("<svg><script>alert(1)</script></svg>")
+    upload.rewind
+    sign_in editor
+
+    expect do
+      post "/api/v1/workflow_tasks/#{task.id}/attachments",
+           params: { files: [ Rack::Test::UploadedFile.new(upload.path, "image/svg+xml", true, original_filename: "unsafe.svg") ] }
+    end.not_to change(BoardAttachment, :count)
+
+    expect(response).to have_http_status(:unprocessable_entity)
+  ensure
+    upload&.close!
+  end
+
   it "streams an S3 preview through the authorized API origin" do
     attachment = task.board_attachments.create!(organization:, board:, uploaded_by: editor, status: :ready,
                                                  storage_key: "organizations/#{organization.id}/boards/#{board.id}/preview.png",
@@ -65,5 +81,24 @@ RSpec.describe "Board attachments", type: :request do
     expect(response.media_type).to eq("image/png")
     expect(response.headers["Content-Disposition"]).to include("inline")
     expect(response.body).to eq("image")
+  end
+
+  it "does not render a legacy HTML attachment inline" do
+    attachment = task.board_attachments.build(
+      organization:, board:, uploaded_by: editor, status: :ready,
+      storage_key: "organizations/#{organization.id}/boards/#{board.id}/legacy.html",
+      filename: "legacy.html", content_type: "text/html", byte_size: 5
+    )
+    attachment.save!(validate: false)
+    allow(BoardStorage).to receive(:s3?).and_return(true)
+    allow(BoardStorage).to receive(:exist?).with(attachment.storage_key).and_return(true)
+    allow(BoardStorage).to receive(:stream).with(attachment.storage_key).and_return([ "<p>x</p>" ])
+
+    sign_in editor
+    get "/api/v1/workflow_tasks/#{task.id}/attachments/#{attachment.id}/preview"
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq("application/octet-stream")
+    expect(response.headers["Content-Disposition"]).to include("attachment")
   end
 end

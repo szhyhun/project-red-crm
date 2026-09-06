@@ -9,7 +9,7 @@ class BoardAttachment < ApplicationRecord
 
   ALLOWED_CONTENT_TYPES = %r{
     \A(?:
-      image/[^\s;]+|
+      image/(?!svg\+xml(?:;|$))[^\s;]+|
       video/[^\s;]+|
       application/(?:pdf|zip|gzip|msword|vnd\.openxmlformats-officedocument\.[^\s;]+|vnd\.ms-excel[^\s;]*|vnd\.ms-powerpoint[^\s;]*)|
       text/(?:plain|csv|markdown)

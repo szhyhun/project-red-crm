@@ -21,9 +21,8 @@ class Api::V1::Public::PropertySitesController < ApplicationController
       id: asset.id,
       filename: asset.filename,
       content_type: asset.content_type,
-      storage_key: asset.storage_key,
-      url: DeliveryStorage.public_url(asset.storage_key),
-      metadata: asset.metadata
+      byte_size: asset.byte_size,
+      url: DeliveryStorage.public_url(asset.storage_key)
     }
   end
 end

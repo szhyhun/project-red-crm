@@ -66,7 +66,8 @@ class Api::V1::ListingsController < Api::V1::BaseController
       @download_archive = nil
     end
   rescue DeliveryStorage::MissingFile => error
-    render json: { error: "asset_missing", details: error.message }, status: :not_found
+    Rails.logger.warn("Listing media archive missing: #{error.class}: #{error.message}")
+    render json: { error: "asset_missing" }, status: :not_found
   end
 
   private

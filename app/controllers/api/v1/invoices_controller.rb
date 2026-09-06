@@ -50,13 +50,14 @@ class Api::V1::InvoicesController < Api::V1::BaseController
     result = Payments::StripePaymentIntent.new(invoice:).create!
 
     render json: {
-      payment: result.payment.slice(:id, :status, :amount_cents, :currency, :provider_payment_id),
+      payment: result.payment.slice(:id, :status, :amount_cents, :currency),
       client_secret: result.client_secret
     }
   rescue Payments::StripePaymentIntent::PaymentUnavailable => error
     render json: { error: "payment_unavailable", message: error.message }, status: :unprocessable_entity
   rescue Stripe::StripeError => error
-    render json: { error: "payment_provider_error", message: error.message }, status: :bad_gateway
+    Rails.logger.warn("Stripe payment intent failed: #{error.class}: #{error.message}")
+    render json: { error: "payment_provider_error", message: "The payment provider could not create a payment." }, status: :bad_gateway
   end
 
   private

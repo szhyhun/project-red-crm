@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_06_030000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_06_040000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -685,6 +685,18 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_06_030000) do
     t.index ["slug"], name: "index_organizations_on_slug", unique: true
   end
 
+  create_table "payment_webhook_events", force: :cascade do |t|
+    t.string "provider", null: false
+    t.string "event_id", null: false
+    t.string "event_type", null: false
+    t.bigint "payment_id"
+    t.datetime "processed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["payment_id"], name: "index_payment_webhook_events_on_payment_id"
+    t.index ["provider", "event_id"], name: "index_payment_webhook_events_on_provider_and_event_id", unique: true
+  end
+
   create_table "payments", force: :cascade do |t|
     t.bigint "invoice_id", null: false
     t.bigint "organization_id", null: false
@@ -1083,6 +1095,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_06_030000) do
   add_foreign_key "orders", "client_accounts"
   add_foreign_key "orders", "listings"
   add_foreign_key "orders", "organizations"
+  add_foreign_key "payment_webhook_events", "payments"
   add_foreign_key "payments", "invoices"
   add_foreign_key "payments", "organizations"
   add_foreign_key "payroll_items", "listings"

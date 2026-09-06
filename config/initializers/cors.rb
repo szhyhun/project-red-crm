@@ -1,7 +1,16 @@
+require Rails.root.join("lib/project_red/origin_allowlist").to_s
+
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
-    crm_ui_origins = ENV.fetch("CRM_UI_ORIGINS", ENV.fetch("CRM_UI_ORIGIN", "http://localhost:3011")).split(",").map(&:strip).reject(&:empty?)
-    origins *crm_ui_origins, ENV.fetch("PUBLIC_SITE_ORIGIN", "http://localhost:3000")
+    origins(*ProjectRed::OriginAllowlist.crm_ui)
     resource "/api/v1/*", headers: :any, methods: %i[get post patch put delete options], credentials: true
+  end
+
+  public_origins = ProjectRed::OriginAllowlist.public_site
+  if public_origins.any?
+    allow do
+      origins(*public_origins)
+      resource "/api/v1/public/*", headers: :any, methods: %i[get options], credentials: false
+    end
   end
 end

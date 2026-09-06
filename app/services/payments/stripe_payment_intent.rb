@@ -41,7 +41,7 @@ module Payments
         { idempotency_key: "project-red-payment-#{payment.id}" }
       )
 
-      payment.update!(provider_payment_id: intent.id, provider_payload: intent.to_hash)
+      payment.update!(provider_payment_id: intent.id, provider_payload: ProviderPayload.stripe(intent))
       [ payment, intent ]
     end
 

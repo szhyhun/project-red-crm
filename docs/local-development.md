@@ -117,5 +117,12 @@ business and permission boundaries. Tests are not run automatically during
 iteration. Run them only when intentionally validating a change:
 
 ```bash
-rbenv exec ruby bin/rspec
+env -u DATABASE_URL TEST_DATABASE_URL=postgresql://localhost/project_red_crm_test \
+  RAILS_ENV=test bundle exec rspec
 ```
+
+The `DATABASE_URL` override is intentional: local shells commonly point it at
+the development database, while Rails uses the test database only when the
+test URL is explicit. In Codex or another sandboxed environment, grant local
+PostgreSQL/elevated access before the first run; do not make an unprivileged
+attempt first.

@@ -10,11 +10,29 @@ class MediaAsset < ApplicationRecord
   enum :status, { pending: "pending", processing: "processing", ready: "ready", failed: "failed" }, validate: true
 
   CATEGORIES = %w[images videos floor_plans tours files].freeze
+  STORAGE_CONTENT_TYPES = %r{
+    \A(?:
+      image/(?!svg\+xml(?:;|$))[^\s;]+|
+      video/[^\s;]+|
+      audio/[^\s;]+|
+      application/(?:pdf|zip|gzip|msword|vnd\.openxmlformats-officedocument\.[^\s;]+|vnd\.ms-excel[^\s;]*|vnd\.ms-powerpoint[^\s;]*)|
+      text/(?:plain|csv|markdown)
+    )\z
+  }ix
+  UNSAFE_INLINE_CONTENT_TYPES = %w[image/svg+xml text/html application/xhtml+xml].freeze
 
   validates :filename, :content_type, presence: true
   validates :category, inclusion: { in: CATEGORIES }
   validates :position, numericality: { greater_than_or_equal_to: 0 }
   validates :source_url, format: { with: %r{\Ahttps?://\S+\z}, allow_blank: true }
+
+  def self.safe_storage_content_type?(value)
+    value.to_s.match?(STORAGE_CONTENT_TYPES)
+  end
+
+  def self.safe_inline_content_type?(value)
+    PrivateAttachmentContentType.safe_inline?(value)
+  end
 
   def external?
     source_url.present?
