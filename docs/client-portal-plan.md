@@ -386,8 +386,8 @@ rough working days for one engineer.
     the board's `client_visible`.
 - [x] **T3 · Task detail: comments, checklists, labels** — 3d — *T2*
   - Task descriptions and comments remain editable, board-authorized, and capable of
-    carrying sanitized rich media references; comments allow one reply level, and board
-    attachments are tracked separately in B1.
+    carrying sanitized rich media references; labels are shared board configuration,
+    comments allow one reply level, and board attachments are tracked separately in B1.
 
 ### Phase B — Put the plan on the board
 

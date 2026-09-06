@@ -29,7 +29,7 @@ namespace :project_red do
       external_ref: "T3",
       title: "Task detail: comments, checklists, labels",
       description: <<~DESCRIPTION.strip,
-        Schema and API: add `task_comments` and `task_checklist_items` with author/completion metadata, ordering, and timestamps. Store normalized labels on the task and allow them to be edited with the task update endpoint. Add create/update/delete endpoints for comments and checklist items, all authorized through the parent task's board.
+        Schema and API: add `task_comments` and `task_checklist_items` with author/completion metadata, ordering, and timestamps. Store labels as board-owned records and assign only labels configured on the task's board through the task update endpoint. Add create/update/delete endpoints for comments and checklist items, all authorized through the parent task's board.
 
         Interface: expose a task detail view that can read and edit a multiline description, labels, comments, and checklist. Comments support one level of replies; descriptions and comments use sanitized rich text, while B1 owns the board attachment upload/storage flow. Return only comment/checklist counts in board-card payloads and include full detail collections on the detail endpoint.
 
@@ -42,7 +42,7 @@ namespace :project_red do
       external_ref: "T4",
       title: "Seed the selected engineering board from these briefs",
       description: <<~DESCRIPTION.strip,
-        Data task: create an idempotent `project_red:sync_plan_tasks` rake task that reads the numbered T1–T13 briefs and the B1 board-content follow-up, then upserts one record per `external_ref` on the Engineering board. Set the full title, actionable description, position, area/brief labels, and `listing_id: nil`; rerunning it must update metadata without duplicating issues or changing manually selected positions.
+        Data task: create an idempotent `project_red:sync_plan_tasks` rake task that reads the numbered T1–T13 briefs and the B1 board-content follow-up, then upserts one record per `external_ref` on the selected engineering board. Set the full title, actionable description, position, board-owned area/brief labels, and `listing_id: nil`; rerunning it must update metadata without duplicating issues or changing manually selected positions.
 
         Workflow: map T2, T3, T4, and B1 to the board's completed column because those slices are already delivered. Leave T1 and T5–T13 in their current or default open status, and fail clearly if the board has no workflow columns or completed column.
 
@@ -201,13 +201,21 @@ namespace :project_red do
           organization:,
           title: definition.fetch(:title),
           description: definition.fetch(:description),
-          labels: definition.fetch(:labels),
           listing_id: nil,
           position: task.persisted? ? task.position : position,
           status: completed ? completed_status : (task.status.presence || default_status),
           completed_at: completed ? (task.completed_at || Time.current) : task.completed_at
         )
         task.save!
+
+        label_position = board.board_labels.maximum(:position).to_i + 1
+        labels = definition.fetch(:labels).map.with_index do |label_name, offset|
+          label = board.board_labels.find_or_initialize_by(name: label_name)
+          label.position = label_position + offset unless label.persisted?
+          label.save!
+          label
+        end
+        task.board_labels = labels
       end
 
       puts "Synchronized #{PLAN_TASKS.length} plan tasks on #{organization.slug}/#{board.slug}"
