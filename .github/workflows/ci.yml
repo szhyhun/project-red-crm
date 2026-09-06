@@ -56,6 +56,7 @@ jobs:
       - name: Run tests
         env:
           RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432
           # Keep the database name in config/database.yml. URI 1.1 rejects the
           # underscore in project_red_crm_test when it is supplied in the URL.
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432
