@@ -11,6 +11,10 @@ class Message < ApplicationRecord
 
   def normalize_body_content
     return unless will_save_change_to_body_html?
+    if body_html.blank?
+      self.body_html = nil
+      return
+    end
 
     self.body_html = RichTextSanitizer.sanitize(body_html).presence
     self.body = RichTextSanitizer.plain_text(body_html).presence
