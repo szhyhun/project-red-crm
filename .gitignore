@@ -7,6 +7,10 @@
 /vendor/bundle
 /config/master.key
 
+# Editor swap files, which appear whenever db/seeds.rb is open in Vim.
+*.swp
+*.swo
+
 !/log/.keep
 !/tmp/.keep
 !/storage/.keep
