@@ -9,8 +9,8 @@ catalog, orders, schedules, delivery, client portal, and operational workflow.
 
 ## Boundaries
 
-- `project-red-crm`: Rails API on port `3002`.
-- `project-red-crm-ui`: staff and customer portal on port `3001`.
+- `project-red-crm`: Rails API on port `3010` in local development.
+- `project-red-crm-ui`: staff and customer portal on port `3011` in local development.
 - ProjectRed marketing site: public ordering entry point and property pages.
 - PostgreSQL: durable application data.
 - Redis + Resque: media processing, imports, notifications, and delivery jobs.

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_05_140000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_05_175500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -87,6 +87,35 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_140000) do
     t.index ["organization_id"], name: "index_appointments_on_organization_id"
     t.index ["origin"], name: "index_appointments_on_origin"
     t.exclusion_constraint "organization_id WITH =, assigned_user_id WITH =, tsrange(starts_at, ends_at, '[)'::text) WITH &&", where: "(assigned_user_id IS NOT NULL) AND ((status)::text <> 'cancelled'::text)", using: :gist, name: "no_overlapping_staff_appointments"
+  end
+
+  create_table "board_attachments", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "board_id", null: false
+    t.bigint "workflow_task_id", null: false
+    t.bigint "task_comment_id"
+    t.bigint "uploaded_by_id"
+    t.string "status", default: "pending", null: false
+    t.string "storage_key", null: false
+    t.string "filename", null: false
+    t.string "content_type", null: false
+    t.bigint "byte_size", default: 0, null: false
+    t.integer "width"
+    t.integer "height"
+    t.integer "duration_seconds"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "processed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_id", "status"], name: "index_board_attachments_on_board_id_and_status"
+    t.index ["board_id"], name: "index_board_attachments_on_board_id"
+    t.index ["organization_id"], name: "index_board_attachments_on_organization_id"
+    t.index ["storage_key"], name: "index_board_attachments_on_storage_key", unique: true
+    t.index ["task_comment_id", "created_at"], name: "index_board_attachments_on_task_comment_id_and_created_at"
+    t.index ["task_comment_id"], name: "index_board_attachments_on_task_comment_id"
+    t.index ["uploaded_by_id"], name: "index_board_attachments_on_uploaded_by_id"
+    t.index ["workflow_task_id", "created_at"], name: "index_board_attachments_on_workflow_task_id_and_created_at"
+    t.index ["workflow_task_id"], name: "index_board_attachments_on_workflow_task_id"
   end
 
   create_table "board_memberships", force: :cascade do |t|
@@ -529,6 +558,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_140000) do
     t.jsonb "attachments", default: [], null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.text "body_html"
     t.index ["author_id"], name: "index_messages_on_author_id"
     t.index ["conversation_id", "created_at"], name: "index_messages_on_conversation_id_and_created_at"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
@@ -785,7 +815,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_140000) do
     t.datetime "edited_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.text "body_html"
+    t.bigint "parent_comment_id"
     t.index ["author_id"], name: "index_task_comments_on_author_id"
+    t.index ["parent_comment_id", "created_at"], name: "index_task_comments_on_parent_comment_id_and_created_at"
+    t.index ["parent_comment_id"], name: "index_task_comments_on_parent_comment_id"
     t.index ["workflow_task_id", "created_at"], name: "index_task_comments_on_workflow_task_id_and_created_at"
     t.index ["workflow_task_id"], name: "index_task_comments_on_workflow_task_id"
   end
@@ -906,6 +940,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_140000) do
     t.string "labels", default: [], null: false, array: true
     t.datetime "started_at"
     t.string "external_ref"
+    t.text "description_html"
     t.index ["assignee_id"], name: "index_workflow_tasks_on_assignee_id"
     t.index ["board_id", "status", "position"], name: "index_workflow_tasks_on_board_id_and_status_and_position"
     t.index ["board_id"], name: "index_workflow_tasks_on_board_id"
@@ -929,6 +964,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_140000) do
   add_foreign_key "appointments", "orders"
   add_foreign_key "appointments", "organizations"
   add_foreign_key "appointments", "users", column: "assigned_user_id"
+  add_foreign_key "board_attachments", "boards"
+  add_foreign_key "board_attachments", "organizations"
+  add_foreign_key "board_attachments", "task_comments"
+  add_foreign_key "board_attachments", "users", column: "uploaded_by_id"
+  add_foreign_key "board_attachments", "workflow_tasks"
   add_foreign_key "board_memberships", "boards"
   add_foreign_key "boards", "organizations"
   add_foreign_key "boards", "users", column: "created_by_id"
@@ -1012,6 +1052,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_140000) do
   add_foreign_key "saved_listing_views", "users"
   add_foreign_key "task_checklist_items", "users", column: "completed_by_id"
   add_foreign_key "task_checklist_items", "workflow_tasks"
+  add_foreign_key "task_comments", "task_comments", column: "parent_comment_id"
   add_foreign_key "task_comments", "users", column: "author_id"
   add_foreign_key "task_comments", "workflow_tasks"
   add_foreign_key "taxes", "organizations"

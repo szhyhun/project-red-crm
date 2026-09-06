@@ -20,6 +20,7 @@ class User < ApplicationRecord
   has_many :conversations, through: :conversation_memberships
   has_many :saved_listing_views, dependent: :destroy
   has_many :authored_listing_notes, class_name: "ListingNote", foreign_key: :author_id, dependent: :destroy
+  has_many :uploaded_board_attachments, class_name: "BoardAttachment", foreign_key: :uploaded_by_id, dependent: :nullify
   has_many :created_payroll_items, class_name: "PayrollItem", foreign_key: :created_by_id, dependent: :restrict_with_error
   has_many :payroll_items, class_name: "PayrollItem", foreign_key: :team_member_id, dependent: :nullify
   has_one :listing_view_preference, dependent: :destroy

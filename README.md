@@ -14,6 +14,11 @@ bin/rails server
 QUEUE='media' bundle exec rake resque:work
 ```
 
+Local CRM ports are fixed to avoid collisions with the other workspace apps:
+the Rails API listens on `http://localhost:3010` and the CRM UI listens on
+`http://localhost:3011`. The local `PORT=3010` setting and Puma default make
+the plain `bin/rails server` command use the API port.
+
 If the Homebrew Redis service cannot start through `launchctl`, use the local
 development daemon instead:
 
@@ -35,6 +40,10 @@ the existing infrastructure:
 - Private S3 media bucket `project-red-crm-prod-media-250830192304`, served
   through its CloudFront distribution. Deployment artifacts are stored
   separately and expire after 30 days.
+- Board attachments use a separate private S3 bucket configured with
+  `PROJECT_RED_BOARD_MEDIA_BUCKET` and `PROJECT_RED_BOARD_MEDIA_CDN_URL`.
+  The API authorizes every preview/download request before issuing a temporary
+  URL; local development stores them under `storage/board_media`.
 - Rails API on port `3003`, behind Nginx as `api.projectred.ca`.
 - Resque worker: `project-red-crm-worker`.
 

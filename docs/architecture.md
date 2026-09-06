@@ -8,7 +8,7 @@ background-job orchestration.
 
 The other applications have distinct responsibilities:
 
-- `project-red-crm-ui` is the staff and customer portal on port `3001`.
+- `project-red-crm-ui` is the staff and customer portal on port `3011` in local development.
 - The ProjectRed marketing website is the public sales and ordering entry point.
 - PostgreSQL stores durable CRM data.
 - Redis and Resque run background work locally and in future deployment.

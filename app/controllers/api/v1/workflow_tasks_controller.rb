@@ -1,8 +1,22 @@
 class Api::V1::WorkflowTasksController < Api::V1::BaseController
-  def self.serialize_comment(comment, capabilities: [])
-    comment.slice(:id, :body, :created_at, :edited_at).merge(
+  def self.serialize_comment(comment, capabilities: [], include_replies: true)
+    data = comment.slice(:id, :body, :body_html, :parent_comment_id, :created_at, :edited_at).merge(
       author: comment.author.slice(:id, :name, :role),
-      capabilities:
+      capabilities:,
+      attachments: comment.board_attachments.order(:created_at, :id).map { |attachment| BoardAttachment.serialize(attachment) }
+    )
+    return data unless include_replies
+
+    data.merge(
+      replies: comment.replies.chronological.includes(:author).map do |reply|
+        self.serialize_comment(reply, capabilities: TaskCommentPolicy.new(Current.user, reply).capabilities, include_replies: false)
+      end
+    )
+  end
+
+  def self.serialize_activity(event)
+    event.slice(:id, :event_type, :payload, :created_at).merge(
+      actor: event.actor&.slice(:id, :name)
     )
   end
 
@@ -40,7 +54,8 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   def show
     task = policy_scope(WorkflowTask).includes(:board, :listing, :assignee, :reporter,
                                                task_comments: :author,
-                                               task_checklist_items: :completed_by).find(params[:id])
+                                               task_checklist_items: :completed_by,
+                                               board_attachments: :uploaded_by).find(params[:id])
     authorize task
 
     render json: { workflow_task: serialize(task, detailed: true) }
@@ -58,6 +73,7 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     authorize task
 
     if task.save
+      record_activity(task, "workflow_task.created")
       render json: { workflow_task: serialize(task) }, status: :created
     else
       render_validation_errors(task)
@@ -69,6 +85,7 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     authorize task
 
     WorkflowTasks::Mover.new(task:, attributes: task_params).move!
+    record_activity(task.reload, "workflow_task.updated", status: task.status)
     render json: { workflow_task: serialize(task.reload) }
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
@@ -77,6 +94,7 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   def destroy
     task = policy_scope(WorkflowTask).find(params[:id])
     authorize task
+    record_activity(task, "workflow_task.deleted")
     task.destroy!
     head :no_content
   end
@@ -107,13 +125,13 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   def task_params
     params.require(:workflow_task).permit(
       :title, :description, :status, :assignee_id, :customer_visible,
-      :position, :due_at, :priority, :listing_id, :external_ref, labels: []
+      :position, :due_at, :priority, :listing_id, :external_ref, :description_html, labels: []
     )
   end
 
   def serialize(task, detailed: false)
     column = columns_by_board_and_key[[ task.board_id, task.status ]]
-    data = task.slice(:id, :board_id, :listing_id, :title, :description, :status, :priority,
+    data = task.slice(:id, :board_id, :listing_id, :title, :description, :description_html, :status, :priority,
                       :customer_visible, :position, :due_at, :completed_at, :labels, :external_ref).merge(
       listing_address: task.listing&.address,
       workflow_column_id: column&.id,
@@ -135,15 +153,37 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     return data unless detailed
 
     data.merge(
-      comments: task.task_comments.sort_by(&:created_at).map do |comment|
+      comments: task.task_comments.where(parent_comment_id: nil).chronological.map do |comment|
         self.class.serialize_comment(comment, capabilities: capabilities_for(comment))
       end,
       checklist_items: task.task_checklist_items.sort_by { |item| [ item.position, item.id ] }
-                           .map { |item| self.class.serialize_checklist_item(item) }
+                           .map { |item| self.class.serialize_checklist_item(item) },
+      attachments: task.board_attachments.sort_by { |attachment| [ attachment.created_at, attachment.id ] }
+                            .map { |attachment| BoardAttachment.serialize(attachment) },
+      activity: activity_for(task)
     )
+  end
+
+  def activity_for(task)
+    events = task.activity_events.includes(:actor).order(:created_at, :id)
+    return events.map { |event| self.class.serialize_activity(event) } if events.exists?
+
+    [
+      {
+        id: -task.id,
+        event_type: "workflow_task.created",
+        payload: {},
+        created_at: task.created_at,
+        actor: task.reporter&.slice(:id, :name)
+      }
+    ]
   end
 
   def columns_by_board_and_key
     @columns_by_board_and_key ||= Current.organization.workflow_columns.index_by { |column| [ column.board_id, column.key ] }
+  end
+
+  def record_activity(task, event_type, payload = {})
+    ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: task, event_type:, payload:)
   end
 end

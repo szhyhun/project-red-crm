@@ -85,6 +85,11 @@ Rails.application.routes.draw do
         resources :comments, only: %i[create update destroy], controller: "task_comments"
         resources :checklist_items, only: %i[create update destroy], controller: "task_checklist_items"
       end
+      post "workflow_tasks/:workflow_task_id/attachments", to: "board_attachments#create_task"
+      post "workflow_tasks/:workflow_task_id/comments/:task_comment_id/attachments", to: "board_attachments#create_comment"
+      get "workflow_tasks/:workflow_task_id/attachments/:id/preview", to: "board_attachments#preview"
+      get "workflow_tasks/:workflow_task_id/attachments/:id/download", to: "board_attachments#download"
+      delete "workflow_tasks/:workflow_task_id/attachments/:id", to: "board_attachments#destroy"
       resources :workflow_columns, only: %i[index create update destroy]
       resources :boards, only: %i[index show create update destroy] do
         resources :members, only: %i[index create update destroy], controller: "board_memberships"

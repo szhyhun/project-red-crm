@@ -89,6 +89,22 @@ RSpec.describe "Delivery portal", type: :request do
     expect(conversation.messages.last).to have_attributes(author: client_user, body: "Thank you.", visibility: "participants")
   end
 
+  it "sanitizes rich chat content in the message payload" do
+    manager = User.create!(organization: organization, name: "Morgan Manager", email: "rich-chat-manager@example.test", password: "long-enough-password", role: :manager)
+    conversation = Conversation.create!(organization: organization, listing: listing, client_account: client_account, kind: :client, subject: "Rich update")
+    ConversationMembership.create!(conversation:, user: manager, role: :manager)
+
+    sign_in manager
+    post "/api/v1/conversations/#{conversation.id}/messages",
+         params: { message: { body_html: "<p><strong>Photos are ready</strong></p><script>bad()</script>" } }
+
+    expect(response).to have_http_status(:created)
+    message = JSON.parse(response.body).fetch("message")
+    expect(message).to include("body" => "Photos are ready")
+    expect(message.fetch("body_html")).to include("<strong>Photos are ready</strong>")
+    expect(message.fetch("body_html")).not_to include("script")
+  end
+
   it "creates an organization-level conversation for selected staff" do
     admin = User.create!(organization: organization, name: "Alex Admin", email: "chat-admin@example.test", password: "long-enough-password", role: :organization_admin)
     producer = User.create!(organization: organization, name: "Parker Producer", email: "chat-producer@example.test", password: "long-enough-password", role: :production_staff)

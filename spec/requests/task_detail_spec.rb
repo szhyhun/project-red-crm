@@ -52,6 +52,20 @@ RSpec.describe "Task detail", type: :request do
       expect(comment.edited_at).to be_present
     end
 
+    it "sanitizes rich content and supports replies" do
+      parent = task.task_comments.create!(author: editor, body: "Parent comment")
+
+      sign_in editor
+      post "/api/v1/workflow_tasks/#{task.id}/comments",
+           params: { task_comment: { body_html: "<p><strong>Reply</strong></p><script>alert('x')</script>", parent_comment_id: parent.id } }
+
+      expect(response).to have_http_status(:created)
+      reply = JSON.parse(response.body).fetch("task_comment")
+      expect(reply).to include("body" => "Reply", "parent_comment_id" => parent.id)
+      expect(reply.fetch("body_html")).to include("<strong>Reply</strong>")
+      expect(reply.fetch("body_html")).not_to include("script")
+    end
+
     it "refuses to let one person edit another's comment" do
       comment = task.task_comments.create!(author: editor, body: "Mine")
       board.board_memberships.create!(member: manager, access: "manager")
@@ -128,6 +142,22 @@ RSpec.describe "Task detail", type: :request do
       expect(detail.fetch("comments").length).to eq(1)
       expect(detail.fetch("checklist_items").pluck("title")).to eq(%w[Migration Specs])
       expect(detail).to include("checklist_total" => 2, "checklist_done" => 1, "comment_count" => 1)
+    end
+
+    it "includes rich descriptions, nested replies and activity history" do
+      parent = task.task_comments.create!(author: editor, body: "Parent comment")
+      reply = task.task_comments.create!(author: editor, parent_comment: parent, body: "Reply comment")
+      task.update!(description_html: "<p><em>Detailed scope</em></p><script>bad()</script>")
+      ActivityEvent.create!(organization:, actor: editor, subject: task, event_type: "workflow_task.updated", payload: { "status" => "todo" })
+
+      sign_in editor
+      get "/api/v1/workflow_tasks/#{task.id}"
+
+      detail = JSON.parse(response.body).fetch("workflow_task")
+      expect(detail.fetch("description_html")).to include("<em>Detailed scope</em>")
+      expect(detail.fetch("description_html")).not_to include("script")
+      expect(detail.dig("comments", 0, "replies", 0)).to include("id" => reply.id, "parent_comment_id" => parent.id)
+      expect(detail.fetch("activity").map { |event| event.fetch("event_type") }).to include("workflow_task.updated")
     end
 
     # The board index shows how much detail a card carries without loading it.

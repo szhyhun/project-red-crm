@@ -38,7 +38,9 @@ class Api::V1::ConversationsController < Api::V1::BaseController
       end
 
       users.each { |member| conversation.conversation_memberships.create!(user: member, role: member == current_user ? :manager : :participant) }
-      create_message!(conversation, create_params[:body]) if create_params[:body].present?
+      if create_params[:body].present? || create_params[:body_html].present?
+        create_message!(conversation, create_params[:body], create_params[:body_html])
+      end
     end
 
     render json: { conversation: serialize(conversation, include_messages: true) }, status: :created
@@ -57,7 +59,8 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   def create_message
     conversation = policy_scope(Conversation).find(params[:id])
     authorize conversation
-    message = create_message!(conversation, message_params.fetch(:body), message_params[:visibility])
+    body = message_params[:body].presence || message_params[:body_html]
+    message = create_message!(conversation, body, message_params[:body_html], message_params[:visibility])
     render json: { message: serialize_message(message) }, status: :created
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
@@ -66,16 +69,16 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   private
 
   def create_params
-    params.require(:conversation).permit(:listing_id, :client_account_id, :kind, :subject, :body, member_ids: [])
+    params.require(:conversation).permit(:listing_id, :client_account_id, :kind, :subject, :body, :body_html, member_ids: [])
   end
 
   def message_params
-    params.require(:message).permit(:body, :visibility)
+    params.require(:message).permit(:body, :body_html, :visibility)
   end
 
-  def create_message!(conversation, body, visibility = nil)
+  def create_message!(conversation, body, body_html = nil, visibility = nil)
     message_visibility = current_user.internal? ? (visibility || :participants) : :participants
-    message = conversation.messages.create!(author: current_user, body: body, visibility: message_visibility)
+    message = conversation.messages.create!(author: current_user, body: body, body_html: body_html, visibility: message_visibility)
     conversation.update!(last_message_at: message.created_at)
     message
   end
@@ -123,6 +126,6 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def serialize_message(message)
-    message.slice(:id, :body, :visibility, :attachments, :created_at).merge(author: message.author.slice(:id, :name, :role))
+    message.slice(:id, :body, :body_html, :visibility, :attachments, :created_at).merge(author: message.author.slice(:id, :name, :role))
   end
 end

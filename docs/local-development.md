@@ -17,7 +17,7 @@ From `project-red-crm`:
 rbenv exec bundle install
 rbenv exec ruby bin/rails db:prepare
 rbenv exec ruby bin/rails db:seed
-rbenv exec ruby bin/rails server -p 3002
+rbenv exec ruby bin/rails server
 ```
 
 The seed is idempotent: it creates the ProjectRed demo workspace only when its
@@ -28,7 +28,7 @@ local password with `DEMO_PASSWORD=...`. Production skips demo data unless
 Use Ruby from the project's rbenv installation. The macOS system Ruby is not
 the application runtime.
 
-The health endpoint is `http://localhost:3002/up`.
+The health endpoint is `http://localhost:3010/up`.
 
 ## Start the worker
 
@@ -42,7 +42,7 @@ OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES QUEUE='*' bundle exec rake resque:work
 The worker verifies local media uploads and sends lifecycle email jobs. Local
 development uses Rails' `:test` delivery method, so it never sends external mail.
 Inspect a branded message through Rails mailer previews at
-`http://localhost:3002/rails/mailers/customer_mailer`.
+`http://localhost:3010/rails/mailers/customer_mailer`.
 
 ## Production email settings
 
@@ -75,11 +75,18 @@ From `project-red-crm-ui`:
 ```bash
 cp .env.example .env.local
 pnpm install
-pnpm dev -- --port 3001
+npm run dev
 ```
 
-The portal runs at `http://localhost:3001` and calls the API at
-`http://localhost:3002/api/v1` by default.
+The portal runs at `http://localhost:3011` and calls the API at
+`http://localhost:3010/api/v1` by default. Both ports are configured in the
+two repositories, so no port flags are needed when starting either app.
+
+Task description/comment attachments use local `storage/board_media` by
+default. To exercise the production storage path, set
+`PROJECT_RED_BOARD_MEDIA_BUCKET`, `PROJECT_RED_BOARD_MEDIA_CDN_URL`, and
+`AWS_REGION` in the API environment. The production bucket should remain
+private; the API returns authorized temporary preview/download URLs.
 
 ## Stripe test payments
 
@@ -89,7 +96,7 @@ Set the Rails variables `STRIPE_SECRET_KEY=sk_test_...` and
 events to the API with:
 
 ```bash
-stripe listen --forward-to localhost:3002/api/v1/webhooks/stripe
+stripe listen --forward-to localhost:3010/api/v1/webhooks/stripe
 ```
 
 Use Stripe test card `4242 4242 4242 4242`, any future expiry, and any CVC in

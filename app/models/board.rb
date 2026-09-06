@@ -6,6 +6,7 @@ class Board < ApplicationRecord
   has_many :board_memberships, dependent: :destroy
   has_many :workflow_columns, dependent: :destroy
   has_many :workflow_tasks, dependent: :destroy
+  has_many :board_attachments, dependent: :destroy
 
   enum :kind, KINDS.index_by(&:itself), validate: true
   enum :visibility, { organization: "organization", restricted: "restricted" },

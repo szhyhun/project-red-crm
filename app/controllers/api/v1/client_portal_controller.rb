@@ -135,7 +135,7 @@ class Api::V1::ClientPortalController < Api::V1::BaseController
     conversation.slice(:id, :listing_id, :subject, :last_message_at).merge(
       listing_address: conversation.listing&.address,
       messages: conversation.messages.participants.includes(:author).order(created_at: :desc).limit(20).reverse.map do |message|
-        message.slice(:id, :body, :created_at).merge(author: message.author.slice(:id, :name, :role))
+        message.slice(:id, :body, :body_html, :created_at).merge(author: message.author.slice(:id, :name, :role))
       end
     )
   end
