@@ -21,7 +21,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
       listing&.client_account
     end
     authorize Conversation, :create?
-    attributes = create_params.except(:listing_id, :client_account_id, :member_ids, :body)
+    attributes = create_params.except(:listing_id, :client_account_id, :member_ids, :body, :body_html)
     conversation = Current.organization.conversations.build(attributes.merge(listing: listing))
     conversation.client_account = client_account if conversation.client?
 

@@ -110,11 +110,24 @@ RSpec.describe "Delivery portal", type: :request do
     producer = User.create!(organization: organization, name: "Parker Producer", email: "chat-producer@example.test", password: "long-enough-password", role: :production_staff)
 
     sign_in admin
-    post "/api/v1/conversations", params: { conversation: { kind: "internal", subject: "Studio updates", body: "Welcome to the team chat.", member_ids: [ producer.id ] } }
+    post "/api/v1/conversations", params: { conversation: { kind: "internal", subject: "Studio updates", body: "Welcome to the team chat.", body_html: "", member_ids: [ producer.id ] } }
 
     expect(response).to have_http_status(:created)
     conversation = Conversation.order(:id).last
     expect(conversation).to have_attributes(kind: "internal", listing_id: nil, client_account_id: nil)
+    expect(conversation.users).to contain_exactly(admin, producer)
+  end
+
+  it "creates an empty organization-level conversation without treating rich text as a column" do
+    admin = User.create!(organization: organization, name: "Alex Admin", email: "empty-chat-admin@example.test", password: "long-enough-password", role: :organization_admin)
+    producer = User.create!(organization: organization, name: "Parker Producer", email: "empty-chat-producer@example.test", password: "long-enough-password", role: :production_staff)
+
+    sign_in admin
+    post "/api/v1/conversations", params: { conversation: { kind: "internal", subject: "Empty room", body: "", body_html: "", member_ids: [ producer.id ] } }
+
+    expect(response).to have_http_status(:created)
+    conversation = Conversation.order(:id).last
+    expect(conversation.messages).to be_empty
     expect(conversation.users).to contain_exactly(admin, producer)
   end
 
