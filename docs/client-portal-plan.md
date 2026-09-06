@@ -391,7 +391,9 @@ rough working days for one engineer.
 ### Phase B — Put the plan on the board
 
 - [x] **T4 · Seed the Engineering board from these briefs** — 1d — *T3*
-  - Idempotent rake task. Labels `backend`, `frontend`, `schema`, `brief-1/2/3`.
+  - Idempotent rake task, with `BOARD_SLUG` selecting the board object when an
+    organization uses a different current board name. Labels `backend`, `frontend`,
+    `schema`, `brief-1/2/3`.
 
 ### Board platform follow-up
 

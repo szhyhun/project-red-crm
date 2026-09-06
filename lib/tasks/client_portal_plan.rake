@@ -175,8 +175,9 @@ namespace :project_red do
     }
   ].freeze
 
-  desc "Synchronize the client portal plan issues on each organization's Engineering board"
+  desc "Synchronize the client portal plan issues on each organization's selected board (BOARD_SLUG defaults to engineering)"
   task sync_plan_tasks: :environment do
+    board_slug = ENV.fetch("BOARD_SLUG", "engineering")
     organizations = if ENV["ORGANIZATION_SLUG"].present?
       [ Organization.find_by!(slug: ENV["ORGANIZATION_SLUG"]) ]
     else
@@ -184,7 +185,7 @@ namespace :project_red do
     end
 
     organizations.each do |organization|
-      board = organization.boards.find_by(slug: "engineering")
+      board = organization.boards.find_by(slug: board_slug)
       next if board.blank?
 
       default_status = board.workflow_columns.ordered.first&.key
