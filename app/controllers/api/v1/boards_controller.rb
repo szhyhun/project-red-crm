@@ -1,6 +1,6 @@
 class Api::V1::BoardsController < Api::V1::BaseController
   def index
-    boards = policy_scope(Board).active.ordered.includes(:board_memberships)
+    boards = policy_scope(Board).active.ordered.includes(:board_memberships, :board_labels)
     render json: { boards: boards.map { |board| serialize(board) } }
   end
 
@@ -66,6 +66,7 @@ class Api::V1::BoardsController < Api::V1::BaseController
     data = board.slice(:id, :name, :slug, :description, :kind, :visibility, :requires_listing,
                        :client_visible, :archived, :position).merge(
       task_count: board.workflow_tasks.count,
+      labels: board.board_labels.ordered.map { |label| serialize_label(label) },
       capabilities: capabilities_for(board)
     )
     return data unless detailed
@@ -77,5 +78,9 @@ class Api::V1::BoardsController < Api::V1::BaseController
     membership.slice(:id, :member_type, :member_id, :access).merge(
       name: membership.member&.name
     )
+  end
+
+  def serialize_label(label)
+    BoardLabelsController.serialize_label(label, capabilities: capabilities_for(label))
   end
 end

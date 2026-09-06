@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_05_175500) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_05_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -116,6 +116,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_175500) do
     t.index ["uploaded_by_id"], name: "index_board_attachments_on_uploaded_by_id"
     t.index ["workflow_task_id", "created_at"], name: "index_board_attachments_on_workflow_task_id_and_created_at"
     t.index ["workflow_task_id"], name: "index_board_attachments_on_workflow_task_id"
+  end
+
+  create_table "board_labels", force: :cascade do |t|
+    t.bigint "board_id", null: false
+    t.string "name", null: false
+    t.string "color", default: "#e8f7ed", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "board_id, lower((name)::text)", name: "index_board_labels_on_board_id_and_lower_name", unique: true
+    t.index ["board_id"], name: "index_board_labels_on_board_id"
   end
 
   create_table "board_memberships", force: :cascade do |t|
@@ -919,6 +930,16 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_175500) do
     t.index ["organization_id"], name: "index_workflow_columns_on_organization_id"
   end
 
+  create_table "workflow_task_labels", force: :cascade do |t|
+    t.bigint "workflow_task_id", null: false
+    t.bigint "board_label_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_label_id"], name: "index_workflow_task_labels_on_board_label_id"
+    t.index ["workflow_task_id", "board_label_id"], name: "index_workflow_task_labels_on_task_and_label", unique: true
+    t.index ["workflow_task_id"], name: "index_workflow_task_labels_on_workflow_task_id"
+  end
+
   create_table "workflow_tasks", force: :cascade do |t|
     t.bigint "listing_id"
     t.bigint "organization_id", null: false
@@ -937,14 +958,12 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_175500) do
     t.string "origin", default: "native", null: false
     t.bigint "board_id", null: false
     t.bigint "reporter_id"
-    t.string "labels", default: [], null: false, array: true
     t.datetime "started_at"
     t.string "external_ref"
     t.text "description_html"
     t.index ["assignee_id"], name: "index_workflow_tasks_on_assignee_id"
     t.index ["board_id", "status", "position"], name: "index_workflow_tasks_on_board_id_and_status_and_position"
     t.index ["board_id"], name: "index_workflow_tasks_on_board_id"
-    t.index ["labels"], name: "index_workflow_tasks_on_labels", using: :gin
     t.index ["listing_id"], name: "index_workflow_tasks_on_listing_id"
     t.index ["organization_id", "status", "position"], name: "idx_on_organization_id_status_position_3a4fef4137"
     t.index ["organization_id"], name: "index_workflow_tasks_on_organization_id"
@@ -969,6 +988,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_175500) do
   add_foreign_key "board_attachments", "task_comments"
   add_foreign_key "board_attachments", "users", column: "uploaded_by_id"
   add_foreign_key "board_attachments", "workflow_tasks"
+  add_foreign_key "board_labels", "boards"
   add_foreign_key "board_memberships", "boards"
   add_foreign_key "boards", "organizations"
   add_foreign_key "boards", "users", column: "created_by_id"
@@ -1063,6 +1083,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_05_175500) do
   add_foreign_key "users", "organizations"
   add_foreign_key "workflow_columns", "boards"
   add_foreign_key "workflow_columns", "organizations"
+  add_foreign_key "workflow_task_labels", "board_labels"
+  add_foreign_key "workflow_task_labels", "workflow_tasks"
   add_foreign_key "workflow_tasks", "boards"
   add_foreign_key "workflow_tasks", "listings"
   add_foreign_key "workflow_tasks", "organizations"

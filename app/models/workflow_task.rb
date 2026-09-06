@@ -8,6 +8,8 @@ class WorkflowTask < ApplicationRecord
   has_many :task_checklist_items, dependent: :destroy
   has_many :board_attachments, dependent: :destroy
   has_many :activity_events, as: :subject, dependent: :destroy
+  has_many :workflow_task_labels, dependent: :destroy
+  has_many :board_labels, through: :workflow_task_labels
 
   enum :priority, { low: "low", normal: "normal", high: "high", urgent: "urgent" }, validate: true
 

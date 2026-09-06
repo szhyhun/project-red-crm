@@ -142,7 +142,10 @@ RSpec.describe "Task detail", type: :request do
 
   describe "the detail payload" do
     it "carries comments, checklist and labels" do
-      task.update!(labels: %w[backend schema])
+      backend = board.board_labels.create!(name: "backend", color: "#e8f0ff")
+      schema = board.board_labels.create!(name: "schema", color: "#f1eafa")
+      task.board_labels = [ backend, schema ]
+      task.save!
       task.task_comments.create!(author: editor, body: "Started")
       task.task_checklist_items.create!(title: "Migration", position: 0, completed_at: Time.current, completed_by: editor)
       task.task_checklist_items.create!(title: "Specs", position: 1)
@@ -151,7 +154,7 @@ RSpec.describe "Task detail", type: :request do
       get "/api/v1/workflow_tasks/#{task.id}"
 
       detail = JSON.parse(response.body).fetch("workflow_task")
-      expect(detail.fetch("labels")).to eq(%w[backend schema])
+      expect(detail.fetch("labels").map { |label| label.fetch("name") }).to contain_exactly("backend", "schema")
       expect(detail.fetch("comments").length).to eq(1)
       expect(detail.fetch("checklist_items").pluck("title")).to eq(%w[Migration Specs])
       expect(detail).to include("checklist_total" => 2, "checklist_done" => 1, "comment_count" => 1)

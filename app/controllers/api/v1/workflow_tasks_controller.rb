@@ -36,10 +36,11 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
       else
         listing.workflow_tasks.where(customer_visible: true).where(board: Board.where(client_visible: true))
       end
-      tasks = tasks.includes(:assignee, :board, :task_comments, :task_checklist_items).order(:position)
+      tasks = tasks.includes(:assignee, :board, :board_labels, :task_comments, :task_checklist_items).order(:position)
     else
       authorize WorkflowTask, :index?
-      tasks = policy_scope(WorkflowTask).includes(:listing, :assignee, :board, :reporter, :task_comments, :task_checklist_items)
+      tasks = policy_scope(WorkflowTask).includes(:listing, :assignee, :board, :reporter, :board_labels,
+                                                    :task_comments, :task_checklist_items)
       # Asking for a board you cannot see is a missing board, not an empty one.
       # Filtering by id alone answered 200 with nothing, which reads as "this
       # board exists and is empty" -- resolving through the board scope makes it
@@ -52,7 +53,7 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   end
 
   def show
-    task = policy_scope(WorkflowTask).includes(:board, :listing, :assignee, :reporter,
+    task = policy_scope(WorkflowTask).includes(:board, :listing, :assignee, :reporter, :board_labels,
                                                task_comments: :author,
                                                task_checklist_items: :completed_by,
                                                board_attachments: :uploaded_by).find(params[:id])
@@ -63,8 +64,9 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
 
   def create
     board = resolve_board
-    listing = resolve_listing(board)
-    attributes = task_params
+    attributes = task_attributes
+    label_values = extract_label_values!(attributes)
+    listing = resolve_listing(board, attributes[:listing_id])
     attributes[:status] = board.workflow_columns.ordered.first&.key if attributes[:status].blank?
 
     task = board.workflow_tasks.build(
@@ -72,19 +74,26 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     )
     authorize task
 
-    if task.save
-      record_activity(task, "workflow_task.created")
-      render json: { workflow_task: serialize(task) }, status: :created
-    else
-      render_validation_errors(task)
+    WorkflowTask.transaction do
+      task.save!
+      assign_labels!(task, label_values)
     end
+    record_activity(task, "workflow_task.created")
+    render json: { workflow_task: serialize(task.reload) }, status: :created
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_errors(error.record)
   end
 
   def update
     task = policy_scope(WorkflowTask).find(params[:id])
     authorize task
 
-    WorkflowTasks::Mover.new(task:, attributes: task_params).move!
+    attributes = task_attributes
+    label_values = extract_label_values!(attributes)
+    WorkflowTask.transaction do
+      WorkflowTasks::Mover.new(task:, attributes:).move!
+      assign_labels!(task, label_values)
+    end
     record_activity(task.reload, "workflow_task.updated", status: task.status)
     render json: { workflow_task: serialize(task.reload) }
   rescue ActiveRecord::RecordInvalid => error
@@ -113,8 +122,8 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     board
   end
 
-  def resolve_listing(board)
-    listing_id = params[:listing_id].presence || task_params[:listing_id]
+  def resolve_listing(board, attribute_listing_id = nil)
+    listing_id = params[:listing_id].presence || attribute_listing_id
     return if listing_id.blank? && !board.requires_listing?
 
     listing = policy_scope(Listing).find(listing_id) if listing_id.present?
@@ -122,17 +131,19 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     listing
   end
 
-  def task_params
+  def task_attributes
     params.require(:workflow_task).permit(
       :title, :description, :status, :assignee_id, :customer_visible,
-      :position, :due_at, :priority, :listing_id, :external_ref, :description_html, labels: []
-    )
+      :position, :due_at, :priority, :listing_id, :external_ref, :description_html,
+      label_ids: [], labels: []
+    ).to_h.symbolize_keys
   end
 
   def serialize(task, detailed: false)
     column = columns_by_board_and_key[[ task.board_id, task.status ]]
     data = task.slice(:id, :board_id, :listing_id, :title, :description, :description_html, :status, :priority,
-                      :customer_visible, :position, :due_at, :completed_at, :labels, :external_ref).merge(
+                      :customer_visible, :position, :due_at, :completed_at, :external_ref).merge(
+      labels: task.board_labels.ordered.map { |label| serialize_label(label) },
       listing_address: task.listing&.address,
       workflow_column_id: column&.id,
       column_category: column&.category
@@ -185,5 +196,45 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
 
   def record_activity(task, event_type, payload = {})
     ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: task, event_type:, payload:)
+  end
+
+  def extract_label_values!(attributes)
+    return { ids: attributes.delete(:label_ids) } if attributes.key?(:label_ids)
+    return { names: attributes.delete(:labels) } if attributes.key?(:labels)
+
+    nil
+  end
+
+  def assign_labels!(task, label_values)
+    return if label_values.nil?
+
+    labels = if label_values.key?(:ids)
+      label_ids = Array(label_values[:ids]).map do |value|
+        Integer(value)
+      rescue ArgumentError, TypeError
+        -1
+      end.uniq
+      task.board.board_labels.where(id: label_ids).to_a.tap do |records|
+        next if records.size == label_ids.size
+
+        task.errors.add(:labels, "must belong to this board")
+        raise ActiveRecord::RecordInvalid, task
+      end
+    else
+      names = Array(label_values[:names]).map { |name| name.to_s.strip }.reject(&:blank?).uniq
+      labels_by_name = task.board.board_labels.to_a.index_by { |label| label.name.downcase }
+      names.map { |name| labels_by_name[name.downcase] }.tap do |records|
+        next if records.compact.size == names.size
+
+        task.errors.add(:labels, "must be selected from this board")
+        raise ActiveRecord::RecordInvalid, task
+      end.compact
+    end
+
+    task.board_labels = labels
+  end
+
+  def serialize_label(label)
+    BoardLabelsController.serialize_label(label, capabilities: capabilities_for(label))
   end
 end

@@ -4,6 +4,7 @@ class Board < ApplicationRecord
   belongs_to :organization
   belongs_to :created_by, class_name: "User", optional: true
   has_many :board_memberships, dependent: :destroy
+  has_many :board_labels, dependent: :destroy
   has_many :workflow_columns, dependent: :destroy
   has_many :workflow_tasks, dependent: :destroy
   has_many :board_attachments, dependent: :destroy
