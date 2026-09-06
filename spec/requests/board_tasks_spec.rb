@@ -20,12 +20,13 @@ RSpec.describe "Board tasks", type: :request do
 
   it "creates a task with no listing on a board that does not require one" do
     post "/api/v1/boards/#{internal_board.id}/workflow_tasks", params: {
-      workflow_task: { title: "Move workflow tasks onto boards", external_ref: "T2" }
+      workflow_task: { title: "Move workflow tasks onto boards" }
     }
 
     expect(response).to have_http_status(:created)
     task = JSON.parse(response.body).fetch("workflow_task")
-    expect(task).to include("listing_id" => nil, "board_id" => internal_board.id, "external_ref" => "T2")
+    expect(task).to include("listing_id" => nil, "board_id" => internal_board.id)
+    expect(task).not_to have_key("external_ref")
     expect(task).not_to have_key("stage")
   end
 

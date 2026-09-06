@@ -134,7 +134,7 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   def task_attributes
     params.require(:workflow_task).permit(
       :title, :description, :status, :assignee_id, :customer_visible,
-      :position, :due_at, :priority, :listing_id, :external_ref, :description_html,
+      :position, :due_at, :priority, :listing_id, :description_html,
       label_ids: [], labels: []
     ).to_h.symbolize_keys
   end
@@ -142,7 +142,7 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
   def serialize(task, detailed: false)
     column = columns_by_board_and_key[[ task.board_id, task.status ]]
     data = task.slice(:id, :board_id, :listing_id, :title, :description, :description_html, :status, :priority,
-                      :customer_visible, :position, :due_at, :completed_at, :external_ref).merge(
+                      :customer_visible, :position, :due_at, :completed_at).merge(
       labels: task.board_labels.ordered.map { |label| serialize_label(label) },
       listing_address: task.listing&.address,
       workflow_column_id: column&.id,

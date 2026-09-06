@@ -5,8 +5,8 @@ media page + revision workflow — read against the schema at version
 `2026_08_19_104000`.
 
 This file is the tracked version of the plan. Update the task checkboxes and the
-rulings as work lands; the numbered task IDs (T1–T13) are the handles used on the
-selected engineering board (currently `CRM Development`). The three source PDFs are product/design briefs: their prose
+rulings as work lands; the numbered task IDs (T1–T13) are documentation labels,
+not database fields or runtime task metadata. The three source PDFs are product/design briefs: their prose
 defines behavior and data requirements, while their screenshots are visual references
 for hierarchy and interaction rather than pixel-perfect implementation instructions.
 
@@ -209,7 +209,7 @@ board_memberships               -- polymorphic grantee: a user OR a group
   access           viewer | contributor | manager
 
 workflow_columns   + board_id;  unique (organization_id, key) → (board_id, key)
-workflow_tasks     + board_id, reporter_id, labels[], started_at, external_ref
+workflow_tasks     + board_id, reporter_id, labels[], started_at
                    ~ listing_id NULL allowed
 ```
 
@@ -366,8 +366,8 @@ Vertical slices — schema, API and interface for a single capability. Sizes are
 rough working days for one engineer. The synced board copy is intentionally
 human-first: each issue starts with the user problem and expected behaviour,
 then records the technical proposal, source brief (when applicable), and done
-conditions. `lib/tasks/client_portal_plan.rake` is the canonical source for the
-titles and descriptions written to the Engineering board.
+conditions. The plan is documentation only; board issues do not store a
+database reference back to this file.
 
 ### Phase A — Authorization and boards
 
@@ -395,10 +395,10 @@ titles and descriptions written to the Engineering board.
 
 ### Phase B — Put the plan on the board
 
-- [x] **T4 · Keep the Engineering board plan synchronized** — 1d — *T3*
-  - Idempotent rake task, with `BOARD_SLUG` selecting the board object when an
-    organization uses a different current board name. Labels `backend`, `frontend`,
-    `schema`, `brief-1/2/3`.
+- [x] **T4 · Keep the Engineering board plan understandable** — 1d — *T3*
+  - Seeded the agreed plan items as ordinary board issues with human-readable
+    titles, descriptions, and board-owned labels. The Markdown plan and PDF
+    briefs remain planning references, not runtime task metadata.
 
 ### Board platform follow-up
 
