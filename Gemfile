@@ -27,7 +27,7 @@ gem "resque", "~> 2.7", require: "resque/server"
 gem "resque-scheduler", "~> 4.11"
 # Rails 8's Redis Action Cable adapter supports redis-rb 4.x/5.x, while
 # redis-rb 6 activates a redis-client API the adapter explicitly rejects.
-gem "redis", "~> 5.4", require: "redis"
+gem "redis", "~> 6.0", require: "redis"
 # ConnectionPool 3.0 cannot boot on Ruby 3.3 with this Resque line, so keep the
 # compatible pool release until Resque catches up.
 gem "connection_pool", "~> 2.5"
