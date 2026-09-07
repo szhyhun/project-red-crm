@@ -12,6 +12,8 @@ brew services start redis
 bin/setup
 bin/rails server
 QUEUE='*' bundle exec rake resque:work
+# In another terminal, run recurring jobs from config/resque_schedule.yml.
+RAILS_ENV=development bundle exec rake environment resque:scheduler
 ```
 
 Local CRM ports are fixed to avoid collisions with the other workspace apps:
@@ -49,11 +51,13 @@ the existing infrastructure:
   request and streams previews through the API origin; local development
   stores them under `storage/chat_media`.
 - Chat messages and their private attachments are retained for 30 days by
-  default. Production runs `project-red-crm-chat-retention.timer` daily; set
+  default. Production runs the recurring jobs in
+  `config/resque_schedule.yml` through `project-red-crm-scheduler`; set
   `PROJECT_RED_CHAT_RETENTION_DAYS` in the host environment to configure a
   longer or shorter positive retention window.
 - Rails API on port `3003`, behind Nginx as `api.projectred.ca`.
 - Resque worker: `project-red-crm-worker`.
+- Resque Scheduler: `project-red-crm-scheduler`.
 
 ### Normal release
 
@@ -74,7 +78,8 @@ The host release script:
 
 1. installs the production bundle and runs `rails db:migrate`;
 2. activates the new release under `/srv/project-red-crm-api`;
-3. restarts `project-red-crm-api` and `project-red-crm-worker`;
+3. restarts `project-red-crm-api`, `project-red-crm-worker`, and
+   `project-red-crm-scheduler`;
 4. waits up to 60 seconds for `http://127.0.0.1:3003/up` before declaring the
    release healthy.
 
@@ -102,9 +107,9 @@ restart the API and worker through AWS Systems Manager:
 
 ```sh
 sudo /bin/bash -n /etc/project-red-crm/api.env
-sudo systemctl restart project-red-crm-api project-red-crm-worker
-sudo systemctl status project-red-crm-api project-red-crm-worker --no-pager
-sudo journalctl -u project-red-crm-api -u project-red-crm-worker -n 100 --no-pager
+sudo systemctl restart project-red-crm-api project-red-crm-worker project-red-crm-scheduler
+sudo systemctl status project-red-crm-api project-red-crm-worker project-red-crm-scheduler --no-pager
+sudo journalctl -u project-red-crm-api -u project-red-crm-worker -u project-red-crm-scheduler -n 100 --no-pager
 ```
 
 Health checks from the host are:

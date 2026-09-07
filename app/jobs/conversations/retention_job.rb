@@ -2,6 +2,13 @@ module Conversations
   class RetentionJob < ApplicationJob
     queue_as :maintenance
 
+    # Resque Scheduler invokes jobs through Resque's class-level perform API.
+    # Keep the actual work in Active Job so this scheduled entry and any
+    # application-triggered execution share the same implementation.
+    def self.perform
+      perform_now
+    end
+
     def perform
       result = Conversations::Retention.call
       Rails.logger.info(

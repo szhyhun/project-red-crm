@@ -1,0 +1,7 @@
+# Recurring Resque jobs live here so the scheduler has one auditable source of
+# truth. Times use the Rails application time zone (Pacific Time).
+conversation_retention:
+  cron: "15 3 * * *"
+  class: "Conversations::RetentionJob"
+  queue: maintenance
+  description: "Delete chat messages and private chat attachments older than the configured retention window."

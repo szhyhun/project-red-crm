@@ -22,6 +22,9 @@ gem "pundit"
 
 # Local and production background work
 gem "resque", "~> 2.7", require: "resque/server"
+# Resque Scheduler 5 requires Resque 3; stay on the latest compatible line
+# until the existing Rails/Redis Resque integration is upgraded together.
+gem "resque-scheduler", "~> 4.11"
 # Rails 8's Redis Action Cable adapter supports redis-rb 4.x/5.x, while
 # redis-rb 6 activates a redis-client API the adapter explicitly rejects.
 gem "redis", "~> 5.4", require: "redis"

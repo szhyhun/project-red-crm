@@ -70,15 +70,26 @@ bundle exec rake notifications:dispatch_pending
 
 ## Chat retention cleanup
 
-Production installs `project-red-crm-chat-retention.timer`, which runs the
-chat retention cleanup once per day. It uses
-`PROJECT_RED_CHAT_RETENTION_DAYS` from `/etc/project-red-crm/api.env`; the
-default is 30 days. The cleanup deletes private chat storage before deleting
-the matching message and attachment rows, and keeps the conversation itself.
+Recurring jobs are registered in `config/resque_schedule.yml` and run by the
+long-lived `project-red-crm-scheduler` Resque Scheduler service. The chat
+retention entry runs once per day and uses `PROJECT_RED_CHAT_RETENTION_DAYS`
+from `/etc/project-red-crm/api.env`; the default is 30 days. The cleanup
+deletes private chat storage before deleting the matching message and
+attachment rows, and keeps the conversation itself.
 
-Check the timer and run a one-off cleanup through the release directory with:
+Check the scheduler and run a one-off cleanup through the release directory
+with:
 
 ```sh
-sudo systemctl status project-red-crm-chat-retention.timer --no-pager
+sudo systemctl status project-red-crm-scheduler --no-pager
+sudo journalctl -u project-red-crm-scheduler -n 100 --no-pager
 bundle exec rake conversations:purge_expired
 ```
+
+Add future recurring jobs to `config/resque_schedule.yml`, then require their
+Resque job classes from `lib/tasks/resque_scheduler.rake`. This keeps the
+schedule reviewable in source control and ensures workers and the scheduler
+load the same Rails/Redis configuration. Resque Scheduler's schedule and
+delayed queues can be inspected through a privately authenticated Resque web
+surface when that admin surface is enabled; never expose that surface
+unauthenticated.

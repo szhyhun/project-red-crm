@@ -47,5 +47,7 @@ All application endpoints are under `/api/v1`.
 
 Rails uses the Resque Active Job adapter. The current local delivery flow writes
 an uploaded file into the local delivery store, then queues a verification job
-that marks it ready or failed. Resque will later also run media transcoding,
+that marks it ready or failed. Resque Scheduler loads recurring jobs from
+`config/resque_schedule.yml` in a separate process, while normal Resque workers
+execute the queued jobs. Resque will later also run media transcoding,
 catalog imports, notification delivery, and external integrations.

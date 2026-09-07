@@ -44,6 +44,19 @@ development uses Rails' `:test` delivery method, so it never sends external mail
 Inspect a branded message through Rails mailer previews at
 `http://localhost:3010/rails/mailers/customer_mailer`.
 
+## Start the scheduler
+
+In a third terminal, run the recurring jobs registered in
+`config/resque_schedule.yml`:
+
+```bash
+cd /Users/serhiizhyhun/Desktop/projects/project-red-crm
+RAILS_ENV=development bundle exec rake environment resque:scheduler
+```
+
+The scheduler is a long-running process, like the worker. It is not started by
+the Rails server. Use `Ctrl-C` to stop it.
+
 ## Production email settings
 
 Production uses SMTP. Set these environment variables in the production runtime,
@@ -99,8 +112,8 @@ preview, while downloads may use a short-lived signed S3 URL after that check.
 Chat history cleanup defaults to 30 days. Override the local window with the
 positive integer `PROJECT_RED_CHAT_RETENTION_DAYS`, then run the cleanup
 manually with `bundle exec rake conversations:purge_expired`. Production runs
-the same service daily through a systemd timer; local development does not
-start that timer automatically.
+the recurring entry in `config/resque_schedule.yml` through Resque Scheduler;
+local development requires starting the scheduler process manually.
 
 ## Stripe test payments
 

@@ -83,9 +83,10 @@ policy.
 
 The deployment-wide window is configured with the positive integer
 `PROJECT_RED_CHAT_RETENTION_DAYS` environment variable. If it is absent or
-invalid, the service uses 30 days. The cleanup is safe to retry: a storage
-failure leaves the corresponding database rows in place for the next run. Run
-it manually when needed with:
+invalid, the scheduler uses 30 days. The recurring entry lives in
+`config/resque_schedule.yml` and is run by `project-red-crm-scheduler`. The
+cleanup is safe to retry: a storage failure leaves the corresponding database
+rows in place for the next run. Run it manually when needed with:
 
 ```sh
 bundle exec rake conversations:purge_expired

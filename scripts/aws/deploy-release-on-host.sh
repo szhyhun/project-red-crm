@@ -8,8 +8,9 @@ ENV_FILE="${ENV_FILE:-/etc/project-red-crm/api.env}"
 APP_USER="${APP_USER:-ubuntu}"
 API_SERVICE="${API_SERVICE:-project-red-crm-api}"
 WORKER_SERVICE="${WORKER_SERVICE:-project-red-crm-worker}"
-RETENTION_SERVICE="${RETENTION_SERVICE:-project-red-crm-chat-retention}"
-RETENTION_TIMER="${RETENTION_TIMER:-project-red-crm-chat-retention}"
+SCHEDULER_SERVICE="${SCHEDULER_SERVICE:-project-red-crm-scheduler}"
+LEGACY_RETENTION_SERVICE="${LEGACY_RETENTION_SERVICE:-project-red-crm-chat-retention}"
+LEGACY_RETENTION_TIMER="${LEGACY_RETENTION_TIMER:-project-red-crm-chat-retention}"
 APP_PORT="${PORT:-3003}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
@@ -43,8 +44,9 @@ echo "[deploy] running database migrations"
 RAILS_ENV=production bundle exec rails db:migrate
 
 echo "[deploy] activating release"
-systemctl stop "${RETENTION_TIMER}.timer" || true
-systemctl stop "${RETENTION_SERVICE}.service" || true
+systemctl disable --now "${LEGACY_RETENTION_TIMER}.timer" || true
+systemctl stop "${LEGACY_RETENTION_SERVICE}.service" || true
+systemctl stop "${SCHEDULER_SERVICE}.service" || true
 systemctl stop "${WORKER_SERVICE}" || true
 systemctl stop "${API_SERVICE}" || true
 rm -rf "${PREVIOUS_DIR}"
@@ -58,14 +60,15 @@ chown -R "${APP_USER}:${APP_USER}" "${CURRENT_DIR}"
 
 install -m 0644 "${CURRENT_DIR}/deploy/systemd/${API_SERVICE}.service" "/etc/systemd/system/${API_SERVICE}.service"
 install -m 0644 "${CURRENT_DIR}/deploy/systemd/${WORKER_SERVICE}.service" "/etc/systemd/system/${WORKER_SERVICE}.service"
-install -m 0644 "${CURRENT_DIR}/deploy/systemd/${RETENTION_SERVICE}.service" "/etc/systemd/system/${RETENTION_SERVICE}.service"
-install -m 0644 "${CURRENT_DIR}/deploy/systemd/${RETENTION_TIMER}.timer" "/etc/systemd/system/${RETENTION_TIMER}.timer"
+install -m 0644 "${CURRENT_DIR}/deploy/systemd/${SCHEDULER_SERVICE}.service" "/etc/systemd/system/${SCHEDULER_SERVICE}.service"
+rm -f "/etc/systemd/system/${LEGACY_RETENTION_TIMER}.timer" "/etc/systemd/system/${LEGACY_RETENTION_SERVICE}.service"
 systemctl daemon-reload
 
 rollback() {
   echo "[deploy] release failed; restoring the previous API release" >&2
-  systemctl stop "${RETENTION_TIMER}.timer" || true
-  systemctl stop "${RETENTION_SERVICE}.service" || true
+  systemctl stop "${SCHEDULER_SERVICE}.service" || true
+  systemctl disable --now "${LEGACY_RETENTION_TIMER}.timer" || true
+  systemctl stop "${LEGACY_RETENTION_SERVICE}.service" || true
   systemctl stop "${WORKER_SERVICE}" || true
   systemctl stop "${API_SERVICE}" || true
   rm -rf "${CURRENT_DIR}"
@@ -74,14 +77,21 @@ rollback() {
     mv "${PREVIOUS_DIR}" "${CURRENT_DIR}"
     install -m 0644 "${CURRENT_DIR}/deploy/systemd/${API_SERVICE}.service" "/etc/systemd/system/${API_SERVICE}.service"
     install -m 0644 "${CURRENT_DIR}/deploy/systemd/${WORKER_SERVICE}.service" "/etc/systemd/system/${WORKER_SERVICE}.service"
-    if [[ -f "${CURRENT_DIR}/deploy/systemd/${RETENTION_SERVICE}.service" && -f "${CURRENT_DIR}/deploy/systemd/${RETENTION_TIMER}.timer" ]]; then
-      install -m 0644 "${CURRENT_DIR}/deploy/systemd/${RETENTION_SERVICE}.service" "/etc/systemd/system/${RETENTION_SERVICE}.service"
-      install -m 0644 "${CURRENT_DIR}/deploy/systemd/${RETENTION_TIMER}.timer" "/etc/systemd/system/${RETENTION_TIMER}.timer"
+    if [[ -f "${CURRENT_DIR}/deploy/systemd/${SCHEDULER_SERVICE}.service" ]]; then
+      install -m 0644 "${CURRENT_DIR}/deploy/systemd/${SCHEDULER_SERVICE}.service" "/etc/systemd/system/${SCHEDULER_SERVICE}.service"
+      rm -f "/etc/systemd/system/${LEGACY_RETENTION_TIMER}.timer" "/etc/systemd/system/${LEGACY_RETENTION_SERVICE}.service"
       systemctl daemon-reload
-      systemctl enable --now "${RETENTION_TIMER}.timer"
+      systemctl enable --now "${SCHEDULER_SERVICE}.service" || true
+    elif [[ -f "${CURRENT_DIR}/deploy/systemd/${LEGACY_RETENTION_SERVICE}.service" && -f "${CURRENT_DIR}/deploy/systemd/${LEGACY_RETENTION_TIMER}.timer" ]]; then
+      install -m 0644 "${CURRENT_DIR}/deploy/systemd/${LEGACY_RETENTION_SERVICE}.service" "/etc/systemd/system/${LEGACY_RETENTION_SERVICE}.service"
+      install -m 0644 "${CURRENT_DIR}/deploy/systemd/${LEGACY_RETENTION_TIMER}.timer" "/etc/systemd/system/${LEGACY_RETENTION_TIMER}.timer"
+      systemctl daemon-reload
+      systemctl enable --now "${LEGACY_RETENTION_TIMER}.timer" || true
     else
-      systemctl disable --now "${RETENTION_TIMER}.timer" || true
-      rm -f "/etc/systemd/system/${RETENTION_TIMER}.timer" "/etc/systemd/system/${RETENTION_SERVICE}.service"
+      systemctl disable --now "${SCHEDULER_SERVICE}.service" || true
+      rm -f "/etc/systemd/system/${SCHEDULER_SERVICE}.service"
+      systemctl disable --now "${LEGACY_RETENTION_TIMER}.timer" || true
+      rm -f "/etc/systemd/system/${LEGACY_RETENTION_TIMER}.timer" "/etc/systemd/system/${LEGACY_RETENTION_SERVICE}.service"
       systemctl daemon-reload
     fi
     systemctl restart "${API_SERVICE}"
@@ -89,7 +99,7 @@ rollback() {
   fi
 }
 
-if ! systemctl enable --now "${RETENTION_TIMER}.timer"; then
+if ! systemctl enable --now "${SCHEDULER_SERVICE}.service"; then
   rollback
   exit 1
 fi
@@ -99,7 +109,9 @@ if ! systemctl restart "${API_SERVICE}" || ! systemctl restart "${WORKER_SERVICE
   exit 1
 fi
 
-if ! systemctl is-active --quiet "${API_SERVICE}" || ! systemctl is-active --quiet "${WORKER_SERVICE}"; then
+if ! systemctl is-active --quiet "${API_SERVICE}" || \
+  ! systemctl is-active --quiet "${WORKER_SERVICE}" || \
+  ! systemctl is-active --quiet "${SCHEDULER_SERVICE}.service"; then
   rollback
   exit 1
 fi
