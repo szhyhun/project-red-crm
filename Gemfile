@@ -27,7 +27,7 @@ gem "resque", "~> 2.7", require: "resque/server"
 gem "redis", "~> 5.4", require: "redis"
 # ConnectionPool 3.0 cannot boot on Ruby 3.3 with this Resque line, so keep the
 # compatible pool release until Resque catches up.
-gem "connection_pool", "~> 2.5"
+gem "connection_pool", "~> 3.0"
 
 # API integrations and delivery
 gem "aws-sdk-s3", require: false
