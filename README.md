@@ -175,3 +175,8 @@ as well as its existing workload.
 - API: `api.projectred.local` in development and `api.projectred.ca` in production
 
 See `docs/architecture.md` for the product boundary and storage model.
+
+## Documentation
+
+- [Product guide](docs/product-guide.md): customer-facing features and configuration in plain language.
+- [Engineering documentation](docs/README.md): architecture, access rules, operations, integrations, and local development.

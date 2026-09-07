@@ -4,6 +4,7 @@ This directory describes the Rails API as it exists locally. It separates
 implemented behavior from planned integrations so the team does not mistake a
 local vertical slice for a production-ready external integration.
 
+- [Product guide](product-guide.md): plain-language customer-facing features and configuration.
 - [Architecture](architecture.md): application boundaries, data ownership, and API conventions.
 - [Access model](access-model.md): organization membership and customer-facing authorization rules.
 - [Operations](operations.md): listings, tasks, calendar work, catalog orders, and invoice drafts.
@@ -18,8 +19,10 @@ local vertical slice for a production-ready external integration.
 The local API supports organization sign-up/sign-in, internal production work,
 client accounts, listings, task and appointment assignment, catalog orders,
 invoice drafting and sending, asynchronous local final-media uploads, property-site
-publishing, conversations, staff invitations, branded lifecycle emails, and a
-restricted customer portal response.
+publishing, conversations with per-conversation retention, staff invitations,
+branded lifecycle emails, a restricted customer portal response, and a manual
+Aryeo import when configured.
 
-Direct browser-to-S3 uploads, media transcoding, Stripe payment links, Aryeo
-import, and smart-order recommendations remain planned work.
+Direct browser-to-S3 uploads, media transcoding, recurring Aryeo sync, Square
+payment support, and smart-order recommendations remain planned or deployment-
+dependent work.
