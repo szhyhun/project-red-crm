@@ -23,6 +23,144 @@ Access is limited by both the organization and the specific customer account.
 A customer cannot see another customer's listings, private production work, or
 staff-only conversations.
 
+## Where people work
+
+Staff use the main CRM navigation:
+
+- **Dashboard** for today's production and items needing attention;
+- **Listings** for customer and property workspaces;
+- **Boards** for production tasks;
+- **Calendar** for appointments;
+- **Catalog**, **Orders**, and **Billing** for services, orders, and invoices;
+- **Messages** for team and customer conversations; and
+- **Team & access** and **Integrations** for administration.
+
+Customers use the customer portal. Their main screen is **Your listings**;
+each listing contains its progress, appointments, delivery files, invoices,
+feedback, and listing-linked updates.
+
+## How-to workflows
+
+The normal job flow is: create the listing, add the services and order,
+schedule the appointment, complete production, collect payment, deliver the
+finished work, and gather feedback. The workflows below explain who does each
+part and where the hand-off happens.
+
+### Admin or manager: create a listing and prepare the work
+
+1. Open **Listings** and choose **New listing**.
+2. Enter the client name and email, property address, city, province, and
+   optional brokerage and square footage.
+3. Choose **Create listing**. ProjectRed creates the customer workspace and
+   opens the new listing workspace.
+4. In **Orders and invoices**, choose **Create order**, select the catalog
+   products or variants, set quantities, and choose whether the order is paid
+   now or invoiced after delivery.
+5. Add an appointment, assign the photographer/editor or other team members,
+   and set the appointment time on the listing or Calendar page.
+6. Add or update production tasks on the appropriate board. Link each task to
+   the listing so staff can move between the task and the property workspace.
+
+The listing workspace is the source of truth for that job. Start there when a
+customer asks about a specific property instead of creating a separate
+organization-wide conversation.
+
+### Admin or manager: invoice the listing
+
+1. Open the listing and expand **Orders and invoices**.
+2. If the order does not have an invoice, choose **Draft invoice**.
+3. Check the order total and choose **Send invoice**. The invoice is sent to
+   the customer's email address and active portal users.
+4. The customer can pay from the invoice in the customer portal. The invoice
+   and listing payment status update after the payment provider confirms the
+   payment.
+
+If an invoice cannot be sent, the listing needs a customer email address. An
+invoice cannot be created twice for the same order.
+
+### Customer: pay for a listing
+
+1. Sign in to the customer portal and open the relevant listing under **Your
+   listings**.
+2. Find the invoice in the **Invoices** section and choose **Pay now**.
+3. Complete the secure payment form and submit the payment.
+4. Return to the listing to see the updated invoice and payment status.
+
+ProjectRed does not store card details. The payment form is hosted by the
+configured payment provider. If there is no **Pay now** button, the invoice is
+already paid, is not payable yet, or has not been issued by the agency.
+
+### Customer: ask for a change to a listing
+
+1. Open the listing in the customer portal and find its **Updates** thread.
+2. Reply in that existing listing conversation. Describe the exact file or
+   service that needs changing, what is wrong, and what the desired result is.
+   Attach a reference image or other file when it makes the request clearer.
+3. Continue the same thread for follow-up questions and confirmation. Do not
+   create a new general chat for every change request.
+
+Staff see the reply in the listing workspace and in **Messages**. They can
+turn the request into a production task, assign it to the right person, and
+keep the customer updated in the same listing conversation. The current portal
+does not yet have a separate **Request changes** button; the listing
+conversation is the supported workflow today. A dedicated shortcut can be
+added later without changing the conversation model.
+
+After delivery, the customer can also submit the separate **Feedback** form.
+Feedback rates delivery, service, and final media; it is not a replacement for
+an in-progress change request.
+
+### Staff: start or continue the correct conversation
+
+Customers do not create chats. A staff member starts a customer-visible thread
+when the listing needs one, and the customer replies to it from the portal.
+
+To start one:
+
+1. Open the listing workspace and use its conversation or updates section.
+2. Choose **New customer conversation**. When starting from a listing, the
+   listing is already attached to the conversation.
+3. Add a subject, confirm that the conversation is **Client-visible**, select
+   the internal team participants, and write the first message.
+4. Send the message. The customer sees the thread under that listing's
+   **Updates** section.
+
+If a listing already has a customer conversation, open it and choose **Reply**
+instead of creating another thread. A customer conversation is readable by the
+customer account, so internal production notes belong in the task or an
+internal team conversation.
+
+For an internal team chat, open **Messages**, choose the **+** action in the
+Team section, select **Internal team**, choose a subject and participants, and
+send the first message. Internal conversations can be organization-wide or
+linked to a listing and are never shown in the customer portal.
+
+### Video editor or production staff: process assigned work
+
+1. Open **Boards** and select the board used by the team. Filter or scan for
+   tasks assigned to you.
+2. Open the task to read the description, checklist, due date, priority,
+   labels, and linked listing.
+3. Move the task between workflow columns as work progresses. Use the checklist
+   for concrete production steps and task comments for internal discussion.
+4. Attach working files or completed media to the task when the team needs to
+   review them. Keep customer-facing delivery files in the listing's delivery
+   area, where the agency can mark them ready and visible.
+5. When a customer requests a change, update the relevant task or create a
+   focused task, assign it, and reply in the listing conversation so the
+   customer can follow the outcome.
+
+Do not put internal editing notes in a client-visible conversation. If a task
+is linked to a listing, use the listing link in the task to check the customer,
+order, appointment, and delivery context before marking work complete.
+
+### Staff: handle an appointment change requested by a customer
+
+Customers open an appointment in their listing and choose **Request a different
+time**. They provide a new start and end time plus an optional note. Staff
+review the request in the listing or Calendar view, then approve, decline, or
+reschedule it. The customer sees the request status in the portal.
+
 ## Listings and customer workspaces
 
 A listing is the main workspace for a property and its order. It can include:
@@ -90,6 +228,11 @@ ProjectRed supports internal team conversations and customer conversations.
 People see a conversation only when they are allowed to participate in it.
 Messages support rich text and file attachments. A message can be edited or
 deleted, and a top-level message can have replies one level deep.
+
+Customer conversations are always tied to the relevant listing when the
+discussion is about a job. This keeps payment, appointment, production, and
+change-request conversations in the same customer context. Organization-wide
+team chats are for internal work that does not belong to one listing.
 
 Chat history has a retention policy on each conversation. The default is two
 months. A staff member with permission can choose:
