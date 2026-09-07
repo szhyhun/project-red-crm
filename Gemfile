@@ -22,9 +22,11 @@ gem "pundit"
 
 # Local and production background work
 gem "resque", "~> 2.7", require: "resque/server"
-gem "redis", require: "redis"
-# Resque currently brings Redis 6 into this bundle. ConnectionPool 3.0 cannot
-# boot on Ruby 3.3, so keep the compatible pool release until Resque catches up.
+# Rails 8's Redis Action Cable adapter supports redis-rb 4.x/5.x, while
+# redis-rb 6 activates a redis-client API the adapter explicitly rejects.
+gem "redis", "~> 5.4", require: "redis"
+# ConnectionPool 3.0 cannot boot on Ruby 3.3 with this Resque line, so keep the
+# compatible pool release until Resque catches up.
 gem "connection_pool", "~> 2.5"
 
 # API integrations and delivery
