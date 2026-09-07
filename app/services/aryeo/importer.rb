@@ -16,7 +16,7 @@ module Aryeo
     RESOURCE_KEYS = ENDPOINTS.keys.map(&:to_s).freeze
     DATE_FILTERED_RESOURCES = %i[listings orders appointments].freeze
 
-    def initialize(run:, client: nil, resources: nil, import_start_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
+    def initialize(run:, client: nil, resources: nil, import_start_date: nil, import_end_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
       @run = run
       @connection = run.integration_connection
       @organization = run.organization
@@ -25,10 +25,12 @@ module Aryeo
       requested_resources = resources.nil? ? ENDPOINTS.keys.map(&:to_s) : Array(resources).map(&:to_s)
       @resources = requested_resources.intersection(RESOURCE_KEYS).map(&:to_sym).to_set - skip_resources.map(&:to_sym).to_set
       @import_start_date = import_start_date.present? ? Date.iso8601(import_start_date.to_s) : nil
+      @import_end_date = import_end_date.present? ? Date.iso8601(import_end_date.to_s) : nil
       @conflict_resolution = conflict_resolution.presence || run.conflict_resolution || "skip"
       @counts = Hash.new(0)
       @conflict_counts = Hash.new(0)
       @filtered_counts = Hash.new(0)
+      @filtered_after_counts = Hash.new(0)
       @coverage = {}
       @errors = []
     end
@@ -63,12 +65,9 @@ module Aryeo
         payloads = []
         paginate_collection(name, endpoint) { |payload| payloads << stringify(payload) }
         payloads = payloads.filter_map do |payload|
-          if payload_on_or_after_start_date?(name, payload)
-            payload
-          else
-            @filtered_counts[name] += 1
-            nil
-          end
+          filter_reason = date_filter_reason(name, payload)
+          increment_filtered_count(name, filter_reason)
+          filter_reason ? nil : payload
         end
         payloads.sort_by { |payload| [ source_timestamp(payload), external_id(payload) ] }.reverse.first(limit).each do |payload|
           import_resource(name, payload)
@@ -76,8 +75,9 @@ module Aryeo
       else
         paginate_collection(name, endpoint) do |payload|
           payload = stringify(payload)
-          unless payload_on_or_after_start_date?(name, payload)
-            @filtered_counts[name] += 1
+          filter_reason = date_filter_reason(name, payload)
+          if filter_reason
+            increment_filtered_count(name, filter_reason)
             next
           end
           import_resource(name, payload)
@@ -87,7 +87,8 @@ module Aryeo
         status: "imported",
         count: @counts[name] - count_before,
         skipped_conflicts: @conflict_counts[name],
-        filtered_before_date: @filtered_counts[name]
+        filtered_before_date: @filtered_counts[name],
+        filtered_after_date: @filtered_after_counts[name]
       }.compact
     rescue Client::EndpointUnavailable => error
       @coverage[name] = { status: "unavailable", detail: error.message }
@@ -442,13 +443,19 @@ module Aryeo
     end
 
     def api_date_filter_params(name)
-      return {} unless @import_start_date
+      return {} unless @import_start_date || @import_end_date
 
       case name
       when :appointments
-        { "filter[start_at_gte]" => import_start_timestamp }
+        params = {}
+        params["filter[start_at_gte]"] = import_start_timestamp if @import_start_date
+        params["filter[start_at_lte]"] = import_end_timestamp if @import_end_date
+        params
       when :orders
-        { "filter[appointment_start_at_gte]" => import_start_timestamp }
+        params = {}
+        params["filter[appointment_start_at_gte]"] = import_start_timestamp if @import_start_date
+        params["filter[appointment_start_at_lte]"] = import_end_timestamp if @import_end_date
+        params
       else
         {}
       end
@@ -458,15 +465,29 @@ module Aryeo
       @import_start_timestamp ||= @import_start_date.in_time_zone.beginning_of_day.utc.iso8601
     end
 
-    def payload_on_or_after_start_date?(name, payload)
-      return true unless @import_start_date && DATE_FILTERED_RESOURCES.include?(name)
+    def import_end_timestamp
+      @import_end_timestamp ||= @import_end_date.in_time_zone.end_of_day.utc.iso8601
+    end
+
+    def date_filter_reason(name, payload)
+      return unless (@import_start_date || @import_end_date) && DATE_FILTERED_RESOURCES.include?(name)
 
       raw_timestamp = resource_start_timestamp(name, payload)
-      return false if raw_timestamp.blank?
+      return @import_start_date ? :before : :after if raw_timestamp.blank?
 
-      Date.parse(raw_timestamp.to_s) >= @import_start_date
+      date = Date.parse(raw_timestamp.to_s)
+      return :before if @import_start_date && date < @import_start_date
+      return :after if @import_end_date && date > @import_end_date
+
+      nil
     rescue Date::Error
-      false
+      @import_start_date ? :before : :after
+    end
+
+    def increment_filtered_count(name, reason)
+      return unless reason
+
+      reason == :before ? @filtered_counts[name] += 1 : @filtered_after_counts[name] += 1
     end
 
     def resource_start_timestamp(name, payload)

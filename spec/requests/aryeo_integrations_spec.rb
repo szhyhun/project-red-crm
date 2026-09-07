@@ -47,6 +47,7 @@ RSpec.describe "Aryeo integrations", type: :request do
       post "/api/v1/aryeo_integration/import", params: {
         resources: %w[clients listings orders],
         import_start_date: "2026-01-01",
+        import_end_date: "2026-01-31",
         conflict_resolution: "overwrite"
       }
     }.to have_enqueued_job(AryeoImportJob)
@@ -55,8 +56,34 @@ RSpec.describe "Aryeo integrations", type: :request do
     run = connection.integration_import_runs.order(:id).last
     expect(run.requested_resources).to eq(%w[clients listings orders])
     expect(run.import_start_date).to eq(Date.new(2026, 1, 1))
+    expect(run.import_end_date).to eq(Date.new(2026, 1, 31))
     expect(run.conflict_resolution).to eq("overwrite")
     expect(JSON.parse(response.body).dig("import_run", "import_start_date")).to eq("2026-01-01")
+    expect(JSON.parse(response.body).dig("import_run", "import_end_date")).to eq("2026-01-31")
+  end
+
+  it "rejects an import date range whose end precedes its start" do
+    IntegrationConnection.create!(organization:, provider: :aryeo, api_key: "aryeo-key", status: :connected)
+    sign_in admin
+
+    post "/api/v1/aryeo_integration/import", params: {
+      resources: [ "listings" ], import_start_date: "2026-02-01", import_end_date: "2026-01-31"
+    }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body)).to include("error" => "aryeo_import_date_range_invalid")
+  end
+
+  it "rejects an invalid import end date" do
+    IntegrationConnection.create!(organization:, provider: :aryeo, api_key: "aryeo-key", status: :connected)
+    sign_in admin
+
+    post "/api/v1/aryeo_integration/import", params: {
+      resources: [ "listings" ], import_end_date: "not-a-date"
+    }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body)).to include("error" => "aryeo_import_end_date_invalid")
   end
 
   it "requires at least one known resource" do

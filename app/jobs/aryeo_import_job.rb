@@ -7,6 +7,7 @@ class AryeoImportJob < ApplicationJob
       run:,
       resources: run.requested_resources,
       import_start_date: run.import_start_date,
+      import_end_date: run.import_end_date,
       conflict_resolution: run.conflict_resolution
     ).call
   end

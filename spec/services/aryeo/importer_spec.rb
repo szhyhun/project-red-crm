@@ -75,22 +75,23 @@ RSpec.describe Aryeo::Importer do
     expect(Product.where(origin: "aryeo").count).to eq(1)
   end
 
-  it "filters listings by their Aryeo update date" do
+  it "filters listings by their inclusive Aryeo update date range" do
     client = instance_double(Aryeo::Client)
     allow(client).to receive(:paginate) do |endpoint, &block|
       next unless endpoint == "listings"
 
       block.call({ "id" => "old-listing", "updated_at" => "2025-12-31T23:59:59Z", "address" => { "address_line_1" => "Old Street" } })
-      block.call({ "id" => "new-listing", "updated_at" => "2026-01-01T00:00:00Z", "address" => { "address_line_1" => "New Street" } })
+      block.call({ "id" => "in-range-listing", "updated_at" => "2026-01-15T00:00:00Z", "address" => { "address_line_1" => "In Range Street" } })
+      block.call({ "id" => "new-listing", "updated_at" => "2026-02-01T00:00:00Z", "address" => { "address_line_1" => "New Street" } })
     end
 
     run = import_run(resources: [ "listings" ])
-    described_class.new(run:, client:, resources: [ "listings" ], import_start_date: "2026-01-01").call
+    described_class.new(run:, client:, resources: [ "listings" ], import_start_date: "2026-01-01", import_end_date: "2026-01-31").call
 
     expect(run.reload.error_details).to be_empty
-    expect(run.coverage.fetch("listings")).to include("count" => 1, "filtered_before_date" => 1)
-    expect(Listing.where(origin: "aryeo").pluck(:address_line_1)).to contain_exactly("New Street")
-    expect(connection.reload.endpoint_coverage.fetch("listings")).to include("filtered_before_date" => 1)
+    expect(run.coverage.fetch("listings")).to include("count" => 1, "filtered_before_date" => 1, "filtered_after_date" => 1)
+    expect(Listing.where(origin: "aryeo").pluck(:address_line_1)).to contain_exactly("In Range Street")
+    expect(connection.reload.endpoint_coverage.fetch("listings")).to include("filtered_before_date" => 1, "filtered_after_date" => 1)
   end
 
   it "uses Aryeo date filters for appointments and orders while keeping other resources unfiltered" do
@@ -106,6 +107,27 @@ RSpec.describe Aryeo::Importer do
     expect(client).to have_received(:paginate).with("listings")
     expect(client).to have_received(:paginate).with("company-team-members")
     expect(client).to have_received(:paginate).with("products")
+  end
+
+  it "uses inclusive upper date filters for appointments and orders" do
+    client = instance_double(Aryeo::Client)
+    allow(client).to receive(:paginate)
+
+    run = import_run(resources: %w[listings orders appointments])
+    described_class.new(run:, client:, resources: run.requested_resources,
+                        import_start_date: "2026-07-03", import_end_date: "2026-07-10").call
+
+    start_timestamp = Date.new(2026, 7, 3).in_time_zone.beginning_of_day.utc.iso8601
+    end_timestamp = Date.new(2026, 7, 10).in_time_zone.end_of_day.utc.iso8601
+    expect(client).to have_received(:paginate).with("appointments", params: {
+      "filter[start_at_gte]" => start_timestamp,
+      "filter[start_at_lte]" => end_timestamp
+    })
+    expect(client).to have_received(:paginate).with("orders", params: {
+      "filter[appointment_start_at_gte]" => start_timestamp,
+      "filter[appointment_start_at_lte]" => end_timestamp
+    })
+    expect(client).to have_received(:paginate).with("listings")
   end
 
   it "skips or overwrites records previously imported from the same Aryeo ID" do

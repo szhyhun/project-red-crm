@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_06_040000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_07_010000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -357,6 +357,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_06_040000) do
     t.jsonb "requested_resources", default: [], null: false
     t.date "import_start_date"
     t.string "conflict_resolution", default: "skip", null: false
+    t.date "import_end_date"
     t.index ["integration_connection_id"], name: "index_integration_import_runs_on_integration_connection_id"
     t.index ["organization_id", "provider", "created_at"], name: "idx_on_organization_id_provider_created_at_7ddb91d344"
     t.index ["organization_id"], name: "index_integration_import_runs_on_organization_id"

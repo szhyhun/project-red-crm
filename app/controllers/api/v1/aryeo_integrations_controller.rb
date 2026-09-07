@@ -43,9 +43,13 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
       return render json: { error: "aryeo_import_conflict_resolution_invalid" }, status: :unprocessable_entity
     end
 
-    import_start_date = params[:import_start_date].presence
-    unless import_start_date.blank? || Date.iso8601(import_start_date)
-      return render json: { error: "aryeo_import_start_date_invalid" }, status: :unprocessable_entity
+    import_start_date, start_date_error = parse_import_date(params[:import_start_date], "aryeo_import_start_date_invalid")
+    return render json: { error: start_date_error }, status: :unprocessable_entity if start_date_error
+
+    import_end_date, end_date_error = parse_import_date(params[:import_end_date], "aryeo_import_end_date_invalid")
+    return render json: { error: end_date_error }, status: :unprocessable_entity if end_date_error
+    if import_start_date && import_end_date && import_end_date < import_start_date
+      return render json: { error: "aryeo_import_date_range_invalid" }, status: :unprocessable_entity
     end
 
     run = @connection.integration_import_runs.create!(
@@ -53,12 +57,11 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
       provider: :aryeo,
       requested_resources: resources,
       import_start_date: import_start_date,
+      import_end_date: import_end_date,
       conflict_resolution: conflict_resolution
     )
     AryeoImportJob.perform_later(run.id)
     render json: { import_run: serialize_run(run) }, status: :accepted
-  rescue Date::Error
-    render json: { error: "aryeo_import_start_date_invalid" }, status: :unprocessable_entity
   end
 
   def destroy
@@ -89,8 +92,16 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
     @connection.integration_import_runs.order(created_at: :desc).limit(10).map { |run| serialize_run(run) }
   end
 
+  def parse_import_date(value, error_key)
+    return [ nil, nil ] if value.blank?
+
+    [ Date.iso8601(value.to_s), nil ]
+  rescue Date::Error
+    [ nil, error_key ]
+  end
+
   def serialize_run(run)
     run.slice(:id, :status, :phase, :counts, :coverage, :requested_resources, :import_start_date,
-              :conflict_resolution, :started_at, :completed_at, :created_at).merge(errors: run.error_details)
+              :import_end_date, :conflict_resolution, :started_at, :completed_at, :created_at).merge(errors: run.error_details)
   end
 end

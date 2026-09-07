@@ -21,7 +21,9 @@ migrated to read teams directly.
 
 ## Import controls and conflicts
 
-Every import run selects its own resource groups: team users, clients, customer teams, products, listings, orders, appointments, and tasks. Listings can optionally be limited to records **updated on or after** a selected date. The date is applied by ProjectRed after safely reading Aryeo records; it never changes an Aryeo query or record.
+Every import run selects its own resource groups: team users, clients, customer teams, products, listings, orders, appointments, and tasks. Listings, orders, and appointments can optionally be limited to an inclusive **from** and/or **to** date. Aryeo's appointments and orders endpoints receive the corresponding inclusive lower/upper date filters; listings have no documented date query filter, so ProjectRed safely reads the listing collection and applies the range locally using its updated/created timestamp. Other selected resources always import in full.
+
+The API contract is `import_start_date` and `import_end_date` in `YYYY-MM-DD` form. Either bound may be omitted, but an end date cannot precede a start date. Aryeo's supported filters are documented in the [appointments](https://docs.aryeo.com/api/aryeo/appointments/get-appointments) and [orders](https://docs.aryeo.com/api/aryeo/orders/get-orders) API references; do not invent a date query parameter for listings.
 
 Every run also records one of two policies for records already imported from the same Aryeo ID:
 
@@ -52,4 +54,4 @@ There is no schedule. Starting an import creates an `IntegrationImportRun` and q
 OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES QUEUE='*' bundle exec rake resque:work
 ```
 
-The Integration screen refreshes active run status every five seconds and retains the latest ten runs, selected resources, filter date, conflict policy, endpoint coverage, counts, partial errors, and terminal failures. The stored connection remains available for a later explicit re-import.
+The Integration screen refreshes active run status every five seconds and retains the latest ten runs, selected resources, date range, conflict policy, endpoint coverage, counts, partial errors, and terminal failures. The stored connection remains available for a later explicit re-import.
