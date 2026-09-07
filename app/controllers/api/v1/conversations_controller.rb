@@ -76,11 +76,21 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     params.require(:message).permit(:body, :body_html, :visibility)
   end
 
+  # Nothing about telling other people may stop a message being sent. The
+  # enqueue itself needs Redis too, so even that is contained: a message that
+  # saved is sent, and a notification that could not be queued is logged rather
+  # than raised at the person who wrote it.
+  def notify_later(message)
+    Conversations::NotifyJob.perform_later(message.id)
+  rescue StandardError => error
+    Rails.logger.error("Could not queue conversation notification for message #{message.id}: #{error.class}: #{error.message}")
+  end
+
   def create_message!(conversation, body, body_html = nil, visibility = nil)
     message_visibility = current_user.internal? ? (visibility || :participants) : :participants
     message = conversation.messages.create!(author: current_user, body: body, body_html: body_html, visibility: message_visibility)
     conversation.update!(last_message_at: message.created_at)
-    Conversations::Notifier.call(message:)
+    notify_later(message)
     message
   end
 

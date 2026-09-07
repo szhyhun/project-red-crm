@@ -11,7 +11,7 @@ brew services start postgresql@14
 brew services start redis
 bin/setup
 bin/rails server
-QUEUE='media' bundle exec rake resque:work
+QUEUE='*' bundle exec rake resque:work
 ```
 
 Local CRM ports are fixed to avoid collisions with the other workspace apps:
