@@ -72,10 +72,10 @@ bundle exec rake notifications:dispatch_pending
 
 Recurring jobs are registered in `config/resque_schedule.yml` and run by the
 long-lived `project-red-crm-scheduler` Resque Scheduler service. The chat
-retention entry runs once per day and uses `PROJECT_RED_CHAT_RETENTION_DAYS`
-from `/etc/project-red-crm/api.env`; the default is 30 days. The cleanup
-deletes private chat storage before deleting the matching message and
-attachment rows, and keeps the conversation itself.
+retention entry runs once per day and evaluates each conversation's
+`retention_period` (`two_months` by default, or `six_months`, `one_year`, or
+`forever`). The cleanup deletes private chat storage before deleting the
+matching message and attachment rows, and keeps the conversation itself.
 
 Check the scheduler and run a one-off cleanup through the release directory
 with:

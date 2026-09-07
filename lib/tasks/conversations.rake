@@ -1,10 +1,10 @@
 namespace :conversations do
-  desc "Delete chat messages and private attachments older than the configured retention window"
+  desc "Delete chat messages and private attachments past each conversation's retention period"
   task purge_expired: :environment do
     result = Conversations::Retention.call
     puts(
       "Deleted #{result.messages_deleted} messages and #{result.attachments_deleted} attachments " \
-      "older than #{result.retention_days} days (#{result.failures} failures)."
+      "using each conversation's retention period (#{result.failures} failures)."
     )
   end
 end

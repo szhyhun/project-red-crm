@@ -48,6 +48,17 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     render_validation_errors(error.record)
   end
 
+  def update
+    conversation = policy_scope(Conversation).find(params[:id])
+    authorize conversation
+
+    if conversation.update(update_params)
+      render json: { conversation: serialize(conversation) }
+    else
+      render_validation_errors(conversation)
+    end
+  end
+
   def destroy
     conversation = policy_scope(Conversation).find(params[:id])
     authorize conversation
@@ -69,7 +80,11 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   private
 
   def create_params
-    params.require(:conversation).permit(:listing_id, :client_account_id, :kind, :subject, :body, :body_html, member_ids: [])
+    params.require(:conversation).permit(:listing_id, :client_account_id, :kind, :subject, :retention_period, :body, :body_html, member_ids: [])
+  end
+
+  def update_params
+    params.require(:conversation).permit(:retention_period)
   end
 
   def message_params
@@ -133,7 +148,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
 
   def serialize(conversation, include_messages: false)
     unread = unread_message_stats.fetch(conversation.id, { count: 0, last_unread_message_at: nil })
-    data = conversation.slice(:id, :listing_id, :client_account_id, :kind, :subject, :last_message_at, :created_at).merge(
+    data = conversation.slice(:id, :listing_id, :client_account_id, :kind, :subject, :retention_period, :last_message_at, :created_at).merge(
       unread_count: unread[:count],
       last_unread_message_at: unread[:last_unread_message_at],
       listing: conversation.listing && { id: conversation.listing.id, address: conversation.listing.address },

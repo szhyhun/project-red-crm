@@ -73,7 +73,7 @@ attachment list and use the shared helpers rather than reconstructing paths.
 
 ## Chat retention
 
-Chat history is retained for 30 days by default. The daily production cleanup
+Chat history is retained for two months by default. The daily production cleanup
 removes messages older than the retention cutoff, deletes each linked private
 chat object first, and then deletes its `conversation_attachments` and
 `messages` rows. Conversations and memberships remain available, so a room can
@@ -81,12 +81,12 @@ receive new messages after its old history has expired. Board attachments and
 listing media are separate storage boundaries and are never removed by this
 policy.
 
-The deployment-wide window is configured with the positive integer
-`PROJECT_RED_CHAT_RETENTION_DAYS` environment variable. If it is absent or
-invalid, the scheduler uses 30 days. The recurring entry lives in
-`config/resque_schedule.yml` and is run by `project-red-crm-scheduler`. The
-cleanup is safe to retry: a storage failure leaves the corresponding database
-rows in place for the next run. Run it manually when needed with:
+Each conversation stores a `retention_period` enum in the database. It defaults
+to `two_months` and may be set to `six_months`, `one_year`, or `forever`. The
+recurring entry lives in `config/resque_schedule.yml` and is run by
+`project-red-crm-scheduler`. The cleanup is safe to retry: a storage failure
+leaves the corresponding database rows in place for the next run. Run it
+manually when needed with:
 
 ```sh
 bundle exec rake conversations:purge_expired

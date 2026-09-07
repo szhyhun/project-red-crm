@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_07_020000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -249,10 +249,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_020000) do
     t.datetime "last_message_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "retention_period", default: "two_months", null: false
     t.index ["client_account_id"], name: "index_conversations_on_client_account_id"
     t.index ["listing_id"], name: "index_conversations_on_listing_id"
     t.index ["organization_id", "kind", "last_message_at"], name: "idx_on_organization_id_kind_last_message_at_fcb0d57e64"
     t.index ["organization_id"], name: "index_conversations_on_organization_id"
+    t.index ["retention_period"], name: "index_conversations_on_retention_period"
+    t.check_constraint "retention_period::text = ANY (ARRAY['two_months'::character varying, 'six_months'::character varying, 'one_year'::character varying, 'forever'::character varying]::text[])", name: "conversations_retention_period_values"
   end
 
   create_table "coupons", force: :cascade do |t|

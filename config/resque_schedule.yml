@@ -4,4 +4,4 @@ conversation_retention:
   cron: "15 3 * * *"
   class: "Conversations::RetentionJob"
   queue: maintenance
-  description: "Delete chat messages and private chat attachments older than the configured retention window."
+  description: "Delete chat messages and private chat attachments past each conversation's retention period."

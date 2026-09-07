@@ -2,36 +2,19 @@ require "set"
 
 module Conversations
   class Retention
-    DEFAULT_RETENTION_DAYS = 30
-    RETENTION_DAYS_ENV = "PROJECT_RED_CHAT_RETENTION_DAYS"
     BATCH_SIZE = 100
 
-    Result = Data.define(:retention_days, :cutoff, :messages_deleted, :attachments_deleted, :failures)
+    Result = Data.define(:messages_deleted, :attachments_deleted, :failures)
 
     class << self
-      def call(retention_days: nil, now: Time.current, batch_size: BATCH_SIZE)
-        new(retention_days:, now:, batch_size:).call
-      end
-
-      def retention_days
-        normalize_days(ENV[RETENTION_DAYS_ENV])
-      end
-
-      private
-
-      def normalize_days(value)
-        days = Integer(value.to_s, 10)
-        days.positive? ? days : DEFAULT_RETENTION_DAYS
-      rescue ArgumentError, TypeError
-        DEFAULT_RETENTION_DAYS
+      def call(now: Time.current, batch_size: BATCH_SIZE)
+        new(now:, batch_size:).call
       end
     end
 
-    def initialize(retention_days:, now:, batch_size:)
-      @retention_days = self.class.send(:normalize_days, retention_days || self.class.retention_days)
+    def initialize(now:, batch_size:)
       @now = now
       @batch_size = batch_size
-      @cutoff = @now - @retention_days.days
       @messages_deleted = 0
       @attachments_deleted = 0
       @failures = 0
@@ -39,8 +22,11 @@ module Conversations
     end
 
     def call
-      Message.where("messages.created_at < ?", @cutoff).find_each(batch_size: @batch_size) do |message|
-        purge_message(message)
+      expiring_conversations.find_each do |conversation|
+        cutoff = conversation.retention_cutoff(@now)
+        conversation.messages.where("messages.created_at < ?", cutoff).find_each(batch_size: @batch_size) do |message|
+          purge_message(message)
+        end
       end
 
       refresh_conversation_timestamps
@@ -49,11 +35,16 @@ module Conversations
 
     private
 
+    def expiring_conversations
+      Conversation.where.not(retention_period: Conversation.retention_periods.fetch("forever"))
+    end
+
     def purge_message(message)
       message.with_lock do
         # A message may have been edited or moved past the cutoff while this
         # sweep was waiting for its row lock.
-        next unless message.created_at < @cutoff
+        conversation = message.conversation
+        next if conversation.forever? || message.created_at >= conversation.retention_cutoff(@now)
 
         message.conversation_attachments.find_each do |attachment|
           # Remove the private object first. If storage is unavailable, keep
@@ -85,8 +76,6 @@ module Conversations
 
     def result
       Result.new(
-        retention_days: @retention_days,
-        cutoff: @cutoff,
         messages_deleted: @messages_deleted,
         attachments_deleted: @attachments_deleted,
         failures: @failures

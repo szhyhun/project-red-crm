@@ -1,4 +1,10 @@
 class Conversation < ApplicationRecord
+  RETENTION_PERIOD_DAYS = {
+    "two_months" => 60,
+    "six_months" => 180,
+    "one_year" => 365
+  }.freeze
+
   belongs_to :organization
   belongs_to :listing, optional: true
   belongs_to :client_account, optional: true
@@ -8,6 +14,22 @@ class Conversation < ApplicationRecord
   has_many :conversation_attachments, dependent: :destroy
 
   enum :kind, { internal: "internal", client: "client" }, validate: true
+  enum :retention_period, {
+    two_months: "two_months",
+    six_months: "six_months",
+    one_year: "one_year",
+    forever: "forever"
+  }, default: :two_months, validate: true
+
+  def retention_days
+    RETENTION_PERIOD_DAYS[retention_period]
+  end
+
+  def retention_cutoff(now = Time.current)
+    return if forever?
+
+    now - retention_days.days
+  end
 
   validate :kind_has_valid_scope
   validate :related_records_belong_to_organization

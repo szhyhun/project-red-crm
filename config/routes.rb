@@ -52,7 +52,7 @@ Rails.application.routes.draw do
         get :preview, on: :member
         get :download, on: :member
       end
-      resources :conversations, only: %i[index show create destroy] do
+      resources :conversations, only: %i[index show create update destroy] do
         post :messages, on: :member, action: :create_message
         resources :members, only: %i[create destroy], controller: "conversation_memberships"
       end

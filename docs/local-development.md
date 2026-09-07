@@ -109,11 +109,13 @@ URL for chat files. The API serializes authorized relative `preview_path` and
 helpers. The API origin performs the membership check before streaming a
 preview, while downloads may use a short-lived signed S3 URL after that check.
 
-Chat history cleanup defaults to 30 days. Override the local window with the
-positive integer `PROJECT_RED_CHAT_RETENTION_DAYS`, then run the cleanup
-manually with `bundle exec rake conversations:purge_expired`. Production runs
-the recurring entry in `config/resque_schedule.yml` through Resque Scheduler;
-local development requires starting the scheduler process manually.
+Chat history cleanup defaults to two months per conversation. Set a
+conversation's `retention_period` to `two_months`, `six_months`, `one_year`, or
+`forever` through the conversation API when a different policy is needed, then
+run the cleanup manually with `bundle exec rake conversations:purge_expired`.
+Production runs the recurring entry in `config/resque_schedule.yml` through
+Resque Scheduler; local development requires starting the scheduler process
+manually.
 
 ## Stripe test payments
 
