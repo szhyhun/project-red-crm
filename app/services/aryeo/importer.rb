@@ -15,6 +15,17 @@ module Aryeo
     }.freeze
     RESOURCE_KEYS = ENDPOINTS.keys.map(&:to_s).freeze
     DATE_FILTERED_RESOURCES = %i[listings orders appointments].freeze
+    LISTING_INCLUDE = %w[
+      list_agent
+      co_list_agent
+      images
+      files
+      videos
+      floor_plans
+      interactive_content
+      property_website
+      orders.appointments
+    ].join(",").freeze
 
     def initialize(run:, client: nil, resources: nil, import_start_date: nil, import_end_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
       @run = run
@@ -31,6 +42,10 @@ module Aryeo
       @conflict_counts = Hash.new(0)
       @filtered_counts = Hash.new(0)
       @filtered_after_counts = Hash.new(0)
+      @date_unavailable_counts = Hash.new(0)
+      @dependency_counts = Hash.new(0)
+      @dependency_conflict_counts = Hash.new(0)
+      @deferred_skipped_resources = []
       @coverage = {}
       @errors = []
     end
@@ -41,7 +56,7 @@ module Aryeo
 
       ENDPOINTS.each do |name, endpoint|
         unless @resources.include?(name)
-          @coverage[name] = { status: "skipped", detail: "Not selected for this import run" }
+          @deferred_skipped_resources << name
           next
         end
 
@@ -66,8 +81,15 @@ module Aryeo
         paginate_collection(name, endpoint) { |payload| payloads << stringify(payload) }
         payloads = payloads.filter_map do |payload|
           filter_reason = date_filter_reason(name, payload)
-          increment_filtered_count(name, filter_reason)
-          filter_reason ? nil : payload
+          if filter_reason == :unavailable
+            @date_unavailable_counts[name] += 1
+            payload
+          elsif filter_reason
+            increment_filtered_count(name, filter_reason)
+            nil
+          else
+            payload
+          end
         end
         payloads.sort_by { |payload| [ source_timestamp(payload), external_id(payload) ] }.reverse.first(limit).each do |payload|
           import_resource(name, payload)
@@ -76,7 +98,9 @@ module Aryeo
         paginate_collection(name, endpoint) do |payload|
           payload = stringify(payload)
           filter_reason = date_filter_reason(name, payload)
-          if filter_reason
+          if filter_reason == :unavailable
+            @date_unavailable_counts[name] += 1
+          elsif filter_reason
             increment_filtered_count(name, filter_reason)
             next
           end
@@ -88,7 +112,8 @@ module Aryeo
         count: @counts[name] - count_before,
         skipped_conflicts: @conflict_counts[name],
         filtered_before_date: @filtered_counts[name],
-        filtered_after_date: @filtered_after_counts[name]
+        filtered_after_date: @filtered_after_counts[name],
+        date_unavailable: @date_unavailable_counts[name]
       }.compact
     rescue Client::EndpointUnavailable => error
       @coverage[name] = { status: "unavailable", detail: error.message }
@@ -99,12 +124,12 @@ module Aryeo
       @run.update!(counts: @counts, coverage: @coverage, error_details: @errors)
     end
 
-    def import_resource(name, payload)
+    def import_resource(name, payload, dependency: false)
       existing_record = record_for(name.to_s, external_id(payload))
       if existing_record&.record.present? && @conflict_resolution == "skip"
         archive!(name, payload, record: existing_record.record, sync_status: :skipped)
-        @conflict_counts[name] += 1
-        return
+        dependency ? @dependency_conflict_counts[name] += 1 : @conflict_counts[name] += 1
+        return existing_record.record
       end
 
       record = case name
@@ -120,6 +145,8 @@ module Aryeo
 
       archive!(name, payload, record: record)
       @counts[name] += 1
+      @dependency_counts[name] += 1 if dependency
+      record
     rescue ActiveRecord::RecordInvalid => error
       @errors << "#{name} #{external_id(payload) || "unknown"}: #{error.record.errors.full_messages.to_sentence}"
     end
@@ -249,7 +276,8 @@ module Aryeo
       return if external.blank?
 
       listing = record_for("listings", external)&.record || @organization.listings.find_by("metadata ->> 'aryeo_id' = ?", external)
-      client = client_for(payload) || imported_client
+      related_clients = import_listing_clients(payload)
+      client = related_clients.first || client_for(payload) || imported_client
       address = stringify(payload["address"] || payload["property_address"] || {})
       listing ||= @organization.listings.build(client_account: client, metadata: { "aryeo_id" => external })
       listing.assign_attributes(
@@ -274,9 +302,58 @@ module Aryeo
         metadata: listing.metadata.merge("aryeo_id" => external, "aryeo_status" => value(payload, "status"))
       )
       listing.save!
+      related_clients.drop(1).each do |related_client|
+        listing.listing_customers.find_or_create_by!(client_account: related_client)
+      end
       import_listing_media(listing, payload)
+      import_listing_relations(listing, payload)
       import_property_site(listing, payload)
       listing
+    end
+
+    def import_listing_clients(payload)
+      listing_client_payloads(payload).filter_map do |client_payload|
+        client = client_for_payload(client_payload)
+        if client.blank? && external_id(client_payload).present? && !@resources.include?(:clients)
+          client = import_resource(:clients, client_payload, dependency: true)
+        end
+        import_related_customer_team(client_payload, client)
+        client
+      end.uniq(&:id)
+    end
+
+    def import_listing_relations(listing, payload)
+      listing_external = external_id(payload)
+
+      unless @resources.include?(:orders)
+        records(payload, "orders").each do |order_payload|
+          import_resource(:orders, order_payload.merge("listing_id" => listing_external), dependency: true)
+        end
+      end
+
+      return if @resources.include?(:appointments)
+
+      records(payload, "appointments", "appointment").each do |appointment_payload|
+        import_resource(:appointments, appointment_payload.merge("listing_id" => listing_external), dependency: true)
+      end
+    end
+
+    def import_related_customer_team(client_payload, client)
+      return if client.blank?
+
+      team_payload = records(client_payload, "customer_team", "team").first
+      team_external = value(client_payload, "customer_team_id", "team_id")
+      team_payload ||= { "id" => team_external } if team_external.present?
+      return if team_payload.blank? || external_id(team_payload).blank?
+
+      team_payload = team_payload.merge("customer_ids" => (customer_ids(team_payload) + [ external_id(client_payload) ]).compact.uniq)
+      team =
+        if @resources.include?(:customer_teams)
+          record_for("customer_teams", external_id(team_payload))&.record
+        else
+          import_resource(:customer_teams, team_payload, dependency: true)
+        end
+      team&.customer_team_memberships&.find_or_create_by!(client_account: client)
     end
 
     def import_order(payload)
@@ -300,7 +377,18 @@ module Aryeo
       order.save!
       Array(payload["items"] || payload["order_items"]).each { |item| import_order_item(order, stringify(item)) }
       import_payment_metadata(order, payload)
+      import_order_appointments(order, payload) unless @resources.include?(:appointments)
       order
+    end
+
+    def import_order_appointments(order, payload)
+      listing_external = order.listing&.metadata&.[]("aryeo_id")
+      return if listing_external.blank?
+
+      records(payload, "appointments", "appointment").each do |appointment_payload|
+        import_resource(:appointments, appointment_payload.merge("listing_id" => listing_external,
+                                                                  "order_id" => external_id(payload)), dependency: true)
+      end
     end
 
     def import_order_item(order, payload)
@@ -344,7 +432,7 @@ module Aryeo
       return if external.blank? || listing.blank?
 
       appointment = record_for("appointments", external)&.record || @organization.appointments.find_by("notes LIKE ?", "%[aryeo:#{external}]%")
-      starts_at = time_value(payload, "starts_at", "start_at", "scheduled_at", "start_time")
+      starts_at = time_value(payload, "starts_at", "start_at", "scheduled_at", "start_time", "created_at", "updated_at")
       return if starts_at.blank?
 
       appointment ||= @organization.appointments.build(listing: listing)
@@ -375,8 +463,9 @@ module Aryeo
     end
 
     def import_listing_media(listing, payload)
-      { "images" => "images", "videos" => "videos", "floor_plans" => "floor_plans", "files" => "files", "media" => "files" }.each do |key, category|
-        Array(payload[key]).each { |media| import_media_asset(listing, stringify(media), category) }
+      { "images" => "images", "videos" => "videos", "floor_plans" => "floor_plans",
+        "interactive_content" => "tours", "files" => "files", "media" => "files" }.each do |key, category|
+        records(payload, key).each { |media| import_media_asset(listing, media, category) }
       end
     end
 
@@ -430,58 +519,44 @@ module Aryeo
     end
 
     def finish!
+      @deferred_skipped_resources.each do |name|
+        @coverage[name] ||= { status: "skipped", detail: "Not selected for this import run" }
+      end
+      @dependency_counts.keys.union(@dependency_conflict_counts.keys).each do |name|
+        count = @dependency_counts[name]
+        skipped_conflicts = @dependency_conflict_counts[name]
+        next if count.zero? && skipped_conflicts.zero?
+
+        @coverage[name] = {
+          status: "imported_as_dependency",
+          count: count,
+          skipped_conflicts: skipped_conflicts
+        }.compact
+      end
       status = @errors.empty? ? :completed : :completed_with_errors
       @run.update!(status:, phase: "completed", completed_at: Time.current, counts: @counts, coverage: @coverage, error_details: @errors)
       @connection.update!(status: :connected, last_imported_at: Time.current, endpoint_coverage: @coverage)
     end
 
     def paginate_collection(name, endpoint, &block)
-      params = api_date_filter_params(name)
-      return @client.paginate(endpoint, &block) if params.empty?
+      return @client.paginate(endpoint, &block) unless name == :listings
 
-      @client.paginate(endpoint, params:, &block)
-    end
-
-    def api_date_filter_params(name)
-      return {} unless @import_start_date || @import_end_date
-
-      case name
-      when :appointments
-        params = {}
-        params["filter[start_at_gte]"] = import_start_timestamp if @import_start_date
-        params["filter[start_at_lte]"] = import_end_timestamp if @import_end_date
-        params
-      when :orders
-        params = {}
-        params["filter[appointment_start_at_gte]"] = import_start_timestamp if @import_start_date
-        params["filter[appointment_start_at_lte]"] = import_end_timestamp if @import_end_date
-        params
-      else
-        {}
-      end
-    end
-
-    def import_start_timestamp
-      @import_start_timestamp ||= @import_start_date.in_time_zone.beginning_of_day.utc.iso8601
-    end
-
-    def import_end_timestamp
-      @import_end_timestamp ||= @import_end_date.in_time_zone.end_of_day.utc.iso8601
+      @client.paginate(endpoint, params: { "include" => LISTING_INCLUDE }, &block)
     end
 
     def date_filter_reason(name, payload)
       return unless (@import_start_date || @import_end_date) && DATE_FILTERED_RESOURCES.include?(name)
 
       raw_timestamp = resource_start_timestamp(name, payload)
-      return @import_start_date ? :before : :after if raw_timestamp.blank?
+      return :unavailable if raw_timestamp.blank?
 
       date = Date.parse(raw_timestamp.to_s)
       return :before if @import_start_date && date < @import_start_date
       return :after if @import_end_date && date > @import_end_date
 
       nil
-    rescue Date::Error
-      @import_start_date ? :before : :after
+    rescue ArgumentError, Date::Error, TypeError
+      :unavailable
     end
 
     def increment_filtered_count(name, reason)
@@ -495,33 +570,52 @@ module Aryeo
       when :listings
         value(payload, "updated_at", "created_at")
       when :appointments
-        value(payload, "start_at", "starts_at", "scheduled_at", "start_time", "created_at")
+        value(payload, "start_at", "starts_at", "scheduled_at", "start_time", "created_at", "updated_at")
       when :orders
-        appointment_timestamps(payload).min || value(payload, "appointment_start_at", "scheduled_at", "created_at")
+        appointment_timestamps(payload).min || value(payload, "appointment_start_at", "scheduled_at", "created_at", "updated_at")
       end
     end
 
     def appointment_timestamps(payload)
-      appointments = payload["appointments"] || payload["unconfirmed_appointments"] || payload["appointment"]
-      appointments = appointments.is_a?(Array) ? appointments : [ appointments ]
-      appointments.filter_map do |appointment|
-        next unless appointment.is_a?(Hash)
-
-        value(stringify(appointment), "start_at", "starts_at", "scheduled_at", "start_time")
+      records(payload, "appointments", "unconfirmed_appointments", "appointment").filter_map do |appointment|
+        value(appointment, "start_at", "starts_at", "scheduled_at", "start_time")
       end
     end
 
     def record_for(resource_type, external)
+      return if external.blank?
+
       @connection.external_records.find_by(resource_type: resource_type, external_id: external)
     end
 
     def client_for(payload)
-      nested = stringify(payload["customer"] || payload["client"] || {})
-      external = external_id(nested).presence || value(payload, "customer_id", "client_id")
-      return record_for("clients", external)&.record if external.present?
+      listing_client_payloads(payload).each do |client_payload|
+        client = client_for_payload(client_payload)
+        return client if client.present?
+      end
 
-      email = value(nested, "email", "email_address").presence || value(payload, "customer_email", "client_email")
+      nil
+    end
+
+    def client_for_payload(payload)
+      external = external_id(payload)
+      client = record_for("clients", external)&.record
+      client ||= @organization.client_accounts.find_by("metadata ->> 'aryeo_id' = ?", external) if external.present?
+      return client if client.present?
+
+      email = value(payload, "email", "email_address")
       @organization.client_accounts.find_by(email: email) if email.present?
+    end
+
+    def listing_client_payloads(payload)
+      candidates = records(payload, "customer", "client", "customer_account", "owner")
+      candidates.concat(records(payload, "customers", "clients"))
+      %w[customer_id client_id customer_account_id owner_id].each do |key|
+        external = value(payload, key)
+        candidates << { "id" => external } if external.present?
+      end
+      candidates.select { |candidate| external_id(candidate).present? || value(candidate, "email", "email_address").present? }
+        .uniq { |candidate| external_id(candidate).presence || value(candidate, "email", "email_address").to_s.downcase }
     end
 
     def imported_client
@@ -535,13 +629,13 @@ module Aryeo
     def listing_for(payload)
       nested = stringify(payload["listing"] || {})
       external = external_id(nested).presence || value(payload, "listing_id")
-      record_for("listings", external)&.record if external.present?
+      record_for("listings", external)&.record || @organization.listings.find_by("metadata ->> 'aryeo_id' = ?", external) if external.present?
     end
 
     def order_for(payload)
       nested = stringify(payload["order"] || {})
       external = external_id(nested).presence || value(payload, "order_id")
-      record_for("orders", external)&.record if external.present?
+      record_for("orders", external)&.record || @organization.orders.find_by("metadata ->> 'aryeo_id' = ?", external) if external.present?
     end
 
     def staff_for(payload)
@@ -649,6 +743,14 @@ module Aryeo
       Array(values).filter_map do |item|
         item.is_a?(Hash) ? external_id(stringify(item)) : item.to_s.presence
       end
+    end
+
+    def records(payload, *keys)
+      raw = keys.lazy.map { |key| payload[key.to_s] || payload[key.to_sym] }.find(&:present?)
+      return [] if raw.blank?
+
+      values = raw.is_a?(Array) ? raw : [ raw ]
+      values.filter_map { |item| item.is_a?(Hash) ? stringify(item) : nil }
     end
 
     def content_type_for(category)

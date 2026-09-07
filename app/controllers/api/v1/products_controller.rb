@@ -48,6 +48,7 @@ class Api::V1::ProductsController < Api::V1::BaseController
       kind: product.kind,
       description: product.description,
       active: product.active,
+      origin: product.origin,
       capabilities: product.capabilities,
       variants: product.product_variants.active.order(:price_cents).map do |variant|
         {
