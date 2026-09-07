@@ -1,0 +1,12 @@
+[Unit]
+Description=Project Red CRM chat retention cleanup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/srv/project-red-crm-api
+EnvironmentFile=/etc/project-red-crm/api.env
+ExecStart=/usr/bin/bash -lc 'export PATH=/home/ubuntu/.rbenv/bin:/home/ubuntu/.rbenv/shims:$PATH; eval "$(rbenv init - bash)"; exec bundle exec rails runner -e production "Conversations::RetentionJob.perform_now"'
+TimeoutStartSec=1h

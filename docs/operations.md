@@ -67,3 +67,18 @@ sent. After a Redis outage, enqueue pending and failed records with:
 ```sh
 bundle exec rake notifications:dispatch_pending
 ```
+
+## Chat retention cleanup
+
+Production installs `project-red-crm-chat-retention.timer`, which runs the
+chat retention cleanup once per day. It uses
+`PROJECT_RED_CHAT_RETENTION_DAYS` from `/etc/project-red-crm/api.env`; the
+default is 30 days. The cleanup deletes private chat storage before deleting
+the matching message and attachment rows, and keeps the conversation itself.
+
+Check the timer and run a one-off cleanup through the release directory with:
+
+```sh
+sudo systemctl status project-red-crm-chat-retention.timer --no-pager
+bundle exec rake conversations:purge_expired
+```

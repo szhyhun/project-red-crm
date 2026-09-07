@@ -6,6 +6,7 @@ set -euo pipefail
 : "${PROJECT_RED_MEDIA_CDN_URL:?PROJECT_RED_MEDIA_CDN_URL is required}"
 : "${PROJECT_RED_BOARD_MEDIA_BUCKET:?PROJECT_RED_BOARD_MEDIA_BUCKET is required}"
 : "${PROJECT_RED_CHAT_MEDIA_BUCKET:?PROJECT_RED_CHAT_MEDIA_BUCKET is required}"
+: "${PROJECT_RED_CHAT_RETENTION_DAYS:=30}"
 
 if ! command -v redis-server >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get update
@@ -77,6 +78,7 @@ psql "$project_red_admin_database_url" -v ON_ERROR_STOP=1 \
     "PROJECT_RED_MEDIA_CDN_URL=${PROJECT_RED_MEDIA_CDN_URL}" \
     "PROJECT_RED_BOARD_MEDIA_BUCKET=${PROJECT_RED_BOARD_MEDIA_BUCKET}" \
     "PROJECT_RED_CHAT_MEDIA_BUCKET=${PROJECT_RED_CHAT_MEDIA_BUCKET}" \
+    "PROJECT_RED_CHAT_RETENTION_DAYS=${PROJECT_RED_CHAT_RETENTION_DAYS}" \
     'CRM_UI_ORIGIN=https://crm.projectred.ca' \
     'PUBLIC_SITE_ORIGIN=https://projectred.ca' \
     'PORTAL_URL=https://crm.projectred.ca' \

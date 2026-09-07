@@ -8,6 +8,8 @@ ENV_FILE="${ENV_FILE:-/etc/project-red-crm/api.env}"
 APP_USER="${APP_USER:-ubuntu}"
 API_SERVICE="${API_SERVICE:-project-red-crm-api}"
 WORKER_SERVICE="${WORKER_SERVICE:-project-red-crm-worker}"
+RETENTION_SERVICE="${RETENTION_SERVICE:-project-red-crm-chat-retention}"
+RETENTION_TIMER="${RETENTION_TIMER:-project-red-crm-chat-retention}"
 APP_PORT="${PORT:-3003}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
@@ -41,6 +43,8 @@ echo "[deploy] running database migrations"
 RAILS_ENV=production bundle exec rails db:migrate
 
 echo "[deploy] activating release"
+systemctl stop "${RETENTION_TIMER}.timer" || true
+systemctl stop "${RETENTION_SERVICE}.service" || true
 systemctl stop "${WORKER_SERVICE}" || true
 systemctl stop "${API_SERVICE}" || true
 rm -rf "${PREVIOUS_DIR}"
@@ -54,20 +58,41 @@ chown -R "${APP_USER}:${APP_USER}" "${CURRENT_DIR}"
 
 install -m 0644 "${CURRENT_DIR}/deploy/systemd/${API_SERVICE}.service" "/etc/systemd/system/${API_SERVICE}.service"
 install -m 0644 "${CURRENT_DIR}/deploy/systemd/${WORKER_SERVICE}.service" "/etc/systemd/system/${WORKER_SERVICE}.service"
+install -m 0644 "${CURRENT_DIR}/deploy/systemd/${RETENTION_SERVICE}.service" "/etc/systemd/system/${RETENTION_SERVICE}.service"
+install -m 0644 "${CURRENT_DIR}/deploy/systemd/${RETENTION_TIMER}.timer" "/etc/systemd/system/${RETENTION_TIMER}.timer"
 systemctl daemon-reload
 
 rollback() {
   echo "[deploy] release failed; restoring the previous API release" >&2
+  systemctl stop "${RETENTION_TIMER}.timer" || true
+  systemctl stop "${RETENTION_SERVICE}.service" || true
   systemctl stop "${WORKER_SERVICE}" || true
   systemctl stop "${API_SERVICE}" || true
   rm -rf "${CURRENT_DIR}"
 
   if [[ -d "${PREVIOUS_DIR}" ]]; then
     mv "${PREVIOUS_DIR}" "${CURRENT_DIR}"
+    install -m 0644 "${CURRENT_DIR}/deploy/systemd/${API_SERVICE}.service" "/etc/systemd/system/${API_SERVICE}.service"
+    install -m 0644 "${CURRENT_DIR}/deploy/systemd/${WORKER_SERVICE}.service" "/etc/systemd/system/${WORKER_SERVICE}.service"
+    if [[ -f "${CURRENT_DIR}/deploy/systemd/${RETENTION_SERVICE}.service" && -f "${CURRENT_DIR}/deploy/systemd/${RETENTION_TIMER}.timer" ]]; then
+      install -m 0644 "${CURRENT_DIR}/deploy/systemd/${RETENTION_SERVICE}.service" "/etc/systemd/system/${RETENTION_SERVICE}.service"
+      install -m 0644 "${CURRENT_DIR}/deploy/systemd/${RETENTION_TIMER}.timer" "/etc/systemd/system/${RETENTION_TIMER}.timer"
+      systemctl daemon-reload
+      systemctl enable --now "${RETENTION_TIMER}.timer"
+    else
+      systemctl disable --now "${RETENTION_TIMER}.timer" || true
+      rm -f "/etc/systemd/system/${RETENTION_TIMER}.timer" "/etc/systemd/system/${RETENTION_SERVICE}.service"
+      systemctl daemon-reload
+    fi
     systemctl restart "${API_SERVICE}"
     systemctl restart "${WORKER_SERVICE}"
   fi
 }
+
+if ! systemctl enable --now "${RETENTION_TIMER}.timer"; then
+  rollback
+  exit 1
+fi
 
 if ! systemctl restart "${API_SERVICE}" || ! systemctl restart "${WORKER_SERVICE}"; then
   rollback

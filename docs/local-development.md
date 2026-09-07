@@ -96,6 +96,12 @@ URL for chat files. The API serializes authorized relative `preview_path` and
 helpers. The API origin performs the membership check before streaming a
 preview, while downloads may use a short-lived signed S3 URL after that check.
 
+Chat history cleanup defaults to 30 days. Override the local window with the
+positive integer `PROJECT_RED_CHAT_RETENTION_DAYS`, then run the cleanup
+manually with `bundle exec rake conversations:purge_expired`. Production runs
+the same service daily through a systemd timer; local development does not
+start that timer automatically.
+
 ## Stripe test payments
 
 Set the Rails variables `STRIPE_SECRET_KEY=sk_test_...` and

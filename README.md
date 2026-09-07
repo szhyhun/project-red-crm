@@ -48,6 +48,10 @@ the existing infrastructure:
   `PROJECT_RED_CHAT_MEDIA_BUCKET`. The API authorizes every preview/download
   request and streams previews through the API origin; local development
   stores them under `storage/chat_media`.
+- Chat messages and their private attachments are retained for 30 days by
+  default. Production runs `project-red-crm-chat-retention.timer` daily; set
+  `PROJECT_RED_CHAT_RETENTION_DAYS` in the host environment to configure a
+  longer or shorter positive retention window.
 - Rails API on port `3003`, behind Nginx as `api.projectred.ca`.
 - Resque worker: `project-red-crm-worker`.
 

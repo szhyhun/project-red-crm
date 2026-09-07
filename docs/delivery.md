@@ -71,6 +71,26 @@ The UI renders chat files with the same `mediaAssetUrl`,
 attachments. If a new chat surface is added, it must render the serialized
 attachment list and use the shared helpers rather than reconstructing paths.
 
+## Chat retention
+
+Chat history is retained for 30 days by default. The daily production cleanup
+removes messages older than the retention cutoff, deletes each linked private
+chat object first, and then deletes its `conversation_attachments` and
+`messages` rows. Conversations and memberships remain available, so a room can
+receive new messages after its old history has expired. Board attachments and
+listing media are separate storage boundaries and are never removed by this
+policy.
+
+The deployment-wide window is configured with the positive integer
+`PROJECT_RED_CHAT_RETENTION_DAYS` environment variable. If it is absent or
+invalid, the service uses 30 days. The cleanup is safe to retry: a storage
+failure leaves the corresponding database rows in place for the next run. Run
+it manually when needed with:
+
+```sh
+bundle exec rake conversations:purge_expired
+```
+
 ## Property sites
 
 A listing can have one `PropertySite` with a slug and publishing status. The

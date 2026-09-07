@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_07_010000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_07_020000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -604,6 +604,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_010000) do
     t.index ["author_id"], name: "index_messages_on_author_id"
     t.index ["conversation_id", "created_at"], name: "index_messages_on_conversation_id_and_created_at"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
+    t.index ["created_at"], name: "index_messages_on_created_at"
   end
 
   create_table "notification_deliveries", force: :cascade do |t|
