@@ -11,7 +11,7 @@ class DeliveryArchive
     tempfile = Tempfile.new([ "project-red-listing-#{@listing.id}-", ".tar" ])
     tempfile.binmode
     Gem::Package::TarWriter.new(tempfile) do |tar|
-      @listing.media_assets.ready.where(hidden: false).order(:category, :position, :created_at).each do |asset|
+      @listing.media_assets.current_version.ready.where(hidden: false).order(:category, :position, :created_at).each do |asset|
         source = DeliveryStorage.path_for(asset.storage_key)
         raise DeliveryStorage::MissingFile, asset.filename unless source.file?
 

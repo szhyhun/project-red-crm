@@ -28,7 +28,7 @@ class BoardStorage
       destination = path_for(key)
       FileUtils.mkdir_p(destination.dirname)
       File.open(destination, "wb") { |file| IO.copy_stream(upload, file) }
-    rescue SystemCallError, IOError => error
+    rescue Aws::S3::Errors::ServiceError, SystemCallError, IOError => error
       FileUtils.rm_f(destination) if destination
       raise WriteError, error.message
     end
@@ -81,7 +81,9 @@ class BoardStorage
         s3_client.get_object(bucket: board_media_bucket, key:) { |chunk| yield chunk }
       else
         File.open(path_for(key), "rb") do |file|
-          yield chunk while (chunk = file.read(16 * 1024))
+          while (chunk = file.read(16 * 1024))
+            yield chunk
+          end
         end
       end
     rescue Aws::S3::Errors::NotFound

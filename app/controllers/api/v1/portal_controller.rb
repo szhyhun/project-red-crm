@@ -15,7 +15,7 @@ class Api::V1::PortalController < Api::V1::BaseController
     listing = policy_scope(Listing).includes(
       :property_site,
       :invoices,
-      { workflow_tasks: { board: :workflow_columns } },
+      { workflow_tasks: { workflow_task_placements: [ :workflow_column, { board: :workflow_columns } ] } },
       :media_assets,
       appointments: :appointment_events
     ).find(params[:id])
@@ -79,13 +79,91 @@ class Api::V1::PortalController < Api::V1::BaseController
     render json: { appointment: serialize_client_appointment(appointment.reload) }
   end
 
+  def listing_media
+    listing = policy_scope(Listing).includes(:media_assets, :client_account).find(params[:listing_id])
+    authorize listing, :view?
+    deliverables = policy_scope(OrderDeliverable).where(listing_id: listing.id)
+      .includes(:service_product, :media_assets).active.ordered
+    assets = listing.media_assets.current_version.final.ready.where(customer_visible: true, hidden: false)
+      .order(cover: :desc, position: :asc, created_at: :asc)
+    render json: {
+      listing: {
+        id: listing.id,
+        address: listing.address,
+        address_line_1: listing.address_line_1,
+        city: listing.city,
+        province: listing.province,
+        postal_code: listing.postal_code,
+        hero_asset: assets.first && serialize_portal_asset(assets.first)
+      },
+      summary: {
+        deliverable_count: deliverables.size,
+        delivered_count: deliverables.count(&:delivered?)
+      },
+      deliverables: deliverables.map { |deliverable| serialize_portal_deliverable(deliverable) }
+    }
+  end
+
+  def create_change_request
+    authorize :client_portal, :update?
+    listing = policy_scope(Listing).find(params[:listing_id])
+    authorize listing, :view?
+    deliverable = policy_scope(OrderDeliverable).where(listing_id: listing.id).find(params[:deliverable_id])
+    authorize deliverable, :view?
+    return render json: { error: "change_requests_only_for_delivered_work" }, status: :unprocessable_entity unless deliverable.delivered?
+
+    attributes = change_request_params
+    body_html = attributes[:body_html].presence || attributes[:body].to_s
+    body = RichTextSanitizer.plain_text(body_html).presence || attributes[:body].to_s.strip
+    return render json: { error: "message_required" }, status: :unprocessable_entity if body.blank?
+
+    selected_ids = Array(attributes[:media_asset_ids]).map(&:to_i).uniq
+    assets = deliverable.customer_visible_assets.where(id: selected_ids)
+    return render json: { error: "invalid_media_asset_reference" }, status: :unprocessable_entity if assets.size != selected_ids.size
+
+    conversation = Conversation.account_thread_for(organization: Current.organization, client_account: listing.client_account)
+    conversation.conversation_memberships.find_or_create_by!(user: current_user) do |membership|
+      membership.role = :participant
+    end
+    listing.client_account.users.active.find_each do |member|
+      conversation.conversation_memberships.find_or_create_by!(user: member) { |membership| membership.role = :participant }
+    end
+    message = nil
+    OrderDeliverable.transaction do
+      message = conversation.messages.create!(author: current_user, body:, body_html: body_html,
+                                               message_kind: :change_request, listing:, order_deliverable: deliverable)
+      assets.each_with_index { |asset, position| message.message_media_references.create!(media_asset: asset, position:) }
+      deliverable.update!(status: :in_progress, delivered_at: nil)
+      ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: deliverable,
+                            event_type: "order_deliverable.change_requested", payload: {
+                              message_id: message.id,
+                              media_asset_ids: selected_ids
+                            })
+      ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: listing,
+                            event_type: "order_deliverable.change_requested", payload: {
+                              order_deliverable_id: deliverable.id,
+                              message_id: message.id
+                            })
+    end
+    conversation.update!(last_message_at: message.created_at)
+    notify_later(message)
+    render json: { change_request: { message_id: message.id, conversation_id: conversation.id,
+                                     deliverable: serialize_portal_deliverable(deliverable.reload) } }, status: :created
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_errors(error.record)
+  end
+
   private
 
   def portal_payload
     {
       client_accounts: current_user.client_accounts.order(:name).map { |account| account.slice(:id, :name, :kind, :brokerage_name) },
       listings: portal_listings.map { |listing| serialize_listing(listing) },
-      conversations: policy_scope(Conversation).includes(:listing, messages: [ :author, :conversation_attachments ])
+      conversations: policy_scope(Conversation).includes(
+        :listing,
+        messages: [ :author, :listing, :order_deliverable, :conversation_attachments,
+                    { message_media_references: :media_asset } ]
+      )
         .order(last_message_at: :desc, created_at: :desc).limit(20)
         .map { |conversation| serialize_conversation(conversation) }
     }
@@ -96,7 +174,7 @@ class Api::V1::PortalController < Api::V1::BaseController
       .includes(
         :property_site,
         :invoices,
-        { workflow_tasks: { board: :workflow_columns } },
+        { workflow_tasks: { workflow_task_placements: [ :workflow_column, { board: :workflow_columns } ] } },
         :media_assets,
         appointments: :appointment_events
       )
@@ -118,11 +196,10 @@ class Api::V1::PortalController < Api::V1::BaseController
                       .order(Arel.sql("submitted_at IS NULL DESC"), requested_at: :desc)
                       .first
     data = ClientPortal::ListingPresenter.new(listing).to_h.merge(
-      progress: listing.workflow_tasks.where(customer_visible: true)
-        .where(board: Board.where(client_visible: true)).order(:position)
+      progress: portal_workflow_tasks_for(listing)
         .map { |task| serialize_progress_task(task) },
       appointments: listing.appointments.where.not(status: :cancelled).order(:starts_at).map { |appointment| serialize_client_appointment(appointment) },
-      media_assets: listing.media_assets.final.ready.where(customer_visible: true, hidden: false)
+      media_assets: listing.media_assets.current_version.final.ready.where(customer_visible: true, hidden: false)
         .order(cover: :desc, position: :asc, created_at: :asc)
         .map { |asset| serialize_asset(asset) },
       invoices: listing.invoices.order(created_at: :desc).map do |invoice|
@@ -140,12 +217,16 @@ class Api::V1::PortalController < Api::V1::BaseController
   end
 
   def serialize_progress_task(task)
-    column = task.board&.workflow_columns&.find { |entry| entry.key == task.status }
+    placement = task.workflow_task_placements
+      .select { |entry| entry.board&.client_visible? }
+      .min_by { |entry| [ entry.is_home? ? 0 : 1, entry.position, entry.id ] }
+    column = placement&.workflow_column
+    status_key = column&.key || task.status
     status = if column&.completed?
       "complete"
     elsif column&.blocked?
       "attention"
-    elsif task.status == "todo"
+    elsif status_key == "todo"
       "upcoming"
     else
       "in_progress"
@@ -154,11 +235,36 @@ class Api::V1::PortalController < Api::V1::BaseController
     { id: task.id, title: task.title, status:, completed_at: task.completed_at }
   end
 
+  def portal_workflow_tasks_for(listing)
+    listing.workflow_tasks
+      .where(customer_visible: true)
+      .joins(workflow_task_placements: :board)
+      .where(boards: { client_visible: true })
+      .distinct
+      .sort_by { |task| [ task.position, task.id ] }
+  end
+
   def serialize_asset(asset)
     asset.slice(:id, :filename, :content_type, :byte_size, :width, :height, :duration_seconds).merge(
       cdn_url: asset.source_url.presence || DeliveryStorage.public_url(asset.storage_key),
       preview_path: asset.external? ? nil : preview_api_v1_media_asset_path(asset),
       download_path: download_api_v1_media_asset_path(asset)
+    )
+  end
+
+  def serialize_portal_asset(asset)
+    asset.slice(:id, :filename, :content_type, :byte_size, :width, :height, :duration_seconds).merge(
+      preview_path: "/api/v1/media_assets/#{asset.id}/preview",
+      download_path: "/api/v1/media_assets/#{asset.id}/download"
+    )
+  end
+
+  def serialize_portal_deliverable(deliverable)
+    deliverable.slice(:id, :title, :description, :deliverable_type, :status, :target_on, :delivered_at,
+                      :scope_label).merge(
+      asset_count: deliverable.customer_visible_assets.count,
+      can_request_changes: deliverable.delivered?,
+      assets: deliverable.customer_visible_assets.map { |asset| serialize_portal_asset(asset) }
     )
   end
 
@@ -193,6 +299,16 @@ class Api::V1::PortalController < Api::V1::BaseController
     params.require(:appointment).permit(:starts_at, :ends_at, :notes)
   end
 
+  def change_request_params
+    params.require(:change_request).permit(:body, :body_html, media_asset_ids: [])
+  end
+
+  def notify_later(message)
+    Conversations::NotifyJob.perform_later(message.id)
+  rescue StandardError => error
+    Rails.logger.error("Could not queue portal conversation notification for message #{message.id}: #{error.class}: #{error.message}")
+  end
+
   def parse_reschedule_time(value)
     return if value.blank?
 
@@ -212,12 +328,38 @@ class Api::V1::PortalController < Api::V1::BaseController
   def serialize_conversation(conversation)
     conversation.slice(:id, :listing_id, :subject, :last_message_at).merge(
       listing_address: conversation.listing&.address,
-      messages: conversation.messages.participants.includes(:author, :conversation_attachments).order(created_at: :desc).limit(20).reverse.map do |message|
-        message.slice(:id, :body, :body_html, :created_at).merge(
+      messages: conversation.messages.participants.includes(:author, :conversation_attachments, message_media_references: :media_asset).order(created_at: :desc).limit(20).reverse.map do |message|
+        message.slice(:id, :body, :body_html, :message_kind, :listing_id, :order_deliverable_id, :created_at).merge(
+          context: serialize_message_context(message),
           attachments: message.conversation_attachments.order(:created_at, :id).map { |attachment| ConversationAttachment.serialize(attachment) },
+          media_references: message.message_media_references.includes(:media_asset).order(:position, :id).filter_map do |reference|
+            asset = reference.media_asset
+            next if asset.blank? || !asset.ready? || asset.external?
+
+            {
+              id: asset.id,
+              filename: asset.filename,
+              content_type: asset.content_type,
+              byte_size: asset.byte_size,
+              preview_path: preview_api_v1_media_asset_path(asset),
+              download_path: download_api_v1_media_asset_path(asset)
+            }
+          end,
           author: message.author.slice(:id, :name, :role)
         )
       end
     )
+  end
+
+  def serialize_message_context(message)
+    context = {}
+    context[:listing] = { id: message.listing.id, address: message.listing.address } if message.listing.present?
+    if message.order_deliverable.present?
+      context[:deliverable] = message.order_deliverable.slice(:id, :title, :deliverable_type)
+    end
+
+    selected_asset_count = message.message_media_references.size
+    context[:selected_asset_count] = selected_asset_count if selected_asset_count.positive?
+    context.presence
   end
 end

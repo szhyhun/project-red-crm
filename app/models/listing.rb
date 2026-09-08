@@ -5,6 +5,7 @@ class Listing < ApplicationRecord
   has_many :customer_accounts, through: :listing_customers, source: :client_account
   has_many :listing_custom_fields, -> { order(:position, :id) }, dependent: :destroy
   has_many :orders, dependent: :nullify
+  has_many :order_deliverables, dependent: :nullify
   has_many :appointments, dependent: :destroy
   has_many :listing_assignments, dependent: :destroy
   has_many :assigned_users, through: :listing_assignments, source: :user

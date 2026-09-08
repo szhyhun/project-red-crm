@@ -22,9 +22,9 @@ class MediaAssetPolicy < OrganizationRecordPolicy
       assets = scope.where(organization_id: user.organization_id)
       return assets if user.internal?
 
-      assets.joins(listing: :listing_customers).where(
+      assets.left_joins(listing: :listing_customers).where(
         "listings.client_account_id IN (:ids) OR listing_customers.client_account_id IN (:ids)", ids: user.client_account_ids
-      ).where(kind: "final", status: "ready", customer_visible: true, hidden: false).distinct
+      ).where(kind: "final", status: "ready", customer_visible: true, hidden: false, superseded_by_id: nil).distinct
     end
   end
 
@@ -35,6 +35,7 @@ class MediaAssetPolicy < OrganizationRecordPolicy
     return true if user.internal?
 
     record.final? && record.ready? && record.customer_visible? && !record.hidden? && record.listing &&
+      record.superseded_by_id.nil? &&
       (user.client_account_ids.include?(record.listing.client_account_id) ||
        record.listing.listing_customers.where(client_account_id: user.client_account_ids).exists?)
   end

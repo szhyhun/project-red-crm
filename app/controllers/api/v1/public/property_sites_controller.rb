@@ -2,7 +2,8 @@ class Api::V1::Public::PropertySitesController < ApplicationController
   def show
     organization = Organization.find_by!(slug: params[:organization_slug])
     site = organization.property_sites.published.includes(listing: :media_assets).find_by!(slug: params[:slug])
-    assets = site.listing.media_assets.final.ready.order(:created_at)
+    assets = site.listing.media_assets.current_version.final.ready.where(customer_visible: true, hidden: false)
+      .order(:created_at)
 
     render json: {
       property_site: {

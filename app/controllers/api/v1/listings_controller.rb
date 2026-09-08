@@ -2,7 +2,8 @@ class Api::V1::ListingsController < Api::V1::BaseController
   def index
     base = policy_scope(Listing)
     listings = Listings::Query.new(scope: base, params: params).call
-      .includes(:client_account, :assigned_users, :media_assets, :listing_feedbacks, appointments: :assigned_user, orders: %i[order_items invoices])
+      .includes(:client_account, :assigned_users, :media_assets, :listing_feedbacks, :order_deliverables,
+                appointments: :assigned_user, orders: %i[order_items invoices order_deliverables])
       .order(created_at: :desc)
     render json: { listings: listings.map { |listing| serialize_listing(listing) }, counts: listing_counts(base), filter_options: filter_options }
   end
@@ -10,7 +11,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
   def show
     listing = policy_scope(Listing).includes(
       :client_account,
-      { workflow_tasks: :assignee },
+      { workflow_tasks: [ :assignee, { workflow_task_placements: [ :workflow_column, { board: :workflow_columns } ] } ] },
       { appointments: :assigned_user },
       { listing_customers: :client_account },
       :media_groups,
@@ -19,7 +20,8 @@ class Api::V1::ListingsController < Api::V1::BaseController
       { listing_assignments: :user },
       { listing_notes: :author },
       { payroll_items: :team_member },
-      { listing_feedbacks: :client_account }
+      { listing_feedbacks: :client_account },
+      { order_deliverables: :service_product }
     ).find(params[:id])
     authorize listing
     render json: { listing: serialize_listing(listing, include_details: true) }
@@ -82,13 +84,15 @@ class Api::V1::ListingsController < Api::V1::BaseController
   end
 
   def serialize_listing(listing, include_details: false)
+    return serialize_customer_listing(listing, include_details:) unless current_user.internal?
+
     appointment = listing.appointments.reject(&:cancelled?).min_by(&:starts_at)
     order = listing.orders.max_by(&:created_at)
     invoices = listing.orders.flat_map(&:invoices)
     photos = listing.media_assets
-      .select { |asset| asset.ready? && asset.content_type.start_with?("image/") }
+      .select { |asset| asset.current_version? && asset.ready? && asset.content_type.start_with?("image/") }
       .sort_by { |asset| [ asset.position, asset.created_at ] }
-    cover = photos.first || listing.media_assets.find { |asset| asset.cover? && asset.ready? && asset.content_type.start_with?("image/") }
+    cover = photos.first || listing.media_assets.find { |asset| asset.current_version? && asset.cover? && asset.ready? && asset.content_type.start_with?("image/") }
     payment_status = listing_payment_status(listing)
     data = {
       id: listing.id,
@@ -127,12 +131,21 @@ class Api::V1::ListingsController < Api::V1::BaseController
                         items: order.order_items.map { |item| item.slice(:id, :product_id, :title) } },
       payment_status: payment_status,
       feedback_summary: listing_feedback_summary(listing),
-      cover_image_url: cover && media_url_for(cover)
+      cover_image_url: cover && media_url_for(cover),
+      order_deliverables: listing.order_deliverables.active.ordered.map { |deliverable| serialize_deliverable(deliverable) }
     }
     return data unless include_details
 
-    tasks = listing.workflow_tasks.includes(:assignee).order(:position)
-    tasks = tasks.where(customer_visible: true) unless current_user.internal?
+    tasks = listing.workflow_tasks.includes(:assignee)
+    tasks = if current_user.internal?
+      tasks.sort_by { |task| [ task.home_placement&.position || task.position, task.id ] }
+    else
+      tasks.where(customer_visible: true)
+        .joins(workflow_task_placements: :board)
+        .where(boards: { client_visible: true })
+        .distinct
+        .sort_by { |task| [ task.position, task.id ] }
+    end
     unless current_user.internal?
       return data.merge(
         workflow_tasks: tasks.map { |task| serialize_task(task) }, appointments: [], assignments: [],
@@ -165,11 +178,48 @@ class Api::V1::ListingsController < Api::V1::BaseController
   end
 
   def filter_options
+    return { products: [], tags: [], team_members: [] } unless current_user.internal?
+
     {
       products: Current.organization.products.where(active: true).order(:title).pluck(:id, :title).map { |id, title| { id: id, title: title } },
       tags: (Current.organization.listings.pluck(:tags).flatten + Current.organization.orders.pluck(:tags).flatten).uniq.sort,
       team_members: Current.organization.users.active.order(:name).pluck(:id, :name).map { |id, name| { id: id, name: name } }
     }
+  end
+
+  def serialize_customer_listing(listing, include_details: false)
+    data = ClientPortal::ListingPresenter.new(listing).to_h.merge(
+      order_deliverables: listing.order_deliverables.active.ordered.map { |deliverable| serialize_deliverable(deliverable) }
+    )
+    return data unless include_details
+
+    data.merge(
+      workflow_tasks: listing.workflow_tasks
+        .where(customer_visible: true)
+        .joins(workflow_task_placements: :board)
+        .where(boards: { client_visible: true })
+        .includes(workflow_task_placements: [ :workflow_column, { board: :workflow_columns } ])
+        .distinct
+        .sort_by { |task| [ task.position, task.id ] }
+        .map { |task| serialize_customer_task(task) }
+    )
+  end
+
+  def serialize_customer_task(task)
+    placement = customer_placement_for(task)
+    column = placement&.workflow_column
+    status_key = column&.key || task.status
+    status = if column&.completed?
+      "complete"
+    elsif column&.blocked?
+      "attention"
+    elsif status_key == "todo"
+      "upcoming"
+    else
+      "in_progress"
+    end
+
+    { id: task.id, title: task.title, status:, completed_at: task.completed_at }
   end
 
   def media_url_for(asset)
@@ -247,14 +297,22 @@ class Api::V1::ListingsController < Api::V1::BaseController
   end
 
   def serialize_task(task)
-    column = workflow_columns_by_key[task.status]
-    { id: task.id, title: task.title, status: task.status, assignee_id: task.assignee_id,
+    placement = current_user.internal? ? task.home_placement : customer_placement_for(task)
+    column = placement&.workflow_column || workflow_columns_by_key[task.status]
+    status = placement&.workflow_column&.key || task.status
+    { id: task.id, title: task.title, status:, assignee_id: task.assignee_id,
       customer_visible: task.customer_visible, due_at: task.due_at, workflow_column_id: column&.id,
       column_category: column&.category, assignee: task.assignee && task.assignee.slice(:id, :name, :role) }
   end
 
   def workflow_columns_by_key
     @workflow_columns_by_key ||= Current.organization.workflow_columns.index_by(&:key)
+  end
+
+  def customer_placement_for(task)
+    task.workflow_task_placements
+      .select { |entry| entry.board&.client_visible? }
+      .min_by { |entry| [ entry.is_home? ? 0 : 1, entry.position, entry.id ] }
   end
 
   def serialize_appointment(appointment)
@@ -299,6 +357,22 @@ class Api::V1::ListingsController < Api::V1::BaseController
       :id, :order_id, :delivery_rating, :service_rating, :media_rating, :comment,
       :follow_up_status, :requested_at, :submitted_at
     ).merge(client_account: feedback.client_account.slice(:id, :name, :email))
+  end
+
+  def serialize_deliverable(deliverable)
+    customer_data = deliverable.slice(
+      :id, :title, :description, :deliverable_type, :status, :target_on, :delivered_at, :scope_label
+    ).merge(asset_count: deliverable.customer_visible_assets.count)
+    return customer_data unless current_user.internal?
+
+    deliverable.slice(:id, :listing_id, :order_id, :order_item_id, :product_component_id,
+                      :service_product_id, :title, :description, :deliverable_type, :sla_days,
+                      :scope_sqft_min, :scope_sqft_max, :scope_label, :status, :target_on,
+                      :delivered_at, :delivery_version, :position, :cancelled_at).merge(
+      asset_count: deliverable.customer_visible_assets.count,
+      service_product: deliverable.service_product&.slice(:id, :title, :deliverable_type, :sla_days),
+      task_ids: deliverable.workflow_tasks.pluck(:id)
+    )
   end
 
   def serialize_activity(event)

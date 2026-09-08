@@ -5,9 +5,14 @@ class MediaAsset < ApplicationRecord
   belongs_to :order, optional: true
   belongs_to :order_item, optional: true
   belongs_to :media_group, optional: true
+  belongs_to :order_deliverable, optional: true
+  belongs_to :superseded_by, class_name: "MediaAsset", optional: true
+  has_many :superseded_assets, class_name: "MediaAsset", foreign_key: :superseded_by_id, dependent: :nullify
 
   enum :kind, { final: "final", raw: "raw", marketing: "marketing" }, validate: true
   enum :status, { pending: "pending", processing: "processing", ready: "ready", failed: "failed" }, validate: true
+
+  scope :current_version, -> { where(superseded_by_id: nil) }
 
   CATEGORIES = %w[images videos floor_plans tours files].freeze
   STORAGE_CONTENT_TYPES = %r{
@@ -38,6 +43,10 @@ class MediaAsset < ApplicationRecord
     source_url.present?
   end
 
+  def current_version?
+    superseded_by_id.nil?
+  end
+
   # Only the upload endpoint derived a category from the file; assets registered
   # or linked without one fell to the column default and landed in "files",
   # which is how a listing ends up with 51 JPEGs that the images section cannot
@@ -46,6 +55,7 @@ class MediaAsset < ApplicationRecord
 
   validate :storage_source_present
   validate :related_records_belong_to_organization
+  validate :order_deliverable_is_immutable
 
   private
 
@@ -70,5 +80,21 @@ class MediaAsset < ApplicationRecord
     errors.add(:order_item, "must belong to the selected order") if order_item.present? && order_item.order_id != order_id
     errors.add(:order_item, "must belong to the same organization") if order_item.present? && order_item.order.organization_id != organization_id
     errors.add(:listing, "must match the order listing") if order.present? && order.listing_id.present? && listing_id.present? && order.listing_id != listing_id
+    if order_deliverable.present?
+      errors.add(:order_deliverable, "must belong to the same organization") if order_deliverable.organization_id != organization_id
+      errors.add(:listing, "must match the deliverable listing") if order_deliverable.listing_id.present? && listing_id.present? && order_deliverable.listing_id != listing_id
+      errors.add(:order, "must match the deliverable order") if order_id.present? && order_deliverable.order_id != order_id
+      errors.add(:order_item, "must match the deliverable item") if order_item_id.present? && order_deliverable.order_item_id != order_item_id
+    end
+  end
+
+  # A deliverable is the production lineage for an asset. Reassigning an
+  # existing asset silently would make the old task and customer history point
+  # at the wrong file, so a replacement must create a new version instead.
+  def order_deliverable_is_immutable
+    return unless persisted? && will_save_change_to_order_deliverable_id?
+    return unless order_deliverable_id_was.present? && order_deliverable_id_was != order_deliverable_id
+
+    errors.add(:order_deliverable, "cannot be changed once assigned")
   end
 end
