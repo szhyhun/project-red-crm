@@ -2,11 +2,18 @@ class Message < ApplicationRecord
   belongs_to :conversation
   belongs_to :author, class_name: "User"
   has_many :conversation_attachments, dependent: :destroy
+  has_many :message_media_references, dependent: :destroy
+  has_many :referenced_media_assets, through: :message_media_references, source: :media_asset
+  belongs_to :listing, optional: true
+  belongs_to :order_deliverable, optional: true
+
+  enum :message_kind, { message: "message", change_request: "change_request" }, validate: true
 
   enum :visibility, { participants: "participants", staff_only: "staff_only" }, validate: true
 
   validates :body, presence: true
   before_validation :normalize_body_content
+  validate :context_belongs_to_conversation
 
   private
 
@@ -19,5 +26,17 @@ class Message < ApplicationRecord
 
     self.body_html = RichTextSanitizer.sanitize(body_html).presence
     self.body = RichTextSanitizer.plain_text(body_html).presence
+  end
+
+  def context_belongs_to_conversation
+    if listing.present? && listing.organization_id != conversation&.organization_id
+      errors.add(:listing, "must belong to the conversation organization")
+    end
+    if order_deliverable.present? && order_deliverable.organization_id != conversation&.organization_id
+      errors.add(:order_deliverable, "must belong to the conversation organization")
+    end
+    if listing.present? && conversation&.client_account_id.present? && listing.client_account_id != conversation.client_account_id
+      errors.add(:listing, "must belong to the selected customer account")
+    end
   end
 end

@@ -1,13 +1,23 @@
 class Api::V1::ConversationsController < Api::V1::BaseController
   def index
-    conversations = policy_scope(Conversation).includes(:listing, :client_account, conversation_memberships: :user).order(last_message_at: :desc, created_at: :desc)
+    conversations = policy_scope(Conversation).includes(:listing, :client_account, conversation_memberships: :user)
     conversations = conversations.where(listing_id: params[:listing_id]) if params[:listing_id].present?
     authorize Conversation, :index?
+    conversations = conversations.to_a
+    conversations.sort_by! do |conversation|
+      unread = unread_message_stats.fetch(conversation.id, { count: 0, last_unread_message_at: nil })
+      last_activity = unread[:last_unread_message_at] || conversation.last_message_at || conversation.created_at
+      [ unread[:count].positive? ? 0 : 1, -last_activity.to_f ]
+    end
     render json: { conversations: conversations.map { |conversation| serialize(conversation) } }
   end
 
   def show
-    conversation = policy_scope(Conversation).includes(conversation_memberships: :user, messages: [ :author, :conversation_attachments ]).find(params[:id])
+    conversation = policy_scope(Conversation).includes(
+      conversation_memberships: :user,
+      messages: [ :author, :listing, :order_deliverable, :conversation_attachments,
+                  { message_media_references: :media_asset } ]
+    ).find(params[:id])
     authorize conversation
     mark_read!(conversation)
     render json: { conversation: serialize(conversation, include_messages: true) }
@@ -22,11 +32,13 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     end
     authorize Conversation, :create?
     attributes = create_params.except(:listing_id, :client_account_id, :member_ids, :body, :body_html)
-    conversation = Current.organization.conversations.build(attributes.merge(listing: listing))
+    account_thread = client_account.present? && create_params[:kind].to_s == "client"
+    conversation = account_thread ? Conversation.account_thread_for(organization: Current.organization, client_account:) : Current.organization.conversations.build(attributes.merge(listing: listing))
+    conversation.assign_attributes(attributes.merge(listing: account_thread ? nil : listing)) unless conversation.persisted? && account_thread
     conversation.client_account = client_account if conversation.client?
 
     Conversation.transaction do
-      conversation.save!
+      conversation.save! unless conversation.persisted?
       member_ids = [ current_user.id, *Array(create_params[:member_ids]).map(&:to_i) ]
       member_ids.concat(conversation.client_account.users.active.ids) if conversation.client? && conversation.client_account.present?
       member_ids.uniq!
@@ -37,9 +49,13 @@ class Api::V1::ConversationsController < Api::V1::BaseController
         raise ActiveRecord::RecordInvalid.new(conversation)
       end
 
-      users.each { |member| conversation.conversation_memberships.create!(user: member, role: member == current_user ? :manager : :participant) }
+      users.each do |member|
+        conversation.conversation_memberships.find_or_create_by!(user: member) do |membership|
+          membership.role = member == current_user ? :manager : :participant
+        end
+      end
       if create_params[:body].present? || create_params[:body_html].present?
-        create_message!(conversation, create_params[:body], create_params[:body_html])
+        create_message!(conversation, create_params[:body], create_params[:body_html], nil, listing:)
       end
     end
 
@@ -70,8 +86,12 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   def create_message
     conversation = policy_scope(Conversation).find(params[:id])
     authorize conversation
+    @message_conversation = conversation
     body = message_params[:body].presence || message_params[:body_html]
-    message = create_message!(conversation, body, message_params[:body_html], message_params[:visibility])
+    message = create_message!(conversation, body, message_params[:body_html], message_params[:visibility],
+                              listing: resolve_message_listing(message_params[:listing_id]),
+                              order_deliverable: resolve_message_deliverable(message_params[:order_deliverable_id]),
+                              media_asset_ids: message_params[:media_asset_ids])
     render json: { message: serialize_message(message) }, status: :created
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
@@ -88,7 +108,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def message_params
-    params.require(:message).permit(:body, :body_html, :visibility)
+    params.require(:message).permit(:body, :body_html, :visibility, :listing_id, :order_deliverable_id, media_asset_ids: [])
   end
 
   # Nothing about telling other people may stop a message being sent. The
@@ -101,16 +121,52 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     Rails.logger.error("Could not queue conversation notification for message #{message.id}: #{error.class}: #{error.message}")
   end
 
-  def create_message!(conversation, body, body_html = nil, visibility = nil)
+  def create_message!(conversation, body, body_html = nil, visibility = nil, listing: nil, order_deliverable: nil, media_asset_ids: [])
     message_visibility = current_user.internal? ? (visibility || :participants) : :participants
-    message = conversation.messages.create!(author: current_user, body: body, body_html: body_html, visibility: message_visibility)
+    message = nil
+    Conversation.transaction do
+      message = conversation.messages.create!(author: current_user, body: body, body_html: body_html,
+                                              visibility: message_visibility, listing:, order_deliverable:)
+      asset_ids = Array(media_asset_ids).map(&:to_i).uniq
+      assets = policy_scope(MediaAsset).where(id: asset_ids).to_a
+      raise ActiveRecord::RecordNotFound if assets.size != asset_ids.size
+      if order_deliverable.present? && assets.any? { |asset| asset.order_deliverable_id != order_deliverable.id }
+        raise ActiveRecord::RecordNotFound
+      end
+      if listing.present? && assets.any? { |asset| asset.listing_id != listing.id }
+        raise ActiveRecord::RecordNotFound
+      end
+      assets.each_with_index { |asset, position| message.message_media_references.create!(media_asset: asset, position:) }
+    end
     conversation.update!(last_message_at: message.created_at)
     notify_later(message)
     message
   end
 
+  def resolve_message_listing(id)
+    return if id.blank?
+
+    listing = policy_scope(Listing).find(id)
+    return listing if current_user.internal?
+    return listing if listing.client_account_id == @message_conversation&.client_account_id
+    return listing if listing.listing_customers.where(client_account_id: @message_conversation&.client_account_id).exists?
+
+    raise ActiveRecord::RecordNotFound
+  end
+
+  def resolve_message_deliverable(id)
+    return if id.blank?
+
+    deliverable = policy_scope(OrderDeliverable).find(id)
+    return deliverable if current_user.internal?
+    return deliverable if deliverable.listing&.client_account_id == @message_conversation&.client_account_id
+    return deliverable if deliverable.listing&.listing_customers&.where(client_account_id: @message_conversation&.client_account_id)&.exists?
+
+    raise ActiveRecord::RecordNotFound
+  end
+
   def visible_messages(conversation)
-    messages = conversation.messages.includes(:author, :conversation_attachments).order(:created_at)
+    messages = conversation.messages.includes(:author, :conversation_attachments, message_media_references: :media_asset).order(:created_at)
     current_user.internal? ? messages : messages.participants
   end
 
@@ -165,9 +221,35 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def serialize_message(message)
-    message.slice(:id, :body, :body_html, :visibility, :created_at).merge(
+    message.slice(:id, :body, :body_html, :visibility, :message_kind, :listing_id, :order_deliverable_id, :created_at).merge(
+      context: serialize_message_context(message),
       attachments: message.conversation_attachments.order(:created_at, :id).map { |attachment| ConversationAttachment.serialize(attachment) },
+      media_references: message.message_media_references.includes(:media_asset).order(:position, :id).filter_map do |reference|
+        asset = reference.media_asset
+        next if asset.blank?
+
+        {
+          id: asset.id,
+          filename: asset.filename,
+          content_type: asset.content_type,
+          byte_size: asset.byte_size,
+          preview_path: asset.ready? && !asset.external? ? preview_api_v1_media_asset_path(asset) : nil,
+          download_path: asset.ready? && !asset.external? ? download_api_v1_media_asset_path(asset) : nil
+        }
+      end,
       author: message.author.slice(:id, :name, :role)
     )
+  end
+
+  def serialize_message_context(message)
+    context = {}
+    context[:listing] = { id: message.listing.id, address: message.listing.address } if message.listing.present?
+    if message.order_deliverable.present?
+      context[:deliverable] = message.order_deliverable.slice(:id, :title, :deliverable_type)
+    end
+
+    selected_asset_count = message.message_media_references.size
+    context[:selected_asset_count] = selected_asset_count if selected_asset_count.positive?
+    context.presence
   end
 end

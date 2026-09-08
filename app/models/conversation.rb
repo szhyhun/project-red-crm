@@ -12,6 +12,15 @@ class Conversation < ApplicationRecord
   has_many :users, through: :conversation_memberships
   has_many :messages, dependent: :destroy
   has_many :conversation_attachments, dependent: :destroy
+  has_many :message_media_references, through: :messages
+
+  def self.account_thread_for(organization:, client_account:)
+    relation = organization.conversations.client.where(client_account: client_account).order(:created_at, :id)
+    conversation = relation.first
+    return conversation if conversation.present?
+
+    organization.conversations.create!(kind: :client, client_account:, subject: "Client conversation")
+  end
 
   enum :kind, { internal: "internal", client: "client" }, validate: true
   enum :retention_period, {

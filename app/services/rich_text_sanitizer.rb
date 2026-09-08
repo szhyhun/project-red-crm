@@ -10,10 +10,19 @@ class RichTextSanitizer
   REMOVED_TAGS = %w[script style iframe object embed template].freeze
 
   REMOVE_UNSAFE_CONTENT = Loofah::Scrubber.new do |node|
-    node.remove if node.element? && REMOVED_TAGS.include?(node.name)
+    if node.element? && REMOVED_TAGS.include?(node.name)
+      node.remove
+    elsif node.element? && node.name == "a" && !RichTextSanitizer.safe_href?(node["href"])
+      node.remove_attribute("href")
+    end
   end
 
   class << self
+    def safe_href?(value)
+      href = CGI.unescapeHTML(value.to_s).strip
+      href.blank? || href.start_with?("/", "#") || href.match?(%r{\A(?:https?|mailto):}i)
+    end
+
     def sanitize(html)
       return "" if html.blank?
 

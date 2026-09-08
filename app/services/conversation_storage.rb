@@ -69,7 +69,9 @@ class ConversationStorage
         s3_client.get_object(bucket: chat_media_bucket, key:) { |chunk| yield chunk }
       else
         File.open(path_for(key), "rb") do |file|
-          yield chunk while (chunk = file.read(16 * 1024))
+          while (chunk = file.read(16 * 1024))
+            yield chunk
+          end
         end
       end
     rescue Aws::S3::Errors::NotFound
