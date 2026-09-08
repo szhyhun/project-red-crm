@@ -20,7 +20,9 @@ Rails.application.routes.draw do
         get "me", to: "sessions#show"
       end
 
-      resources :products, only: %i[index show create update]
+      resources :products, only: %i[index show create update] do
+        resources :components, only: %i[index create update destroy], controller: "product_components"
+      end
       resources :taxes, only: %i[index create update destroy]
       resources :coupons, only: %i[index create update destroy]
       resources :travel_fees, only: %i[index create update destroy]
@@ -32,7 +34,10 @@ Rails.application.routes.draw do
       resources :orders, only: %i[index show create update] do
         resources :items, only: %i[create update destroy], controller: "order_items"
         post :cancel, on: :member
+        post :approve, on: :member
+        resources :deliverables, only: :index, controller: "order_deliverables"
       end
+      resources :order_deliverables, only: %i[show update], controller: "order_deliverables"
       resources :invoices, only: %i[index create] do
         post :send_invoice, on: :member
         post :payment_intent, on: :member
@@ -41,8 +46,10 @@ Rails.application.routes.draw do
       get "portal/dashboard", to: "portal#dashboard"
       get "portal/listings", to: "portal#listings"
       get "portal/listings/:id", to: "portal#show_listing"
+      get "portal/listings/:listing_id/media", to: "portal#listing_media"
       post "portal/listings", to: "portal#create_listing"
       post "portal/appointments/:id/reschedule", to: "portal#request_reschedule"
+      post "portal/listings/:listing_id/deliverables/:deliverable_id/change_requests", to: "portal#create_change_request"
       resources :media_assets, only: %i[index create update destroy] do
         post :upload, on: :collection
         post :link, on: :collection
@@ -107,6 +114,10 @@ Rails.application.routes.draw do
         resources :labels, only: %i[index create update destroy], controller: "board_labels"
         resources :workflow_columns, only: %i[index create update destroy]
         resources :workflow_tasks, only: %i[index create]
+        resources :workflows, only: %i[index show create update destroy], controller: "board_workflows"
+        resources :workflow_runs, only: :index, controller: "board_workflow_runs" do
+          post :retry, on: :member
+        end
       end
       resources :user_groups, only: %i[index create update destroy] do
         resources :members, only: %i[create destroy], controller: "user_group_memberships"
