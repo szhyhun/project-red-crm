@@ -18,4 +18,15 @@ RSpec.describe Aryeo::Client do
     expect { |block| client.paginate("products", per_page: 1, &block) }.to yield_successive_args({ "id" => "one" }, { "id" => "two" })
     expect(client).to have_received(:get).with("/v1/products?page=2", params: {})
   end
+
+  it "honors Aryeo's last_page pagination metadata" do
+    client = described_class.new(api_key: "aryeo-key")
+    first_page = { "data" => [ { "id" => "one" } ], "meta" => { "current_page" => 1, "last_page" => 2 } }
+    second_page = { "data" => [ { "id" => "two" } ], "meta" => { "current_page" => 2, "last_page" => 2 } }
+
+    allow(client).to receive(:get).and_return(first_page, second_page)
+
+    expect { |block| client.paginate("products", per_page: 1, &block) }.to yield_successive_args({ "id" => "one" }, { "id" => "two" })
+    expect(client).to have_received(:get).with("products", params: { page: 2, per_page: 1 })
+  end
 end

@@ -106,7 +106,7 @@ RSpec.describe Aryeo::Importer do
     described_class.new(run:, client:, resources: run.requested_resources, import_start_date: "2026-07-03").call
 
     expect(client).to have_received(:paginate).with("appointments")
-    expect(client).to have_received(:paginate).with("orders")
+    expect(client).to have_received(:paginate).with("orders", params: { "include" => described_class::ORDER_INCLUDE })
     expect(client).to have_received(:paginate).with("listings", params: { "include" => described_class::LISTING_INCLUDE })
     expect(client).to have_received(:paginate).with("company-team-members")
     expect(client).to have_received(:paginate).with("products")
@@ -121,7 +121,7 @@ RSpec.describe Aryeo::Importer do
                         import_start_date: "2026-07-03", import_end_date: "2026-07-10").call
 
     expect(client).to have_received(:paginate).with("appointments")
-    expect(client).to have_received(:paginate).with("orders")
+    expect(client).to have_received(:paginate).with("orders", params: { "include" => described_class::ORDER_INCLUDE })
     expect(client).to have_received(:paginate).with("listings", params: { "include" => described_class::LISTING_INCLUDE })
   end
 
@@ -200,6 +200,117 @@ RSpec.describe Aryeo::Importer do
     expect(run.coverage.fetch("appointments")).to include("count" => 2, "filtered_before_date" => 1)
     expect(organization.orders.where(origin: :aryeo).count).to eq(2)
     expect(organization.appointments.where(origin: :aryeo).pluck(:starts_at)).to include(Time.zone.parse("2026-07-06T12:00:00Z"))
+  end
+
+  it "normalizes Aryeo catalog and order-item relationships from expanded API records" do
+    client = instance_double(Aryeo::Client)
+    photo_variant = {
+      "id" => "photo-variant-1", "title" => "0–1,000 sqft", "price_amount" => 29_900,
+      "duration" => 120, "subtitle" => "0–1,000 sqft"
+    }
+    photo_product = {
+      "id" => "photo-product-1", "type" => "MAIN", "title" => "Standard Property Photography",
+      "description" => "Professional interior and exterior photography.", "categories" => [ { "name" => "Photography" } ],
+      "sla_days" => 2, "variants" => [ photo_variant ]
+    }
+    allow(client).to receive(:paginate) do |endpoint, params: {}, &block|
+      case endpoint
+      when "customers"
+        block.call({ "id" => "customer-1", "first_name" => "Avery", "last_name" => "Agent", "email" => "avery@example.test" })
+      when "products"
+        block.call(photo_product)
+      when "listings"
+        block.call({ "id" => "listing-1", "customer_id" => "customer-1",
+                     "address" => { "address_line_1" => "111 Oak Bay Ave", "city" => "Victoria", "province" => "BC" } })
+      when "orders"
+        block.call({
+          "id" => "order-1", "listing_id" => "listing-1", "customer_id" => "customer-1", "status" => "submitted",
+          "total_amount" => 29_900, "items" => [ {
+            "id" => "order-item-1", "product_variant_id" => "photo-variant-1", "quantity" => 1,
+            "title" => "Standard Property Photography — 0–1,000 sqft", "unit_price_amount" => 29_900,
+            "total_amount" => 29_900, "product" => photo_product, "product_variant" => photo_variant
+          } ]
+        })
+      end
+    end
+
+    run = import_run(resources: %w[clients products listings orders])
+    described_class.new(run:, client:, resources: run.requested_resources).call
+
+    product = organization.products.find_by!(external_id: "photo-product-1")
+    variant = product.product_variants.find_by!(external_id: "photo-variant-1")
+    expect(product).to have_attributes(kind: "service", deliverable_type: "photography", sla_days: 2)
+    expect(variant).to have_attributes(price_cents: 29_900, sqft_min: 0, sqft_max: 1_000, duration_minutes: 120)
+
+    item = organization.orders.find_by!("metadata ->> 'aryeo_id' = ?", "order-1").order_items.sole
+    expect(item).to have_attributes(product:, product_variant: variant, unit_price_cents: 29_900, total_cents: 29_900)
+    expect(item.snapshot).to include("product_title" => "Standard Property Photography", "sqft_max" => 1_000)
+    expect(item.order).to have_attributes(total_cents: 29_900)
+    expect(item.order.client_account.name).to eq("Avery Agent")
+  end
+
+  it "creates relational package components and preserves them in imported order snapshots" do
+    client = instance_double(Aryeo::Client)
+    photo_product = {
+      "id" => "photo-product-1", "type" => "MAIN", "title" => "Standard Property Photography",
+      "categories" => [ "Photography" ], "variants" => [ { "id" => "photo-variant-1", "title" => "Up to 1,000 sqft", "price_amount" => 29_900 } ]
+    }
+    video_product = {
+      "id" => "video-product-1", "type" => "MAIN", "title" => "Standard Video", "categories" => [ "Video" ],
+      "variants" => [ { "id" => "video-variant-1", "title" => "Standard", "price_amount" => 19_900 } ]
+    }
+    package_variant = { "id" => "package-variant-1", "title" => "Photo + Video — Up to 1,000 sqft", "price_amount" => 44_900 }
+    package_product = {
+      "id" => "package-product-1", "type" => "MAIN", "title" => "Photo + Video Package",
+      "variants" => [ package_variant ],
+      "components" => [
+        { "product" => photo_product, "quantity" => 1 },
+        { "product" => video_product, "quantity" => 1 }
+      ]
+    }
+    allow(client).to receive(:paginate) do |endpoint, params: {}, &block|
+      case endpoint
+      when "products"
+        block.call(package_product)
+      when "orders"
+        block.call({
+          "id" => "package-order-1", "status" => "submitted", "total" => 44_900,
+          "items" => [ { "id" => "package-item-1", "product_variant_id" => "package-variant-1",
+                         "product" => package_product, "product_variant" => package_variant,
+                         "unit_price_amount" => 44_900, "total_amount" => 44_900 } ]
+        })
+      end
+    end
+
+    run = import_run(resources: %w[products orders])
+    described_class.new(run:, client:, resources: run.requested_resources).call
+
+    package = organization.products.find_by!(external_id: "package-product-1")
+    expect(package).to be_package
+    expect(package.package_components.includes(:service_product).ordered.map(&:service_product).map(&:external_id))
+      .to contain_exactly("photo-product-1", "video-product-1")
+
+    item = organization.orders.find_by!("metadata ->> 'aryeo_id' = ?", "package-order-1").order_items.sole
+    expect(item.product).to eq(package)
+    expect(item.snapshot.fetch("components").map { |component| component["title"] })
+      .to contain_exactly("Standard Property Photography", "Standard Video")
+  end
+
+  it "imports a nested customer as an order dependency when only orders are selected" do
+    client = instance_double(Aryeo::Client)
+    allow(client).to receive(:paginate) do |endpoint, params: {}, &block|
+      block.call({
+        "id" => "order-1", "status" => "submitted", "total" => 10_000,
+        "customer" => { "id" => "customer-1", "name" => "Nested Customer", "email" => "nested@example.test" },
+        "items" => []
+      }) if endpoint == "orders"
+    end
+
+    run = import_run(resources: [ "orders" ])
+    described_class.new(run:, client:, resources: [ "orders" ]).call
+
+    expect(organization.client_accounts.find_by!(email: "nested@example.test")).to have_attributes(origin: "aryeo")
+    expect(run.reload.coverage.fetch("clients")).to include("status" => "imported_as_dependency", "count" => 1)
   end
 
   it "skips or overwrites records previously imported from the same Aryeo ID" do
