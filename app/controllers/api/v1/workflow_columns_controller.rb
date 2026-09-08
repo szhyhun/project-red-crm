@@ -45,15 +45,16 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
       return render_validation_errors(column)
     end
 
-    tasks = column.board.workflow_tasks.where(status: column.key)
+    placements = WorkflowTaskPlacement.where(board: column.board, workflow_column: column)
+    home_tasks = column.board.workflow_tasks.where(status: column.key)
     replacement = replacement_column(column)
-    if tasks.exists? && replacement.blank?
+    if (home_tasks.exists? || placements.exists?) && replacement.blank?
       column.errors.add(:base, "Choose a replacement column for existing tasks")
       return render_validation_errors(column)
     end
 
     WorkflowColumn.transaction do
-      move_tasks!(tasks, replacement) if replacement
+      relocate_tasks!(column, placements, home_tasks, replacement) if replacement
       column.destroy!
       compact_positions!(column.board)
     end
@@ -99,17 +100,21 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
     columns.each_with_index { |item, position| item.update_columns(position:, updated_at: Time.current) }
   end
 
-  # Reassigning with update_all kept each task's old position, so tasks arriving
-  # from the deleted column collided with the positions already in use in the
-  # replacement column. Duplicate positions make the board order arbitrary and
-  # the next drag computes its target from a broken sequence, so they are
-  # appended after whatever the replacement column already holds.
-  def move_tasks!(tasks, replacement)
-    completed_at = replacement.completed? ? Time.current : nil
-    offset = replacement.board.workflow_tasks.where(status: replacement.key).maximum(:position).to_i + 1
+  # A deleted column may be used only by a secondary placement. Relocating the
+  # task through the shared mover keeps the selected placement, home placement,
+  # other board placements, completion timestamp, and linked deliverables in
+  # the same canonical state.
+  def relocate_tasks!(column, placements, home_tasks, replacement)
+    placement_tasks = placements.includes(:workflow_task).order(:position, :id).map(&:workflow_task)
+    tasks = (placement_tasks + home_tasks.order(:position, :id).to_a).uniq
+    offset = replacement.board.workflow_task_placements.where(workflow_column: replacement).maximum(:position).to_i + 1
 
-    tasks.order(:position, :id).to_a.each_with_index do |task, index|
-      task.update_columns(status: replacement.key, position: offset + index, completed_at:, updated_at: Time.current)
+    tasks.each_with_index do |task, index|
+      WorkflowTasks::Mover.new(
+        task:,
+        board: column.board,
+        attributes: { status: replacement.key, position: offset + index }
+      ).move!
     end
   end
 
@@ -127,7 +132,8 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
   def serialize(column)
     column.slice(:id, :key, :name, :color, :category, :position).merge(
       board_id: column.board_id,
-      task_count: column.board.workflow_tasks.where(status: column.key).count,
+      task_count: WorkflowTaskPlacement.where(board: column.board, workflow_column: column)
+        .distinct.count(:workflow_task_id),
       capabilities: capabilities_for(column)
     )
   end

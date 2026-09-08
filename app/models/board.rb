@@ -8,6 +8,9 @@ class Board < ApplicationRecord
   has_many :workflow_columns, dependent: :destroy
   has_many :workflow_tasks, dependent: :destroy
   has_many :board_attachments, dependent: :destroy
+  has_many :board_workflows, dependent: :destroy
+  has_many :workflow_task_placements, dependent: :destroy
+  has_many :placed_workflow_tasks, through: :workflow_task_placements, source: :workflow_task
 
   enum :kind, KINDS.index_by(&:itself), validate: true
   enum :visibility, { organization: "organization", restricted: "restricted" },

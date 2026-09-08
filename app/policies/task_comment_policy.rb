@@ -1,12 +1,15 @@
-# A comment inherits its board's access, with one addition: an author can edit
-# and delete their own comment even where they could not touch anyone else's.
+# A comment inherits the task's board access, with one addition: an author can
+# edit and delete their own comment even where they could not touch anyone
+# else's. A shared task may have more than one board, so use the first board
+# where the current user can perform the requested action instead of assuming
+# the task's home board is the only access path.
 class TaskCommentPolicy < ApplicationPolicy
   def view?
     task_policy.view?
   end
 
   def create?
-    task_policy.view? && board_policy.update?
+    task_policy.view? && board_policies.any?(&:update?)
   end
 
   def update?
@@ -16,7 +19,7 @@ class TaskCommentPolicy < ApplicationPolicy
   def destroy?
     return false unless task_policy.view?
 
-    own? || board_policy.manage?
+    own? || board_policies.any?(&:manage?)
   end
 
   class Scope < Scope
@@ -37,7 +40,11 @@ class TaskCommentPolicy < ApplicationPolicy
     @task_policy ||= WorkflowTaskPolicy.new(user, record.workflow_task)
   end
 
-  def board_policy
-    @board_policy ||= BoardPolicy.new(user, record.workflow_task.board)
+  def board_policies
+    @board_policies ||= begin
+      task = record.workflow_task
+      boards = [ task.board ] + task.workflow_task_placements.includes(:board).map(&:board)
+      boards.compact.uniq.map { |board| BoardPolicy.new(user, board) }
+    end
   end
 end

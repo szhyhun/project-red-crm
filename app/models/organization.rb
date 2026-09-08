@@ -27,6 +27,12 @@ class Organization < ApplicationRecord
   has_many :property_sites, dependent: :destroy
   has_many :marketing_materials, dependent: :destroy
   has_many :conversations, dependent: :destroy
+  has_many :product_components, dependent: :destroy
+  has_many :order_deliverables, dependent: :destroy
+  has_many :board_workflows, dependent: :destroy
+  has_many :board_workflow_runs, dependent: :destroy
+  has_many :workflow_task_placements, through: :boards
+  has_many :message_media_references, through: :conversations
   has_many :conversation_attachments, dependent: :destroy
   has_many :saved_listing_views, dependent: :destroy
 
@@ -49,6 +55,15 @@ class Organization < ApplicationRecord
       visibility: "organization", requires_listing: true, client_visible: true, position: 0
     )
     WorkflowColumn::DEFAULTS.each { |attributes| board.workflow_columns.create!(attributes.merge(organization: self)) }
+    workflow = board.board_workflows.create!(organization: self, name: "Create production work", is_default: true,
+                                             trigger_key: "order_approved", workflow_version: 1, enabled: false)
+    workflow.actions.create!(action_type: "create_parent_task", configuration: { "title" => "Production" }, position: 0)
+    workflow.actions.create!(action_type: "create_or_group_child_task", configuration: { "customer_visible" => true }, position: 1)
+    workflow.actions.create!(action_type: "place_on_board", configuration: { "board_id" => board.id, "column_key" => "todo" }, position: 2)
+    BoardWorkflow.default_status_mapping_attributes(board).each do |attributes|
+      workflow.status_mappings.create!(attributes)
+    end
+    workflow.update!(enabled: true)
     board
   end
 end

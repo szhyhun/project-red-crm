@@ -2,8 +2,9 @@ class Api::V1::DashboardController < Api::V1::BaseController
   def show
     authorize :dashboard, :view?
 
-    completed_statuses = Current.organization.workflow_columns.completed.pluck(:key)
-    blocked_statuses = Current.organization.workflow_columns.blocked.pluck(:key)
+    home_tasks = Current.organization.workflow_tasks
+      .joins(workflow_task_placements: :workflow_column)
+      .where(workflow_task_placements: { is_home: true })
 
     render json: {
       listings: {
@@ -11,8 +12,9 @@ class Api::V1::DashboardController < Api::V1::BaseController
         awaiting_review: Current.organization.listings.review.count
       },
       tasks: {
-        mine: Current.organization.workflow_tasks.where(assignee: current_user).where.not(status: completed_statuses).count,
-        blocked: Current.organization.workflow_tasks.where(status: blocked_statuses).count
+        mine: home_tasks.where(assignee: current_user).where.not(workflow_columns: { category: "completed" })
+          .distinct.count,
+        blocked: home_tasks.where(workflow_columns: { category: "blocked" }).distinct.count
       },
       feedback: feedback_metrics,
       delivery: delivery_metrics,

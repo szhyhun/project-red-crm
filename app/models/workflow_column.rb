@@ -20,6 +20,14 @@ class WorkflowColumn < ApplicationRecord
 
   scope :ordered, -> { order(:position, :id) }
 
+  def canonical_status
+    return "delivered" if completed?
+    return "in_progress" if blocked?
+    return "in_review" if key.match?(/review|qa|quality|approval/i)
+
+    key == "todo" ? "not_started" : "in_progress"
+  end
+
   private
 
   def assign_key

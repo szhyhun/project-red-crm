@@ -1,6 +1,6 @@
 class Api::V1::BoardsController < Api::V1::BaseController
   def index
-    boards = policy_scope(Board).active.ordered.includes(:board_memberships, :board_labels)
+    boards = policy_scope(Board).active.ordered.includes(:board_memberships, :board_labels, :workflow_columns)
     render json: { boards: boards.map { |board| serialize(board) } }
   end
 
@@ -45,7 +45,7 @@ class Api::V1::BoardsController < Api::V1::BaseController
       return render_validation_errors(board)
     end
 
-    board.workflow_tasks.none? ? board.destroy! : board.update!(archived: true)
+    board.workflow_task_placements.none? ? board.destroy! : board.update!(archived: true)
     head :no_content
   end
 
@@ -63,10 +63,11 @@ class Api::V1::BoardsController < Api::V1::BaseController
   end
 
   def serialize(board, detailed: false)
-    data = board.slice(:id, :name, :slug, :description, :kind, :visibility, :requires_listing,
+      data = board.slice(:id, :name, :slug, :description, :kind, :visibility, :requires_listing,
                        :client_visible, :archived, :position).merge(
-      task_count: board.workflow_tasks.count,
+      task_count: board.workflow_task_placements.distinct.count(:workflow_task_id),
       labels: board.board_labels.ordered.map { |label| serialize_label(label) },
+      workflow_columns: board.workflow_columns.ordered.map { |column| serialize_workflow_column(column) },
       capabilities: capabilities_for(board)
     )
     return data unless detailed
@@ -82,5 +83,9 @@ class Api::V1::BoardsController < Api::V1::BaseController
 
   def serialize_label(label)
     Api::V1::BoardLabelsController.serialize_label(label, capabilities: capabilities_for(label))
+  end
+
+  def serialize_workflow_column(column)
+    column.slice(:id, :board_id, :key, :name, :color, :category, :position)
   end
 end
