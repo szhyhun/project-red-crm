@@ -1,12 +1,12 @@
 class Api::V1::OrdersController < Api::V1::BaseController
   def index
-    orders = policy_scope(Order).includes(:client_account, :listing, { invoices: :payments }, order_items: %i[product product_variant]).order(created_at: :desc)
+    orders = policy_scope(Order).includes(:client_account, :listing, { invoices: :payments }, order_items: %i[product product_variant], order_deliverables: :service_product).order(created_at: :desc)
     orders = orders.where(listing_id: params[:listing_id]) if params[:listing_id].present?
     render json: { orders: orders.map { |order| serialize(order, include_details: true) } }
   end
 
   def show
-    order = policy_scope(Order).includes(:client_account, :listing, order_items: %i[product product_variant], invoices: :payments).find(params[:id])
+    order = policy_scope(Order).includes(:client_account, :listing, order_items: %i[product product_variant], order_deliverables: :service_product, invoices: :payments).find(params[:id])
     authorize order
     render json: { order: serialize(order, include_details: true) }
   end
@@ -23,6 +23,16 @@ class Api::V1::OrdersController < Api::V1::BaseController
     order = policy_scope(Order).find(params[:id])
     authorize order
 
+    # Older approved orders may predate approved_at and deliverable
+    # materialization. Keep PATCH approval on the same repairable path as the
+    # canonical endpoint instead of silently treating that legacy state as
+    # complete.
+    if update_params[:status].to_s == "approved" && approval_service_required?(order)
+      Orders::Approval.new(order:, actor: current_user).call
+      render json: { order: serialize(order.reload, include_details: true) }
+      return
+    end
+
     if order.update(update_params)
       order.recalculate_totals!
       order.save! if order.changed?
@@ -32,6 +42,15 @@ class Api::V1::OrdersController < Api::V1::BaseController
     else
       render_validation_errors(order)
     end
+  end
+
+  def approve
+    order = policy_scope(Order).find(params[:id])
+    authorize order, :update?
+    Orders::Approval.new(order:, actor: current_user).call
+    render json: { order: serialize(order.reload, include_details: true) }
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_errors(error.record)
   end
 
   def cancel
@@ -59,7 +78,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
   def serialize(order, include_details: false)
     data = order.slice(:id, :status, :fulfillment_status, :payment_mode, :currency, :subtotal_cents, :discount_type,
                        :discount_cents, :discount_rate_basis_points, :tax_cents, :fee_cents, :fee_label, :total_cents,
-                       :tags, :created_at).merge(
+                       :tags, :approved_at, :created_at).merge(
       client_account: order.client_account.slice(:id, :name),
       listing: order.listing && { id: order.listing.id, address: order.listing.address },
       payment_status: order.payment_status,
@@ -69,6 +88,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
 
     data.merge(
       items: order.order_items.map { |item| serialize_item(item) },
+      deliverables: order.order_deliverables.ordered.map { |deliverable| serialize_deliverable(deliverable) },
       invoices: order.invoices.map do |invoice|
         invoice.slice(:id, :number, :status, :subtotal_cents, :discount_cents, :tax_cents, :fee_cents, :fee_label,
                       :total_cents, :balance_due_cents, :due_on, :sent_at, :paid_at).merge(
@@ -89,6 +109,20 @@ class Api::V1::OrdersController < Api::V1::BaseController
     )
   end
 
+  def serialize_deliverable(deliverable)
+    data = deliverable.slice(:id, :title, :description, :deliverable_type, :sla_days, :scope_sqft_min,
+                             :scope_sqft_max, :scope_label, :status, :target_on, :delivered_at,
+                             :delivery_version, :position, :cancelled_at).merge(
+      asset_count: deliverable.customer_visible_assets.count
+    )
+    return data unless current_user.internal?
+
+    data.merge(
+      service_product: deliverable.service_product.slice(:id, :title, :deliverable_type),
+      task_ids: deliverable.workflow_tasks.ids
+    )
+  end
+
   def record_listing_activity(order, event_type)
     return unless order.listing
 
@@ -101,5 +135,9 @@ class Api::V1::OrdersController < Api::V1::BaseController
                             total_cents: order.total_cents,
                             payment_mode: order.payment_mode
                           })
+  end
+
+  def approval_service_required?(order)
+    !order.approved? || order.approved_at.blank? || order.order_deliverables.none?
   end
 end

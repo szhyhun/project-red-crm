@@ -7,20 +7,17 @@ class Api::V1::OrderItemsController < Api::V1::BaseController
     item = if variant_id.present?
       variant = find_variant(variant_id)
       quantity = Integer(attributes.fetch(:quantity, 1))
+      price_cents = PricingPlans::Resolver.new(client_account: @order.client_account, product_variant: variant).price_cents
       @order.order_items.build(
         product: variant.product,
         product_variant: variant,
         title: [ variant.product.title, variant.title ].compact.join(" - "),
         description: variant.product.description,
         quantity: quantity,
-        unit_price_cents: variant.price_cents,
-        total_cents: variant.price_cents * quantity,
+        unit_price_cents: price_cents,
+        total_cents: price_cents * quantity,
         options: attributes[:options] || {},
-        snapshot: {
-          product_title: variant.product.title,
-          variant_title: variant.title,
-          price_cents: variant.price_cents
-        }
+        snapshot: OrderItem.catalog_snapshot(variant, price_cents:)
       )
     else
       @order.order_items.build(attributes)

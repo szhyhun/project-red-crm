@@ -3,6 +3,7 @@ class Order < ApplicationRecord
   belongs_to :client_account
   belongs_to :listing, optional: true
   has_many :order_items, dependent: :destroy
+  has_many :order_deliverables, dependent: :destroy
   has_many :media_assets, dependent: :nullify
   has_many :invoices, dependent: :nullify
   accepts_nested_attributes_for :order_items
@@ -19,6 +20,10 @@ class Order < ApplicationRecord
             numericality: { greater_than_or_equal_to: 0 }
   validates :discount_rate_basis_points, numericality: { less_than_or_equal_to: 10_000 }, if: :percentage?
   validate :related_records_belong_to_organization
+
+  def approved?
+    status == "approved"
+  end
 
   def recalculate_totals!
     self.subtotal_cents = order_items.to_a.reject(&:cancelled?).sum(&:total_cents)
@@ -45,5 +50,8 @@ class Order < ApplicationRecord
   def related_records_belong_to_organization
     errors.add(:client_account, "must belong to the same organization") if client_account.present? && client_account.organization_id != organization_id
     errors.add(:listing, "must belong to the same organization") if listing.present? && listing.organization_id != organization_id
+    if listing.present? && client_account.present? && listing.client_account_id != client_account_id
+      errors.add(:listing, "must belong to the selected customer account")
+    end
   end
 end

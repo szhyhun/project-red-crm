@@ -1,6 +1,6 @@
 class Api::V1::ProductsController < Api::V1::BaseController
   def index
-    products = policy_scope(Product).includes(:product_variants).order(:kind, :title)
+    products = policy_scope(Product).includes(:product_variants, package_components: :service_product).order(:kind, :title)
     render json: { products: products.map { |product| serialize_product(product) } }
   end
 
@@ -27,7 +27,7 @@ class Api::V1::ProductsController < Api::V1::BaseController
   end
 
   def show
-    product = policy_scope(Product).includes(:product_variants).find(params[:id])
+    product = policy_scope(Product).includes(:product_variants, package_components: :service_product).find(params[:id])
     authorize product
     render json: { product: serialize_product(product) }
   end
@@ -36,6 +36,7 @@ class Api::V1::ProductsController < Api::V1::BaseController
 
   def product_params
     params.require(:product).permit(:slug, :title, :kind, :description, :active, :bundle_candidate, :do_not_recommend,
+                                    :deliverable_type, :sla_days,
                                     categories: [], capabilities: [], requires_capabilities: [],
                                     product_variants_attributes: %i[id title price_cents duration_minutes sqft_min sqft_max quantity_label active])
   end
@@ -48,6 +49,8 @@ class Api::V1::ProductsController < Api::V1::BaseController
       kind: product.kind,
       description: product.description,
       active: product.active,
+      deliverable_type: product.deliverable_type,
+      sla_days: product.sla_days,
       origin: product.origin,
       capabilities: product.capabilities,
       variants: product.product_variants.active.order(:price_cents).map do |variant|
@@ -60,7 +63,15 @@ class Api::V1::ProductsController < Api::V1::BaseController
           quantity_label: variant.quantity_label,
           duration_minutes: variant.duration_minutes
         }
-      end
+      end,
+      components: product.package? ? product.package_components.ordered.map do |component|
+        {
+          id: component.id,
+          quantity: component.quantity,
+          position: component.position,
+          service_product: component.service_product.slice(:id, :title, :kind, :deliverable_type, :sla_days)
+        }
+      end : []
     }
   end
 end
