@@ -77,6 +77,17 @@ retention entry runs once per day and evaluates each conversation's
 `forever`). The cleanup deletes private chat storage before deleting the
 matching message and attachment rows, and keeps the conversation itself.
 
+## Private chat media permissions
+
+Chat attachments use the private bucket configured by
+`PROJECT_RED_CHAT_MEDIA_BUCKET`; putting that name in `api.env` does not grant
+the application access to it. The EC2 runtime role must have
+`s3:ListBucket` and `s3:GetBucketLocation` on the bucket ARN, plus
+`s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, and
+`s3:AbortMultipartUpload` on the bucket's object ARN (`/*`). Update the
+`project-red-crm-media` role policy whenever a private media boundary is added
+or renamed. Keep these resources separate from the public listing CDN bucket.
+
 Check the scheduler and run a one-off cleanup through the release directory
 with:
 

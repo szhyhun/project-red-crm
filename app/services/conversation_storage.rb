@@ -26,7 +26,7 @@ class ConversationStorage
       destination = path_for(key)
       FileUtils.mkdir_p(destination.dirname)
       File.open(destination, "wb") { |file| IO.copy_stream(upload, file) }
-    rescue SystemCallError, IOError => error
+    rescue Aws::S3::Errors::ServiceError, SystemCallError, IOError => error
       FileUtils.rm_f(destination) if destination
       raise WriteError, error.message
     end

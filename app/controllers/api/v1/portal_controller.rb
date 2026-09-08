@@ -122,7 +122,9 @@ class Api::V1::PortalController < Api::V1::BaseController
         .where(board: Board.where(client_visible: true)).order(:position)
         .map { |task| serialize_progress_task(task) },
       appointments: listing.appointments.where.not(status: :cancelled).order(:starts_at).map { |appointment| serialize_client_appointment(appointment) },
-      media_assets: listing.media_assets.final.ready.where(customer_visible: true, hidden: false).order(:created_at).map { |asset| serialize_asset(asset) },
+      media_assets: listing.media_assets.final.ready.where(customer_visible: true, hidden: false)
+        .order(cover: :desc, position: :asc, created_at: :asc)
+        .map { |asset| serialize_asset(asset) },
       invoices: listing.invoices.order(created_at: :desc).map do |invoice|
         invoice.slice(:id, :number, :status, :currency, :subtotal_cents, :discount_cents, :tax_cents, :fee_cents,
                       :fee_label, :total_cents, :balance_due_cents, :due_on, :sent_at).merge(can_pay: policy(invoice).pay?)

@@ -46,6 +46,7 @@ module ClientPortal
         year_built: listing.year_built,
         mls_number: listing.mls_number,
         mls_live_date: listing.mls_live_date,
+        created_at: listing.created_at,
         scheduled_at: listing.scheduled_at,
         delivered_at: listing.delivered_at,
         customer_first_viewed_at: listing.customer_first_viewed_at

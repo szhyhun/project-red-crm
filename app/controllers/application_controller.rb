@@ -21,4 +21,14 @@ class ApplicationController < ActionController::API
   rescue_from ActiveRecord::RecordNotFound do
     render json: { error: "not_found" }, status: :not_found
   end
+
+  # API clients can recover from an expired session token by requesting a new
+  # one. Returning JSON keeps the browser from surfacing Rails' HTML exception
+  # page and lets the client retry the rejected request exactly once.
+  rescue_from ActionController::InvalidAuthenticityToken do
+    render json: {
+      error: "invalid_csrf_token",
+      message: "Your secure session expired. Please retry."
+    }, status: :unprocessable_content
+  end
 end

@@ -55,6 +55,11 @@ the existing infrastructure:
   months, six months, one year, or forever. Production runs the recurring job
   in `config/resque_schedule.yml` through `project-red-crm-scheduler`.
 - Rails API on port `3003`, behind Nginx as `api.projectred.ca`.
+- Staff use `crm.projectred.ca` and customers use `portal.projectred.ca`. Both
+  use the same UI build and Rails API, while the API selects a separate
+  encrypted session cookie for each validated browser origin. The browser
+  hostname selects the product surface and does not introduce a separate
+  `portal` role.
 - Resque worker: `project-red-crm-worker`.
 - Resque Scheduler: `project-red-crm-scheduler`.
 
@@ -93,12 +98,13 @@ Runtime secrets live only on the host in `/etc/project-red-crm/api.env`
 settings, permitted origins, and future SMTP/Stripe credentials. Do not commit
 this file or `config/master.key`.
 
-The API uses two separate CORS boundaries. `CRM_UI_ORIGINS` (or
-`CRM_UI_ORIGIN`) is the credentialed CRM UI and Action Cable allowlist. The
+The API uses two separate CORS boundaries. `CRM_UI_ORIGINS` (or the legacy
+`CRM_UI_ORIGIN`) is the credentialed CRM and customer-portal UI plus Action
+Cable allowlist. The
 optional `PUBLIC_SITE_ORIGINS`/`PUBLIC_SITE_ORIGIN` allowlist can call only the
 unauthenticated `/api/v1/public/*` resources and never receives session
-credentials. Keep the temporary CRM `sslip.io` origin and the final CRM DNS
-origin together while migrating; see [the security contract](docs/security.md)
+credentials. Keep the temporary CRM and portal `sslip.io` origins and the final
+CRM and portal DNS origins together while migrating; see [the security contract](docs/security.md)
 for the storage, upload, and webhook rules that go with this boundary.
 
 After changing the host environment file, validate its shell syntax and
@@ -118,9 +124,9 @@ curl --fail -H 'Host: api.projectred.ca' http://127.0.0.1/up
 systemctl is-active project-red-crm-api project-red-crm-worker redis-server nginx
 ```
 
-Before first public use, create DNS `A` records for `api.projectred.ca` and
-`crm.projectred.ca` pointing to the EC2 public IP, then issue/renew certificates
-with Certbot for both names. Production email delivery remains disabled until
+Before first public use, create DNS `A` records for `api.projectred.ca`,
+`crm.projectred.ca`, and `portal.projectred.ca` pointing to the EC2 public IP,
+then issue/renew certificates with Certbot for all three names. Production email delivery remains disabled until
 valid SMTP settings are added to `api.env`; add Stripe production secrets there
 as well when billing is enabled.
 
@@ -131,10 +137,12 @@ production admin and customer accounts with unique credentials instead.
 
 ### Temporary preview domain
 
-Until Project Red DNS is available, all three Project Red services are exposed
+Until Project Red DNS is available, the ProjectRed API, CRM, customer portal,
+and marketing site are exposed
 through these temporary, HTTPS-enabled `sslip.io` names:
 
 - `https://crm.44.248.89.217.sslip.io`
+- `https://portal.44.248.89.217.sslip.io`
 - `https://api.44.248.89.217.sslip.io`
 - `https://marketing.44.248.89.217.sslip.io`
 
@@ -147,8 +155,8 @@ the final values:
 ```sh
 API_ALLOWED_HOSTS=api.projectred.ca
 CRM_UI_ORIGIN=https://crm.projectred.ca
-CRM_UI_ORIGINS=https://crm.projectred.ca
-PORTAL_URL=https://crm.projectred.ca
+CRM_UI_ORIGINS=https://crm.projectred.ca,https://portal.projectred.ca
+PORTAL_URL=https://portal.projectred.ca
 MAILER_HOST=api.projectred.ca
 ```
 

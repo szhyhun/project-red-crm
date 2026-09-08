@@ -5,6 +5,7 @@ require "rails/all"
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
+require_relative "../lib/project_red/surface_cookie_store"
 
 module ProjectRedCrm
   class Application < Rails::Application
@@ -38,10 +39,13 @@ module ProjectRedCrm
     # These must be inserted *before* Warden::Manager rather than appended with
     # `use`: appending puts them inside Warden, so Warden commits the signed-in
     # user to the session after the cookie for that response has already been
-    # written, and the next request arrives with nothing to restore.
+    # written, and the next request arrives with nothing to restore. The custom
+    # store selects a second encrypted cookie for portal-origin requests so an
+    # admin CRM tab and a customer portal tab can stay signed in simultaneously.
     config.middleware.insert_before Warden::Manager, ActionDispatch::Cookies
-    config.middleware.insert_before Warden::Manager, ActionDispatch::Session::CookieStore,
+    config.middleware.insert_before Warden::Manager, ProjectRed::SurfaceCookieStore,
                                     key: "_project_red_crm_session",
+                                    portal_key: "_project_red_portal_session",
                                     same_site: :lax,
                                     secure: Rails.env.production?
   end

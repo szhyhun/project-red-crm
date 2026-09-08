@@ -10,6 +10,7 @@ RSpec.describe "API CORS policy", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.headers["Access-Control-Allow-Origin"]).to eq(crm_origin)
     expect(response.headers["Access-Control-Allow-Credentials"]).to eq("true")
+    expect(response.headers["Cache-Control"]).to include("no-store")
   end
 
   it "does not grant the public site access to session endpoints" do

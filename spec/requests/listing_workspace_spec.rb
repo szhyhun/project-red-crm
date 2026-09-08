@@ -101,6 +101,28 @@ RSpec.describe "Listing workspace", type: :request do
     expect(response.parsed_body.fetch("media_assets").pluck("id")).to eq([ visible.id ])
   end
 
+  it "keeps customers from uploading, editing, or deleting delivered media" do
+    visible = MediaAsset.create!(organization:, listing:, uploaded_by: manager, kind: :final, status: :ready,
+                                 storage_key: "customer-visible.jpg", filename: "customer-visible.jpg",
+                                 content_type: "image/jpeg", customer_visible: true)
+    client_user = User.create!(organization:, name: "Customer", email: "media-rights@example.test",
+                               password: "long-enough-password", role: :client_admin)
+    ClientMembership.create!(client_account: client, user: client_user, role: :admin)
+
+    sign_out manager
+    sign_in client_user
+
+    post "/api/v1/media_assets/upload", params: { listing_id: listing.id }
+    expect(response).to have_http_status(:forbidden)
+
+    patch "/api/v1/media_assets/#{visible.id}", params: { media_asset: { hidden: true } }
+    expect(response).to have_http_status(:forbidden)
+
+    delete "/api/v1/media_assets/#{visible.id}"
+    expect(response).to have_http_status(:forbidden)
+    expect(visible.reload).to be_persisted
+  end
+
 
   it "adds a second customer and custom field to a listing" do
     second_customer = organization.client_accounts.create!(name: "Second Customer", email: "second@example.com")

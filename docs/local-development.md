@@ -91,9 +91,17 @@ pnpm install
 npm run dev
 ```
 
-The portal runs at `http://localhost:3011` and calls the API at
-`http://localhost:3010/api/v1` by default. Both ports are configured in the
-two repositories, so no port flags are needed when starting either app.
+The combined UI runs at `http://localhost:3011` and calls the API at
+`http://localhost:3010/api/v1` by default. When using a surface subdomain, the
+browser automatically sends API requests to the matching local host and port
+(`portal.localhost:3010` or `crm.localhost:3010`). This is important because
+the Rails session cookie is `SameSite=Lax`; matching the host keeps portal and
+CRM XHR requests first-party in local development. For surface-boundary
+testing, use
+`http://crm.localhost:3011` for staff and `http://portal.localhost:3011` for
+customers. Configure `CRM_UI_ORIGINS` with all three local origins. Both ports
+are configured in the two repositories, so no port flags are needed when
+starting either app.
 
 Task description/comment attachments use local `storage/board_media` by
 default. To exercise the production storage path, set

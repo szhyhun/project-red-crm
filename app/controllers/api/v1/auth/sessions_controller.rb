@@ -4,6 +4,7 @@ class Api::V1::Auth::SessionsController < ApplicationController
   skip_before_action :verify_authenticity_token, only: :csrf
 
   def csrf
+    response.headers["Cache-Control"] = "no-store"
     render json: { csrf_token: form_authenticity_token }
   end
 

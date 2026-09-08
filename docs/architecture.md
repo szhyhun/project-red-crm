@@ -8,7 +8,11 @@ background-job orchestration.
 
 The other applications have distinct responsibilities:
 
-- `project-red-crm-ui` is the staff and customer portal on port `3011` in local development.
+- `project-red-crm-ui` is one Next.js build with two browser surfaces: the
+  staff CRM (`crm.projectred.ca`) and customer portal (`portal.projectred.ca`).
+  Local development keeps `http://localhost:3011` as a combined surface and
+  also supports `crm.localhost:3011` and `portal.localhost:3011` for boundary
+  testing.
 - The ProjectRed marketing website is the public sales and ordering entry point.
 - PostgreSQL stores durable CRM data.
 - Redis and Resque run background work locally and in future deployment.
@@ -19,6 +23,9 @@ The other applications have distinct responsibilities:
 All application endpoints are under `/api/v1`.
 
 - Authentication uses the Rails session cookie, not browser-held access tokens.
+- The CRM and portal share the Rails session and user records, but the UI gates
+  each surface by the existing capability set. The hostname is a product
+  boundary, not an authorization boundary; API policies remain authoritative.
 - `GET /api/v1/auth/csrf` returns the CSRF token required for mutations.
 - Browser mutation requests send `X-CSRF-Token` with the session cookie.
 - Controllers scope all records through `Current.organization` and Pundit.

@@ -5,18 +5,22 @@ These controls are part of the application contract, not optional UI behavior.
 ## Browser origins
 
 - `CRM_UI_ORIGINS` (or the legacy singular `CRM_UI_ORIGIN`) is the exact
-  allowlist for credentialed CRM API and Action Cable requests. Multiple
-  origins are comma-separated.
+  allowlist for credentialed CRM and customer-portal API and Action Cable
+  requests. Multiple origins are comma-separated; production must include both
+  `https://crm.projectred.ca` and `https://portal.projectred.ca`.
 - `PUBLIC_SITE_ORIGINS`/`PUBLIC_SITE_ORIGIN` may access only
   `/api/v1/public/*`, with no credentials. A public origin must never be added
   to the credentialed CRM resource rule.
 - Origins must be `http` or `https` origins without a path, query, fragment,
-  user-info, or wildcard. Production defaults to `https://crm.projectred.ca`
-  when the CRM setting is omitted; production does not invent a public-site
-  origin.
-- The temporary `sslip.io` CRM origin and the final DNS origin can coexist
-  during a migration. Remove the temporary value only after the UI has moved to
-  the final API origin.
+  user-info, or wildcard. Production defaults to both final UI origins when the
+  CRM setting is omitted; production does not invent a public-site origin.
+- The credentialed CRM and portal surfaces use separate encrypted, HttpOnly
+  session-cookie keys selected only from those allowlisted origins. Do not
+  collapse them back to one cookie: users may be signed in as staff in CRM and
+  as customers in the portal in the same browser.
+- The temporary `sslip.io` CRM and portal origins and the final DNS origins can
+  coexist during a migration. Remove the temporary values only after the UI has
+  moved to the final API origin.
 
 ## Files and media
 

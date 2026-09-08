@@ -103,10 +103,20 @@ class Api::V1::ConversationAttachmentsController < Api::V1::BaseController
     attachment.update!(status: :ready, processed_at: Time.current)
     attachment
   rescue ConversationStorage::MissingFile, ConversationStorage::WriteError => error
-    ConversationStorage.delete(storage_key) if storage_key.present?
+    cleanup_failed_upload(storage_key)
     Rails.logger.warn("Conversation attachment storage failed: #{error.class}: #{error.message}")
     attachment&.update(status: :failed, metadata: attachment.metadata.merge("processing_error" => "upload_failed"))
     raise
+  end
+
+  def cleanup_failed_upload(storage_key)
+    return if storage_key.blank?
+
+    ConversationStorage.delete(storage_key)
+  rescue StandardError => error
+    # Cleanup is best effort. It must not replace the useful upload failure,
+    # especially when the same missing IAM permission blocks S3 deletion too.
+    Rails.logger.warn("Conversation attachment cleanup failed: #{error.class}: #{error.message}")
   end
 
   def stream_preview(attachment)

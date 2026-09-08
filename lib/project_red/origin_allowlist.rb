@@ -6,7 +6,7 @@ module ProjectRed
 
     def crm_ui
       configured_origins(
-        ENV["CRM_UI_ORIGINS"].presence || ENV["CRM_UI_ORIGIN"].presence || default_crm_ui_origin,
+        ENV["CRM_UI_ORIGINS"].presence || ENV["CRM_UI_ORIGIN"].presence || default_crm_ui_origins,
         setting: "CRM_UI_ORIGINS"
       )
     end
@@ -36,8 +36,12 @@ module ProjectRed
       raise ArgumentError, "#{setting} contains an invalid origin: #{origin.inspect} (#{error.message})"
     end
 
-    def default_crm_ui_origin
-      Rails.env.production? ? "https://crm.projectred.ca" : "http://localhost:3011"
+    def default_crm_ui_origins
+      if Rails.env.production?
+        "https://crm.projectred.ca,https://portal.projectred.ca"
+      else
+        "http://localhost:3011,http://crm.localhost:3011,http://portal.localhost:3011"
+      end
     end
 
     def default_port?(uri)

@@ -55,6 +55,25 @@ RSpec.describe "Conversation attachments", type: :request do
     upload&.close!
   end
 
+  it "returns a controlled upload error when private storage rejects the write" do
+    upload = Tempfile.new([ "chat-notes", ".txt" ])
+    upload.write("notes")
+    upload.rewind
+    allow(ConversationStorage).to receive(:write).and_raise(ConversationStorage::WriteError, "access denied")
+    allow(ConversationStorage).to receive(:delete)
+
+    sign_in participant
+    post "/api/v1/conversations/#{conversation.id}/messages/#{message.id}/attachments",
+         params: { files: [ Rack::Test::UploadedFile.new(upload.path, "text/plain", true, original_filename: "chat-notes.txt") ] }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body)).to eq("error" => "upload_failed")
+    expect(message.conversation_attachments.reload.last.status).to eq("failed")
+    expect(ConversationStorage).to have_received(:delete)
+  ensure
+    upload&.close!
+  end
+
   it "rejects SVG uploads before they reach private storage" do
     upload = Tempfile.new([ "unsafe", ".svg" ])
     upload.write("<svg><script>alert(1)</script></svg>")
