@@ -1,0 +1,163 @@
+require "rails_helper"
+
+RSpec.describe "Media workflow API", type: :request do
+  let!(:organization) { Organization.create!(name: "Portal Agency", slug: "portal-workflow") }
+  let!(:other_organization) { Organization.create!(name: "Other Agency", slug: "other-workflow") }
+  let!(:manager) do
+    User.create!(organization:, name: "Morgan Manager", email: "workflow-manager@example.test",
+                 password: "long-enough-password", role: :manager)
+  end
+  let!(:client_account) { ClientAccount.create!(organization:, name: "Avery Agent", kind: :agent) }
+  let!(:client_user) do
+    User.create!(organization:, name: "Avery Client", email: "workflow-client@example.test",
+                 password: "long-enough-password", role: :client_admin)
+  end
+  let!(:other_client_account) { ClientAccount.create!(organization:, name: "Other Agent", kind: :agent) }
+  let!(:listing) { Listing.create!(organization:, client_account:, address_line_1: "111 Oak Bay Avenue") }
+  let!(:other_listing) { Listing.create!(organization:, client_account: other_client_account, address_line_1: "Hidden Street") }
+  let!(:service) do
+    Product.create!(organization:, slug: "workflow-photos", title: "Property photography", kind: :service,
+                    deliverable_type: "photography", sla_days: 2)
+  end
+  let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 29_900) }
+  let!(:order) do
+    Orders::Creator.new(
+      organization:,
+      attributes: {
+        client_account_id: client_account.id,
+        listing_id: listing.id,
+        payment_mode: "pay_later",
+        items: [ { product_variant_id: variant.id, quantity: 1 } ]
+      }
+    ).create!
+  end
+  let!(:deliverable) do
+    Orders::Approval.new(order:, actor: manager).call
+    order.reload.order_deliverables.sole
+  end
+
+  before do
+    ClientMembership.create!(client_account:, user: client_user, role: :admin)
+  end
+
+  it "returns customer-safe deliverables and API-relative private media paths" do
+    asset = deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,
+                                              storage_key: "organizations/#{organization.id}/deliverables/front.jpg",
+                                              filename: "front.jpg", content_type: "image/jpeg", byte_size: 5,
+                                              customer_visible: true)
+    deliverable.update!(status: :delivered, delivered_at: Time.current)
+
+    sign_in client_user
+    get "/api/v1/portal/listings/#{listing.id}/media"
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body
+    expect(payload.dig("summary", "delivered_count")).to eq(1)
+    serialized = payload.fetch("deliverables").sole
+    expect(serialized).to include("status" => "delivered", "can_request_changes" => true, "asset_count" => 1)
+    expect(serialized.dig("assets", 0)).to include(
+      "id" => asset.id,
+      "preview_path" => "/api/v1/media_assets/#{asset.id}/preview",
+      "download_path" => "/api/v1/media_assets/#{asset.id}/download"
+    )
+    expect(serialized.dig("assets", 0)).not_to have_key("storage_key")
+  end
+
+  it "keeps a customer from reading another account's listing" do
+    sign_in client_user
+
+    get "/api/v1/portal/listings/#{other_listing.id}/media"
+
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it "creates an account conversation change request and returns the deliverable to work" do
+    asset = deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,
+                                              storage_key: "organizations/#{organization.id}/deliverables/request.jpg",
+                                              filename: "request.jpg", content_type: "image/jpeg", byte_size: 5,
+                                              customer_visible: true)
+    deliverable.update!(status: :delivered, delivered_at: Time.current)
+
+    sign_in client_user
+    expect {
+      post "/api/v1/portal/listings/#{listing.id}/deliverables/#{deliverable.id}/change_requests", params: {
+        change_request: {
+          body_html: "<p>Please replace this photo.</p>",
+          media_asset_ids: [ asset.id ]
+        }
+      }
+    }.to change(Message, :count).by(1).and change(MessageMediaReference, :count).by(1)
+
+    expect(response).to have_http_status(:created)
+    expect(deliverable.reload).to be_in_progress
+    expect(response.parsed_body.dig("change_request", "deliverable", "status")).to eq("in_progress")
+    message = Message.order(:id).last
+    expect(message).to have_attributes(message_kind: "change_request", listing_id: listing.id, order_deliverable_id: deliverable.id)
+    expect(message.referenced_media_assets).to contain_exactly(asset)
+  end
+
+  it "lets a permitted conversation reference existing media without copying it" do
+    asset = deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,
+                                              storage_key: "organizations/#{organization.id}/deliverables/chat-context.jpg",
+                                              filename: "chat-context.jpg", content_type: "image/jpeg", byte_size: 5,
+                                              customer_visible: true)
+    conversation = Conversation.account_thread_for(organization:, client_account:)
+    conversation.conversation_memberships.create!(user: client_user, role: :participant)
+
+    sign_in client_user
+    post "/api/v1/conversations/#{conversation.id}/messages", params: {
+      message: { body: "Here is the photo", listing_id: listing.id, order_deliverable_id: deliverable.id,
+                  media_asset_ids: [ asset.id ] }
+    }
+
+    expect(response).to have_http_status(:created)
+    reference = response.parsed_body.dig("message", "media_references").sole
+    expect(reference).to include(
+      "id" => asset.id,
+      "preview_path" => "/api/v1/media_assets/#{asset.id}/preview",
+      "download_path" => "/api/v1/media_assets/#{asset.id}/download"
+    )
+    expect(reference).not_to have_key("storage_key")
+    expect(MessageMediaReference.where(message: Message.order(:id).last, media_asset: asset)).to exist
+  end
+
+  it "rejects a selected asset that belongs to a different deliverable" do
+    another_service = Product.create!(organization:, slug: "workflow-video", title: "Video", kind: :service,
+                                      deliverable_type: "video")
+    another_variant = another_service.product_variants.create!(title: "Standard", price_cents: 10_000)
+    another_order = Orders::Creator.new(
+      organization:,
+      attributes: {
+        client_account_id: client_account.id,
+        listing_id: listing.id,
+        payment_mode: "pay_later",
+        items: [ { product_variant_id: another_variant.id, quantity: 1 } ]
+      }
+    ).create!
+    another_deliverable = Orders::Approval.new(order: another_order, actor: manager).call.order_deliverables.sole
+    asset = another_deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,
+                                                      storage_key: "organizations/#{organization.id}/deliverables/foreign.jpg",
+                                                      filename: "foreign.jpg", content_type: "image/jpeg", byte_size: 5,
+                                                      customer_visible: true)
+    deliverable.update!(status: :delivered, delivered_at: Time.current)
+
+    sign_in client_user
+    post "/api/v1/portal/listings/#{listing.id}/deliverables/#{deliverable.id}/change_requests", params: {
+      change_request: { body: "Wrong asset", media_asset_ids: [ asset.id ] }
+    }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch("error")).to eq("invalid_media_asset_reference")
+  end
+
+  it "rejects workflow configuration from a non-manager and scopes another organization out" do
+    other_board = other_organization.default_board
+    sign_in client_user
+    get "/api/v1/boards/#{other_board.id}/workflows"
+    expect(response).to have_http_status(:not_found)
+
+    sign_in client_user
+    patch "/api/v1/order_deliverables/#{deliverable.id}", params: { order_deliverable: { status: "delivered" } }
+    expect(response).to have_http_status(:forbidden)
+  end
+end

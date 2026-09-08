@@ -28,8 +28,8 @@ RSpec.describe "Client portal", type: :request do
     internal_board = organization.boards.create!(name: "CRM Development", kind: "internal", visibility: "organization",
                                                  requires_listing: true, client_visible: false, position: 1)
     WorkflowColumn::DEFAULTS.each { |attributes| internal_board.workflow_columns.create!(attributes.merge(organization: organization)) }
-    own_listing.workflow_tasks.create!(organization: organization, board: internal_board, title: "Internal Board Task",
-                                       customer_visible: true)
+    own_listing.workflow_tasks.build(organization: organization, board: internal_board, title: "Internal Board Task",
+                                     customer_visible: true).save!(validate: false)
     MediaAsset.create!(organization: organization, listing: own_listing, kind: :final, status: :ready, storage_key: "final/photo.jpg", filename: "photo.jpg", content_type: "image/jpeg")
     MediaAsset.create!(organization: organization, listing: own_listing, kind: :final, status: :ready, storage_key: "final/internal.jpg", filename: "internal.jpg", content_type: "image/jpeg", hidden: true)
     allow(DeliveryStorage).to receive(:public_url).with("final/photo.jpg").and_return("https://cdn.example.test/final/photo.jpg")

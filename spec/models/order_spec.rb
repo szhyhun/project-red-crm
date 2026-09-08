@@ -24,4 +24,16 @@ RSpec.describe Order, type: :model do
 
     expect(order).to have_attributes(subtotal_cents: 50_000, discount_cents: 5_000, total_cents: 47_500)
   end
+
+  it "rejects a listing that belongs to a different customer account" do
+    organization = Organization.create!(name: "ProjectRed", slug: "projectred-order-account-boundary")
+    selected_account = ClientAccount.create!(organization:, name: "Selected account", kind: :agent)
+    other_account = ClientAccount.create!(organization:, name: "Other account", kind: :agent)
+    listing = Listing.create!(organization:, client_account: other_account, address_line_1: "Foreign customer listing")
+
+    order = Order.new(organization:, client_account: selected_account, listing:)
+
+    expect(order).not_to be_valid
+    expect(order.errors.full_messages).to include("Listing must belong to the selected customer account")
+  end
 end

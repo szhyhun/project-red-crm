@@ -141,8 +141,8 @@ RSpec.describe "Board tasks", type: :request do
                                password: "long-enough-password", role: :client_admin)
     ClientMembership.create!(client_account:, user: client_user)
     internal_board.update!(requires_listing: true)
-    internal_board.workflow_tasks.create!(organization:, listing:, title: "Internal",
-                                          status: "todo", customer_visible: true)
+    internal_board.workflow_tasks.build(organization:, listing:, title: "Internal",
+                                        status: "todo", customer_visible: true).save!(validate: false)
     production_board.workflow_tasks.create!(organization:, listing:, title: "Retouch",
                                             status: "todo", customer_visible: true)
 

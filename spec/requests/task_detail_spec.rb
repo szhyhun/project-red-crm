@@ -40,6 +40,24 @@ RSpec.describe "Task detail", type: :request do
       expect(task.task_comments).to be_empty
     end
 
+    it "allows commenting through an accessible shared placement" do
+      shared_editor = staff("detail-shared-editor@example.test", :production_staff)
+      shared_board = organization.boards.create!(name: "Shared detail board", kind: "internal", visibility: "restricted",
+                                                  requires_listing: false, client_visible: false, position: 2).tap do |created|
+        WorkflowColumn::DEFAULTS.each { |attributes| created.workflow_columns.create!(attributes.merge(organization:)) }
+        created.board_memberships.create!(member: shared_editor, access: "contributor")
+      end
+      task.workflow_task_placements.create!(board: shared_board,
+                                            workflow_column: shared_board.workflow_columns.find_by!(key: "todo"),
+                                            position: 0)
+
+      sign_in shared_editor
+      post "/api/v1/workflow_tasks/#{task.id}/comments", params: { task_comment: { body: "Shared-board note." } }
+
+      expect(response).to have_http_status(:created)
+      expect(task.task_comments.reload.pluck(:body)).to include("Shared-board note.")
+    end
+
     it "lets an author edit their own comment and marks it edited" do
       comment = task.task_comments.create!(author: editor, body: "First take")
 

@@ -9,6 +9,11 @@ RSpec.describe "Resque recurring job schedule" do
   it "keeps every recurring job explicit and reviewable" do
     expect(schedule).to include("conversation_retention")
 
+    expect(schedule.fetch("conversation_retention")).to include(
+      "class" => "Conversations::RetentionJob",
+      "queue" => "maintenance"
+    )
+
     schedule.each_value do |entry|
       expect(entry).to include("cron", "class", "queue", "description")
     end

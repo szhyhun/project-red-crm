@@ -50,12 +50,14 @@ RSpec.describe "Workflow columns", type: :request do
     custom = board.workflow_columns.create!(organization:, name: "Quality Check", color: "#aec7f7", position: 4)
     replacement = organization.workflow_columns.find_by!(key: "done")
     task = WorkflowTask.create!(organization:, board:, listing:, title: "Final QA", status: custom.key)
+    task.workflow_task_placements.find_by!(board:).update!(workflow_column: custom)
 
     delete "/api/v1/workflow_columns/#{custom.id}", params: { replacement_column_id: replacement.id }
 
     expect(response).to have_http_status(:no_content)
     expect(task.reload.status).to eq("done")
     expect(task.completed_at).to be_present
+    expect(task.workflow_task_placements.find_by!(board:).workflow_column).to eq(replacement)
     expect(WorkflowColumn.exists?(custom.id)).to be(false)
   end
 end

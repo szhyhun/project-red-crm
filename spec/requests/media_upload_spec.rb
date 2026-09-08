@@ -168,10 +168,12 @@ RSpec.describe "Media uploads", type: :request do
     post "/api/v1/media_assets/#{asset.id}/replace", params: { file: Rack::Test::UploadedFile.new(new_file.path, "text/plain", true, original_filename: "new.txt") }
 
     expect(response).to have_http_status(:ok)
-    expect(asset.reload).to have_attributes(filename: "new.txt", status: "pending")
-    expect(DeliveryStorage).not_to exist(old_key)
-    expect(DeliveryStorage).to exist(asset.storage_key)
-    expect(MediaAssets::VerifyUploadJob).to have_received(:perform_later).with(asset.id)
+    replacement = MediaAsset.find(response.parsed_body.dig("media_asset", "id"))
+    expect(asset.reload).to have_attributes(filename: "old.txt", status: "ready", version: 1, superseded_by: replacement)
+    expect(replacement).to have_attributes(filename: "new.txt", status: "pending", version: 2, superseded_by_id: nil)
+    expect(DeliveryStorage).to exist(old_key)
+    expect(DeliveryStorage).to exist(replacement.storage_key)
+    expect(MediaAssets::VerifyUploadJob).to have_received(:perform_later).with(replacement.id)
   ensure
     old_file&.close!
     new_file&.close!

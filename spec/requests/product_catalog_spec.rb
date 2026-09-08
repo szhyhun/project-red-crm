@@ -34,6 +34,40 @@ RSpec.describe "Product catalog", type: :request do
     expect(variants.pluck("price_cents")).to eq([ 19_900, 24_900 ])
   end
 
+  it "returns an open-ended tier in the catalog so checkout can select it" do
+    product = organization.products.create!(slug: "open-ended-photography", title: "Open-ended photography", kind: :service)
+    tier = product.product_variants.create!(title: "2,000+ sqft", price_cents: 24_900, sqft_min: 2_000)
+
+    get "/api/v1/products/#{product.id}"
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("product", "variants")).to include(
+      include("id" => tier.id, "sqft_min" => 2_000, "sqft_max" => nil)
+    )
+    expect(product.variant_for_sqft(2_000)).to eq(tier)
+  end
+
+  it "rejects overlapping active square-footage tiers without partially saving them" do
+    product = organization.products.create!(slug: "tiered-photography", title: "Tiered photography", kind: :service)
+    existing = product.product_variants.create!(title: "Up to 1,000 sqft", price_cents: 29_900,
+                                                 sqft_min: 0, sqft_max: 1_000)
+
+    patch "/api/v1/products/#{product.id}", params: {
+      product: {
+        product_variants_attributes: [
+          { id: existing.id, title: existing.title, price_cents: existing.price_cents, sqft_min: 0, sqft_max: 1_000 },
+          { title: "500 to 1,500 sqft", price_cents: 39_900, sqft_min: 500, sqft_max: 1_500 }
+        ]
+      }
+    }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.body).to include("overlaps another active range")
+    expect(product.reload.product_variants.active.pluck(:title, :sqft_min, :sqft_max)).to eq(
+      [ [ "Up to 1,000 sqft", 0, 1_000 ] ]
+    )
+  end
+
   it "rejects a slug already used in the organization instead of raising" do
     organization.products.create!(slug: "hdr-photography", title: "HDR Photography", kind: "package")
 

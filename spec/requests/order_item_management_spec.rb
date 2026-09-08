@@ -43,4 +43,19 @@ RSpec.describe "Order item management", type: :request do
     expect(item.snapshot).to include("product_title" => "Premium Photo", "variant_title" => "Up to 2,000 sqft")
     expect(order.reload.total_cents).to eq(50000)
   end
+
+  it "applies the client pricing-plan override when adding a catalog variant" do
+    plan = organization.pricing_plans.create!(name: "Order item preferred rate", client_account: client)
+    plan.pricing_plan_prices.create!(product_variant: variant, price_cents: 18_000)
+
+    post "/api/v1/orders/#{order.id}/items", params: {
+      order_item: { product_variant_id: variant.id, quantity: 2, unit_price_cents: 1 }
+    }
+
+    expect(response).to have_http_status(:created)
+    item = order.order_items.last
+    expect(item).to have_attributes(unit_price_cents: 18_000, total_cents: 36_000)
+    expect(item.snapshot).to include("price_cents" => 18_000)
+    expect(order.reload.total_cents).to eq(36_000)
+  end
 end
