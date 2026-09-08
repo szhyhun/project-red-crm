@@ -1,6 +1,16 @@
-# Listings implementation checklist
+# Historical Listings implementation checklist
 
-This checklist is derived from the supplied Listings specification. A checked item means the current Rails API and CRM UI provide the described usable behavior. A partial item is deliberately left unchecked and labelled `PARTIAL`; structural placeholders do not count as complete.
+> This is a status record for the broader Listings specification. It is not the
+> canonical media workflow, deliverable, automation, or customer-portal plan;
+> use [client-portal-plan.md](client-portal-plan.md) for that model. Unchecked
+> entries below are deliberately honest notes about separate Listings features
+> and must not be read as a release tier or as a replacement for the canonical
+> workflow rules.
+
+This checklist is derived from the supplied Listings specification. A checked
+item means the current Rails API and CRM UI provide the described usable
+behavior. A partial item is deliberately left unchecked and labelled `PARTIAL`;
+structural placeholders do not count as complete.
 
 ## Listings dashboard
 
@@ -169,7 +179,7 @@ This checklist is derived from the supplied Listings specification. A checked it
 - [x] 15. Internal follow-up state is set to Needs Attention for any rating of 1 or 2; follow-up management UI remains incomplete.
 - [x] 16. Aggregate reporting.
 - [x] 17. Recent feedback requiring attention.
-- [x] 18. V1 remains the specified simple three-question flow.
+- [x] 18. The feedback flow remains the specified simple three-question flow.
 
 ## Delivery performance
 

@@ -1,530 +1,670 @@
-# Client portal build plan
+# ProjectRed media workflow and portal UI
 
-Source: three design briefs — client dashboard, team/branding/social profiles, and
-media page + revision workflow — read against the schema at version
-`2026_08_19_104000`.
+This is the canonical product and implementation plan for the media workflow,
+staff listing workspace, and customer portal. It is based on the client portal,
+team/branding, and media/revision briefs supplied for ProjectRed, including the
+attached screenshots. The written brief defines behavior; screenshots define
+hierarchy and interaction patterns, not pixel-perfect dimensions.
 
-This file is the tracked version of the plan. Update the task checkboxes and the
-rulings as work lands; the numbered task IDs (T1–T13) are documentation labels,
-not database fields or runtime task metadata. The three source PDFs are product/design briefs: their prose
-defines behavior and data requirements, while their screenshots are visual references
-for hierarchy and interaction rather than pixel-perfect implementation instructions.
+The board issues that came from the briefs are ordinary, human-readable work
+items. Their visible IDs are planning labels only. They are not database
+references to this Markdown file, and no runtime record needs an internal plan
+field to explain where it came from.
 
-## Status summary
+The existing `/api/v1` URL namespace is retained for API compatibility. It is
+not a release scope or a promise of a smaller product edition.
 
-| | Count |
-| --- | --- |
-| Brief requirements | 47 |
-| Fully built | 6 |
-| Partial | 13 |
-| Not started | 30 |
-| New tables | 13 + deliverable services, pending research |
+## Product rules
 
-The backend is strong on commerce and operations — orders, invoices, payments,
-pricing plans, appointments, Aryeo import, media storage with CDN delivery. It is
-close to empty on the three things the briefs are actually about: a client-facing
-view of production, revisions, and client-owned brand assets.
+ProjectRed sells media services to a customer and then tracks the production
+work needed to deliver them. A service can be purchased on its own or included
+in a package.
 
-## Blockers and rulings
+```text
+Product: Standard Property Photography
 
-### 01 · Tasks cannot exist without a listing
-
-`workflow_tasks.listing_id` is `null: false` and every write path goes through
-`listing.workflow_tasks.build`. An internal development board is structurally
-impossible until this is nullable.
-
-**Ruling — make it optional.** A board carries `requires_listing`; production
-boards keep the constraint at the application layer, internal boards drop it. T2.
-
-### 02 · One implicit board per organization
-
-There is no `boards` table. A board *is* the org's set of `workflow_columns`, and
-a task joins its column by string: `workflow_tasks.status` matches
-`workflow_columns.key`, enforced by `WorkflowTask#status_matches_organization_column`
-and a unique index on `(organization_id, key)`.
-
-**Ruling — not a blocker, just work.** Uniqueness moves to `(board_id, key)` and
-the validation becomes board-scoped. T2.
-
-### 03 · Pundit is installed but never enforced, and the UI re-implements it
-
-Pundit is included in `ApplicationController`, but there is no `verify_authorized`,
-so authorization is opt-in per action. Three idioms coexist: `authorize record`,
-`authorize Model, :action?`, and hand-rolled
-`return render forbidden unless current_user.internal?`. `dashboard#show` and
-`client_portal#show` use the third and never touch a policy.
-
-The frontend then derives the same rules a second time from the role string —
-`canManageTeam = role === "organization_admin" || …` in `page.tsx:1353`, with
-further copies in `shell.tsx` and `listing-workspace.tsx:1417`.
-
-**Ruling — build a capability layer.** Keep Pundit, make authorization the
-controller default, give every policy the same question set, and serialize the
-answers so the UI consumes them instead of re-deriving them. T1, and it goes first.
-
-### 04 · Nothing tracks a service's production state
-
-`order_items` carry no status, no ETA, no link to the deliverables that satisfy
-them. `media_assets.category` has five values (`images·videos·floor_plans·tours·files`)
-and cannot tell Video from Vertical Reel from Drone.
-
-**Ruling — deferred to research.** T5 is a timeboxed spike producing the model and
-its own sized follow-ups. Phase G is blocked behind it; Phases D–F are sequenced so
-none of them wait.
-
-### 05 · Internal status vocabulary leaks to clients
-
-The portal renders `listing.status` and `workflow_task.status` directly into a
-`StatusPill`. Because workflow columns are org-configurable, whatever a manager
-names a column becomes client-facing copy. All three briefs forbid this.
-
-**Ruling — agreed.** The client-facing lifecycle becomes a derived, closed
-vocabulary that internal states map *into*, with a serializer test asserting no
-internal string can escape. Presenter boundary lands with T6.
-
-## Authorization model
-
-### Pundit, not CanCanCan
-
-Pundit is already installed with 21 policy files and correct `policy_scope` usage.
-CanCanCan would mean rewriting all of it to get a vocabulary Pundit expresses
-as-is. The gap is not the library — it is that nothing enforces it and nothing
-publishes it.
-
-### 1 · Authorization is the default
-
-```ruby
-class Api::V1::BaseController < ApplicationController
-  after_action :verify_authorized,    unless: :index_action?
-  after_action :verify_policy_scoped, if:     :index_action?
-end
+ProductVariant: 0–1,000 sqft — $299
+ProductVariant: 1,001–2,000 sqft — $399
 ```
 
-Filtered with `if:` rather than `only: :index`: Rails raises
-`AbstractController::ActionNotFound` when an `only:` names an action a controller
-does not define, and most controllers here have no index.
+Standalone purchase:
 
-**Why `after_action` and not `before_action`.** `verify_authorized` does not
-authorize; it checks whether `authorize` *was called*, by reading a flag that
-`authorize` sets inside the action body (`pundit/authorization.rb:92`). As a
-`before_action` the flag is never set yet, so it would raise on every request.
-There is no before-action form of this check.
-
-What it does and does not protect:
-
-- Rails runs `after_action` after the action body but **before the response reaches
-  the client**, so a raise discards the rendered body.
-- **Side effects still happen.** A `create` that forgot to authorize has already
-  committed its row when the callback fires.
-- **Streamed responses escape it.** `media_assets#download` and `#preview` use
-  `send_file`. Both authorize correctly today, and get explicit specs rather than
-  relying on the tripwire.
-- It is a programmer-error tripwire, not the security control. The control is the
-  `authorize` call.
-
-`AuthorizationNotPerformedError` descends from `Pundit::Error`, not from
-`NotAuthorizedError`, so the existing `rescue_from Pundit::NotAuthorizedError` does
-not swallow it — a forgotten `authorize` surfaces as a 500, not a quiet 403.
-
-Pair it with a CI request spec walking every route and asserting each action
-authorizes or declares a skip. That is the pre-deploy guarantee the runtime
-callback cannot give.
-
-### 2 · One question set on every policy
-
-```ruby
-class ApplicationPolicy
-  CAPABILITIES = %i[view create update destroy manage].freeze
-
-  def view?    = false
-  def create?  = false
-  def update?  = false
-  def destroy? = false
-  def manage?  = false   # configure the resource type: columns, settings, access
-
-  def show?  = view?     # aliases so no existing policy breaks
-  def index? = view?
-
-  def capabilities
-    self.class::CAPABILITIES.select { |c| public_send(:"#{c}?") }
-  end
-end
+```text
+ProductVariant → OrderItem → OrderDeliverable
 ```
 
-`manage?` is the new question. It separates "can edit this record" from "can change
-how this resource works for everyone" — deleting a workflow column, granting board
-access, editing the catalog.
+Package purchase:
 
-### 3 · The answers ship to the client
-
-```jsonc
-// Per record
-GET /api/v1/boards/7
-{ "board": { "id": 7, "name": "Engineering",
-             "capabilities": ["view", "update", "manage"] } }
-
-// Per session
-GET /api/v1/auth/me
-{ "user": { },
-  "capabilities": { "boards": ["view", "create"], "staff": [] } }
+```text
+Package ProductVariant → package OrderItem
+                         → ProductComponent
+                         → service OrderDeliverable
 ```
 
-### 4 · Denials say what was denied
+The package is billed once. Its included services create production
+deliverables, but they do not create additional invoice lines.
 
-```jsonc
-{ "error": "forbidden", "resource": "Board", "action": "update",
-  "message": "You don't have manage access to this board." }
+Permanent catalog rules:
+
+- `Product` is the reusable package, service, or add-on.
+- `ProductVariant` is a purchasable price and scope option.
+- `ProductComponent` references the service `Product`, never a service variant.
+- A package may contain service products but may not contain another package.
+- A service remains independently sellable through its own variants.
+- There is no `Product.sqft` field.
+- Authoritative price tiers are relational rows, not a JSON pricing array.
+- JSON is reserved for provider payloads, snapshots, and flexible metadata.
+- Active square-foot ranges for one product cannot overlap.
+- Catalog edits never rewrite historical order prices, scopes, or deliverables.
+
+When a package variant is selected, its scope is copied to every included
+deliverable. The component contributes no new charge:
+
+```text
+Package selected: 0–1,000 sqft
+Photography deliverable: Standard Property Photography
+Scope: 0–1,000 sqft
+Additional price: $0
 ```
 
-### 5 · The UI consumes, never re-derives
+## Data model
 
-Every `role === "…"` comparison in the frontend is deleted and replaced with
-`useCapabilities()` / `<Can>` reading the payloads above. Navigation is built from
-the session capability map rather than an `adminAccess` boolean.
+### Catalog
 
-**Capabilities are a UI hint, never the boundary.** The server authorizes every
-request regardless of what the client was told.
+```text
+products
+  id
+  organization_id
+  slug
+  title
+  description
+  kind                       package | service | addon
+  deliverable_type           photography | video | vertical_reel | drone |
+                             floor_plan | tour | property_site | files | other
+  sla_days                   business days
+  active
+  external_source
+  external_id
+  source_payload             jsonb
 
-## Board design
+product_variants
+  id
+  product_id
+  title
+  price_cents
+  sqft_min                   nullable
+  sqft_max                   nullable
+  duration_minutes           nullable
+  quantity_label             nullable
+  active
+  external_id
+  source_payload             jsonb
 
-### Schema
-
+product_components
+  id
+  organization_id
+  package_product_id         → products.id
+  service_product_id         → products.id
+  quantity
+  position
 ```
+
+`ProductVariant` owns the catalog price that is selected at checkout. An active
+customer pricing plan may provide the effective price for that variant. The
+`OrderItem` stores the effective historical price, title, quantity, scope, and
+snapshot so later pricing-plan or catalog edits cannot change an existing
+order.
+
+### Orders and deliverables
+
+```text
+orders
+  approved_at                nullable datetime
+
+order_deliverables
+  id
+  organization_id
+  listing_id                 nullable → listings.id
+  order_id                   → orders.id
+  order_item_id              → order_items.id
+  product_component_id       nullable → product_components.id
+  service_product_id         → products.id
+  title
+  description
+  deliverable_type
+  sla_days
+  scope_sqft_min             nullable
+  scope_sqft_max             nullable
+  scope_label                nullable
+  status                     not_started | in_progress | in_review | delivered
+  target_on                  nullable date
+  delivered_at               nullable datetime
+  delivery_version           default 0
+  position                   default 0
+  cancelled_at               nullable datetime
+  metadata                   jsonb
+  materialization_key        unique
+```
+
+Package components and standalone services share this model. An approved
+order is materialized by one service and then triggers the configured board
+workflow after the transaction commits. Repeating approval is safe: the
+materialization key prevents duplicate deliverables, and the workflow run
+key prevents duplicate runs for the same order and workflow definition.
+
+`OrderDeliverable` is production state, not billing. It is never included in
+invoice totals. A deliverable belongs to its organization, order, order item,
+service product, optional package component, and optional listing. Its listing
+must agree with the order listing when the order has one.
+
+The customer-facing state is derived from this closed vocabulary. Internal
+board columns may have names such as Blocked or Quality Assurance, but those
+names never leak into the portal:
+
+```text
+not_started → in_progress → in_review → delivered
+```
+
+Requesting changes from delivered work returns the deliverable to
+`in_progress`. A cancelled deliverable is excluded from active workflow and
+portal results; it is not a new customer status.
+
+### Boards, tasks, and placements
+
+```text
 boards
-  organization_id, name, slug (unique per org), description,
-  kind             production | internal | custom
-  visibility       organization | restricted
-  requires_listing boolean
-  client_visible   boolean      -- gates customer_visible tasks
-  archived, position, created_by_id, settings jsonb
+  organization_id
+  name, slug, description
+  kind                       production | internal | custom
+  visibility                 organization | restricted
+  requires_listing
+  client_visible
+  archived, position
+  created_by_id
+  settings                   jsonb
 
-user_groups                     -- "Developers", "Editors", "Dispatch"
-  organization_id, name, slug (unique per org), description
+workflow_columns
+  board_id
+  name, key, color, category, position
+  -- key is unique inside one board
 
-user_group_memberships
-  user_group_id, user_id        -- unique together
+workflow_tasks
+  organization_id
+  board_id
+  listing_id                 nullable
+  parent_task_id             nullable → workflow_tasks.id
+  task_kind                  task | parent | deliverable
+  workflow_group_key         nullable, retry/idempotency identity
+  title, description, description_html
+  status, priority, position
+  assignee_id, reporter_id
+  customer_visible
+  due_at, started_at, completed_at
+  metadata                   jsonb
 
-board_memberships               -- polymorphic grantee: a user OR a group
-  board_id, member_type ("User" | "UserGroup"), member_id
-  access           viewer | contributor | manager
+workflow_task_placements
+  workflow_task_id
+  board_id
+  workflow_column_id
+  position
+  is_home
+  -- one placement per task and board; one home placement per task
 
-workflow_columns   + board_id;  unique (organization_id, key) → (board_id, key)
-workflow_tasks     + board_id, reporter_id, labels[], started_at
-                   ~ listing_id NULL allowed
+workflow_task_deliverables
+  workflow_task_id
+  order_deliverable_id
+  position
 ```
 
-Backfill in one migration: create a `Production` board per organization, repoint
-every existing column and task, then apply `NOT NULL`.
+A task has one canonical record and can appear on multiple authorized boards.
+The home placement is the canonical production card. Moving a task updates the
+selected placement, canonical task status, all shared placements that have a
+matching canonical column, linked deliverables, customer status, and activity.
+Grouped deliverables stay separate cards in the portal.
 
-### Access rules
+Default column mapping:
 
-1. `visibility: organization` — every internal user in the org can view. Writes
-   fall back to role rules.
-2. `visibility: restricted` — only users with a `board_membership`, directly or
-   through a `user_group`. This is how "developers and admins only" works.
-3. `organization_admin` always sees and manages every board in their org. There is
-   no hidden-from-the-admin board.
-
-Client users never reach boards. `customer_visible` tasks stay client-readable only
-when the board is `client_visible`.
-
-```ruby
-BoardPolicy#view?   → visibility == 'organization' || member? || admin?
-BoardPolicy#update? → access >= :contributor
-BoardPolicy#manage? → access == :manager || admin?
-
-WorkflowTaskPolicy#update?   → policy(record.board).update?
-WorkflowColumnPolicy#manage? → policy(record.board).manage?
+```text
+Todo          → not_started
+Active Work   → in_progress
+Review        → in_review
+Done          → delivered
+Blocked       → in_progress
 ```
 
-### API
+Boards that require a property enforce `listing_id` at the model boundary.
+Internal boards may contain organization work without a listing. Client-visible
+tasks are exposed only from client-visible boards.
 
-```
-GET    /api/v1/boards
-POST   /api/v1/boards
-PATCH  /api/v1/boards/:id
-DELETE /api/v1/boards/:id                 archive, never hard-delete with tasks
-GET    /api/v1/boards/:id/members
-POST   /api/v1/boards/:id/members         { member_type, member_id, access }
-DELETE /api/v1/boards/:id/members/:id
+## Board workflows and automations
 
-GET    /api/v1/boards/:board_id/workflow_columns
-GET    /api/v1/boards/:board_id/workflow_tasks
-POST   /api/v1/boards/:board_id/workflow_tasks
+Workflow configuration lives at **Board → ⋯ → Workflows / Automations**. The
+interaction follows the useful scoped pattern documented by ClickUp: a named
+automation has a trigger, optional conditions, and ordered actions.
 
-GET    /api/v1/user_groups                + CRUD, organization_admin only
-POST   /api/v1/user_groups/:id/members
+```text
+board_workflows
+  id, organization_id, board_id
+  name, description, enabled
+  trigger_key                order_approved
+  is_default
+  workflow_version
+  created_by_id
 
-Back-compatible, the deployed UI calls these unscoped:
-GET /api/v1/workflow_columns  → the org's default production board
-GET /api/v1/workflow_tasks    → all visible boards, each row carrying board_id
-```
+board_workflow_conditions
+  board_workflow_id
+  field                      deliverable_type |
+                             service_product_id |
+                             package_product_id
+  operator                   equals | not_equals | in
+  value                      jsonb
+  position
 
-## Portal domain design
+board_workflow_actions
+  board_workflow_id
+  action_type
+  configuration              jsonb
+  position
 
-### Deliverable services — research pending (T5)
-
-Not committed to. Open questions for the spike:
-
-- Own table, or a status on `order_item`? What happens when the order item is
-  cancelled?
-- Service types as a hardcoded enum, or catalog-configurable per organization?
-  Aryeo-imported products must map into whichever it is.
-- How does an off-order service enter — a comp reshoot, a goodwill re-edit?
-- Migration path for `media_assets.category` without breaking `DeliveryArchive` or
-  the public property site.
-- ETA: staff-entered, catalog-defaulted, or computed — and what renders when unknown.
-
-Starting sketch only:
-
-```
-listing_services
-  organization_id, listing_id, order_item_id (nullable)
-  service_type      photography | video | vertical_reel | drone | floor_plan |
-                    matterport | property_website | virtual_staging | twilight | files
-  name              client-facing label
-  production_state  pending_shoot | shot | editing | qc | ready | delivered |
-                    revising | cancelled
-  eta_at, delivered_at, asset_count, position, metadata
-
-media_assets  + listing_service_id, version, superseded_by_id
+board_workflow_status_mappings
+  board_workflow_id
+  source_status              not_started | in_progress | in_review | delivered
+  target_column_key
+  position
 ```
 
-Client-facing status is **derived, never stored twice**. A `ClientStatus` presenter
-maps `production_state` plus revision state into the closed vocabulary the briefs
-specify; the listing badge rolls up from the services beneath it.
+Supported actions are:
 
-### Revisions
-
-One open thread per listing + service, with asset-level references inside it.
-
-```
-revision_requests
-  organization_id, listing_id, listing_service_id, opened_by_id
-  status  submitted | reviewing | in_progress | updated_ready | client_review | completed
-  kind    revision | pre_delivery_note
-  eta_at, cycle, opened_at, closed_at
-  partial unique index (listing_service_id) WHERE status != 'completed'
-
-revision_messages
-  revision_request_id, author_id, body, visibility, attachments jsonb
-
-revision_references
-  revision_message_id, media_asset_id, timecode_ms, locator jsonb, note
+```text
+create_parent_task
+create_or_group_child_task
+place_on_board
+link_deliverable
+assign_to_user
+assign_to_group
 ```
 
-The partial unique index is what makes the *Open Request* button copy truthful.
+An active workflow can target only its own organization's board and users. A
+status mapping must point to a column on the workflow board. Invalid or missing
+mappings prevent a workflow from being configured safely. New workflows and
+draft activations must define all four customer-facing status mappings; the
+runner falls back to the board's first column only for legacy records that
+predate mappings.
 
-### Client account financials
+Run history is durable and inspectable:
 
+```text
+board_workflow_runs
+  organization_id, board_workflow_id, order_id
+  idempotency_key
+  status                     pending | running | succeeded |
+                             succeeded_with_warnings | failed
+  triggered_at, started_at, completed_at
+  retry_count
+  error
+  metadata                   jsonb
+
+board_workflow_run_steps
+  board_workflow_run_id
+  board_workflow_action_id
+  status                     pending | running | succeeded |
+                             skipped | failed
+  position
+  input, output              jsonb
+  error
 ```
-credit_transactions          -- append-only; balance is SUM, never a column
-  organization_id, client_account_id, amount_cents (signed),
-  kind (bonus | refund | adjustment | applied), reason, invoice_id, created_by_id
 
-account_benefits             -- the client-facing face of a pricing plan
-  client_account_id | customer_team_id  (exactly one, like pricing_plans)
-  label, rate_basis_points, order_code, permanent, expires_on, active
+Approval retries do not duplicate deliverables, tasks, placements, or links.
+A failed run can be retried from run history; successful runs cannot be
+requeued as if they had failed.
+
+## Media and storage boundaries
+
+```text
+media_assets
+  order_deliverable_id       nullable → order_deliverables.id
+  version
+  superseded_by_id           nullable → media_assets.id
 ```
 
-`account_benefits` is a display record beside `pricing_plans`, not a rewrite of
-them. Pricing plans stay authoritative for what an order costs.
+Storage boundaries are explicit:
 
-### Brand profile
+- final listing/deliverable media uses the configured delivery storage/CDN
+  boundary;
+- board issue and comment attachments use private board storage;
+- chat attachments use private chat storage;
+- customer uploads in a change request remain chat attachments;
+- existing assets are referenced by ID and are never copied into chat.
 
+Staff can see older media versions. Customers see only ready, final,
+customer-visible, non-hidden assets. Every serializer exposes authorized API
+relative `preview_path` and `download_path` values. It never exposes a storage
+key, private bucket URL, or raw CDN construction to React.
+
+Preview routes authorize the parent record before streaming. Download routes
+may redirect to a short-lived signed URL only after the same authorization
+check. UI media tags resolve serialized paths through `apiUrl`,
+`mediaAssetUrl`, `mediaAssetDownloadUrl`, and `apiMediaNeedsCredentials`.
+
+When a new attachment type is added, the change is incomplete until storage,
+serializer, API types, URL helpers, renderer, and a negative access-control
+spec are updated together. This prevents the repeated raw-path/private-bucket
+mistake that caused missing board and chat images.
+
+## Staff CRM listing workspace
+
+The staff page follows the supplied CRM screenshot:
+
+```text
+CRM shell
+ ├── left navigation and organization/team context
+ ├── listing hero
+ │    ├── property image
+ │    ├── address and city/province
+ │    ├── production status
+ │    └── staff actions
+ ├── Media
+ │    └── one compact row per OrderDeliverable
+ ├── Marketing
+ ├── Orders and services
+ └── Activity and account conversation
 ```
-brand_profiles               -- one per client_account
-  display_name, title, brokerage_name, office, phone, email,
-  website, brokerage_website, bio, socials jsonb
 
-brand_assets                 -- versioned; old materials keep their version
-  brand_profile_id, media_asset_id
-  slot     primary_logo | alternate_logo | brokerage_logo | headshot | team_logo | other
-  version, current
-  partial unique index (brand_profile_id, slot) WHERE current
+Media is deliverable-first. “Images”, “Videos”, “Floor Plans”, “Tours”, and
+“Files” are presentation categories, not replacement database objects. Each
+row shows service title, deliverable type, asset count, customer-safe status,
+target date, and an expand/collapse control.
+
+Expanded staff controls can include Add/upload, Rearrange by drag and drop,
+Custom Image Sizing, Interactive Floor Plan, poster/duration metadata, version
+history, individual download, and Download All. These controls operate on
+`MediaAsset` records linked to the existing deliverable; uploading never
+creates a product, variant, or fake service.
+
+## Customer portal
+
+The portal is a separate audience and host surface, even though local
+development can share the Next.js application and Rails session:
+
+```text
+portal shell
+ ├── branded organization header and account menu
+ ├── Dashboard
+ ├── Listings
+ ├── Orders
+ ├── Messages
+ └── Account
 ```
 
-Replace writes a new row and flips `current`; it never destroys the old one.
+The customer cannot see CRM boards, staff administration, workflow
+configuration, internal columns, staff-only processing states, billing
+administration, or another customer account.
 
-### Portal frontend architecture
+The canonical listing media route is:
 
-The staff app is one client-rendered SPA — `page.tsx` is 1,701 lines and
-`globals.css` 5,154, shared by staff and client alike. The portal is a different
-product for a different audience with a hard accessibility floor.
+```text
+/?view=listing-media&listing=7
+```
 
-- Own route group `app/(portal)/` with its own layout and stylesheet.
-- Accessibility floor as tokens: 17px body minimum, 44px targets, AA contrast in
-  both themes, no hover-only or icon-only primary actions.
-- One `ListingCard` used at three densities by dashboard, listings index, and
-  Recently Delivered.
-- One `ServiceStatus` owning the closed status vocabulary and its colour logic. A
-  status string rendered anywhere else is a bug.
+The page calls:
 
-## Tasks
+```http
+GET /api/v1/portal/listings/7/media
+```
 
-Vertical slices — schema, API and interface for a single capability. Sizes are
-rough working days for one engineer. The synced board copy is intentionally
-human-first: each issue starts with the user problem and expected behaviour,
-then records the technical proposal, source brief (when applicable), and done
-conditions. The plan is documentation only; board issues do not store a
-database reference back to this file.
+The layout is property-first:
 
-### Phase A — Authorization and boards
+```text
+listing media page
+ ├── property hero, address, customer-facing status
+ ├── delivery summary and Download / Download All
+ ├── compact collapsible deliverable cards
+ ├── listing/service conversation context
+ └── activity and change-request history
+```
 
-- [x] **T1 · Protect every CRM action with server-side authorization** — 4d — *no deps*
-  - `verify_authorized` / `verify_policy_scoped` as `after_action` in `Api::V1::BaseController`,
-    explicit skips on webhook, sign-up and public site endpoints.
-  - CI request spec walking every route, asserting each action authorizes or skips.
-  - `ApplicationPolicy` question set + `#capabilities`; `show?`/`index?` alias `view?`.
-  - Convert `dashboard#show` and `client_portal#show` off hand-rolled role guards.
-  - Per-record `capabilities` in serializers; session capability map on `/auth/me`;
-    403 bodies carrying resource, action and message.
-  - Frontend `useCapabilities()` / `<Can>`; remove every `role === …` check from
-    `page.tsx`, `shell.tsx`, `listing-workspace.tsx`; handle 403 by showing the API
-    message and refreshing `/auth/me`.
-- [x] **T2 · Create separate boards with clear team access** — 7d — *T1*
-  - Schema, backfill, `BoardPolicy` + scope, board-scoped endpoints and
-    back-compat routes: done.
-  - Switcher, create/edit modal, member manager and groups panel: done.
-  - `WorkflowTasks::Mover` repositions within a board; `customer_visible` gated on
-    the board's `client_visible`.
-- [x] **T3 · Make issue details useful for planning and discussion** — 3d — *T2*
-  - Task descriptions and comments remain editable, board-authorized, and capable of
-    carrying sanitized rich media references; labels are shared board configuration,
-    comments allow one reply level, and board attachments are tracked separately in B1.
+Cards begin collapsed and remember expansion for the current page session.
+Empty cards say “Media will appear when ready.” They do not reserve large
+blank regions. A card includes service title, readable description, status,
+target/delivered date, asset count, downloads, and Request Changes only when
+the work is delivered.
 
-### Phase B — Put the plan on the board
+Customer media presentation is type-specific:
 
-- [x] **T4 · Keep the Engineering board plan understandable** — 1d — *T3*
-  - Seeded the agreed plan items as ordinary board issues with human-readable
-    titles, descriptions, and board-owned labels. The Markdown plan and PDF
-    briefs remain planning references, not runtime task metadata.
+- photography: thumbnails, full preview, multi-select, download selected/all;
+- video: poster, duration, watch, download;
+- floor plan: preview, download, and an interactive viewer when available;
+- files: filename, type, size, and download.
 
-### Board platform follow-up
+There is no customer Add button. A new customer file is sent as a private
+conversation attachment.
 
-- [x] **B1 · Add rich issue content and attachments** — 5d — *T3* — **delivered in the current board release**
-  - Allow issue descriptions and comments to contain safe rich text plus attached images,
-    video, and supporting files. Store attachment metadata and board/organization ownership
-    in the API, upload bytes to a dedicated board-media S3 bucket behind the existing CDN,
-    and return authorized preview/download URLs rather than raw bucket paths.
-  - Enforce board access for every attachment read, upload, replacement, and deletion;
-    validate content type, size, and filename, and prevent cross-organization references.
-    Add request specs for unauthorized access and a UI composer that supports previews,
-    progress, retry, remove, and video poster/duration metadata where available.
+### Change requests
 
-### Phase C — Research
+Request Changes opens a card-level drawer or mobile full-screen composer with
+the listing, service, selected existing assets, rich-text message, attachment
+control, and Submit request. The request is stored as a normal account-wide
+conversation message with structured context:
 
-- [ ] **T5 · Define how each property service moves from order to delivery** — 3d timeboxed — *no deps* — **blocks Phase G**
+```text
+messages
+  listing_id                 nullable
+  order_deliverable_id       nullable
+  message_kind               message | change_request
 
-### Phase D — Portal data
+message_media_references
+  message_id
+  media_asset_id
+  position
+```
 
-- [x] **T6 · Give clients a property-first listings API** — 5d — *T1*
-  - `property_status`, `property_type`, `price_cents`, `bedrooms`, `bathrooms`,
-    `square_feet`, `lot_acres`, `parking`, `year_built`, `mls_number`, and
-    `mls_live_date`, with client values such as Coming Soon, For Sale, For Lease,
-    Pending Sale, Pending Lease, For Rent, Sold, and List Off Market.
-  - Closed client lifecycle enum + presenter boundary, derived from appointments
-    and `delivered_at` for now.
-  - `GET /portal/dashboard`, listing index/detail, `POST /portal/listings`, and retirement
-    of `client_portal#show`; new listings begin as draft/booking requests and remain
-    property-first rather than order-first.
-  - Implemented: the portal now exposes scoped dashboard, listing index/detail, and
-    client-created draft listings; marketing property status is separate from the
-    closed client lifecycle presenter, so internal workflow status never crosses the
-    portal boundary.
-- [ ] **T7 · Show clients what they owe and what benefits they have** — 3d — *T1*
-  - Dashboard-visible amount due across unpaid invoices/outstanding orders, credit or bonus
-    balance, active/permanent discounts, brokerage or referral code, and expiry when relevant.
+Selected delivered assets are referenced by ID. New files use the chat
+attachment flow. The server validates listing access, deliverable ownership,
+delivered state, asset ownership/readiness/visibility, and customer access.
+On success the customer sees “Your request was sent” and the service moves to
+in progress. The request appears in the same staff/customer conversation; no
+separate `revision_requests` table is needed.
 
-### Phase E — Portal interface
+## Catalog interface
 
-- [ ] **T8 · Build a clear, property-first client home page** — 8d — *T6, T7*
-  - Property-first HOME/LISTINGS/CREATE/PROMOTE/ACCOUNT navigation, welcome/CTA, quick
-    actions, active listing cards with hero image, search/filter, upcoming shoots, and
-    recently delivered work. Keep property marketing status separate from production status.
-  - Show the account summary without a deep settings click: amount due, credit/bonus,
-    discount/benefit, and brokerage order code. Use readable client statuses, generous
-    spacing, large targets, high contrast, mobile card layouts, and no hidden primary actions.
-  - Includes the AI assistant entry point (button + context payload only); no AI answer
-    backend is in scope.
-- [ ] **T9 · Give each property one workspace for all its work** — 4d — *T8*
-  - Make each property the durable workspace entry point for Overview, Media, Revisions,
-    Property & MLS Details, Property Website, Marketing, Orders/Services, Payments, and
-    Activity navigation. Do not make clients choose an internal order number.
+The catalog distinguishes a reusable service from its variants and package
+components.
 
-### Phase F — Brand and team
+Service editor:
 
-- [ ] **T10 · Let clients manage their brand and social profiles once** — 6d — *T8*
-  - Centralize logos, headshots, brokerage/team assets, social links, and public contact
-    data so future property websites, marketing materials, promotion, social content, and
-    feature sheets reuse the current profile. Show previews, completeness/attention state,
-    replace actions, and preserve older assets for historical materials.
-- [ ] **T11 · Let clients manage who can access their account** — 3d — *T1, T8*
-  - Support invite/list/revoke and simple scopes for full account, listing-only, media,
-    billing, and marketing access; prevent revoked or cross-account members from reading
-    listings, media, or actions.
+```text
+title, description, deliverable type, SLA
+pricing variants table:
+  variant name | from sqft | to sqft | price | active
+```
 
-### Phase G — Media and revisions
+Package editor:
 
-- [ ] **T12 · Show every ordered service with status and downloads** — 7d — *T5, T9*
-  - Keep every ordered service visible in a property workspace: Photography, Video, Vertical
-    Reel, Drone, Floor Plan, Matterport/3D Tour, Property Website assets, Files, and future
-    service types. Show service-specific status, ETA/delivery time, asset count, View/Watch,
-    Download, and Request Changes without exposing queued/rendering/pipeline terminology.
-- [ ] **T13 · Let clients request and track changes by service** — 8d — *T12*
-  - One open contextual thread per Listing + Service, with selected-photo references,
-    video timestamps, floor/room/page locators, attachments, messages, ETA, status, and
-    version history. Reuse the thread for follow-up messages, prevent duplicate open
-    requests, and expose the thread status on its service card. Support a client side panel
-    or mobile full-screen composer, staff ownership/queue, and client-safe download/review
-    transitions.
+```text
+package title and description
+package pricing variants table
+included service products
+drag-and-drop component order
+quantity
+```
 
-### Source brief coverage check
+Inline validation says “This range overlaps another active range.” The editor
+never creates a product per square-foot tier.
 
-Every requirement from the three source briefs is assigned to at least one board issue;
-the PDFs are the product source, while the task descriptions translate them into
-implementation boundaries.
+## Chat interface
 
-| Brief area | Board issues |
-| --- | --- |
-| Client dashboard shell, navigation, quick actions, listing cards, search, mobile/accessibility, and AI entry point | T8 |
-| Property facts, client-safe property/production status, listing creation, and account financial summary | T6, T7, T8 |
-| Property-first listings index and durable listing workspace navigation | T9 |
-| Team invitations, membership visibility, and permission scopes | T11 |
-| Central branding, social profiles, reusable assets, previews, replacement, and version history | T10 |
-| Service-level media tracker, delivery states, ETAs, downloads, and request changes | T5, T12 |
-| Contextual revision threads, selected assets, timestamps/locators, attachments, versions, staff queue, and lifecycle | B1, T13 |
+Team chats are always available to staff. Customer chat navigation appears only
+when the user is a member of at least one customer conversation. Customer
+conversations are account-wide and carry listing/service context when a
+message concerns a property.
 
-No brief requirement is intentionally left without an owner; if a requirement changes,
-update the owning issue and this matrix together.
+The chat editor and issue comment editor share rich-text behavior:
 
-**Roughly 62 engineering days for the remaining portal slices.** Critical path T1 → T2 → T6 → T8 → T12 → T13. T1 has the widest
-blast radius; T5 carries the most uncertainty, so start the spike early even though
-nothing in Phases D–F waits on it.
+- attachments with previews, progress, retry, and API-relative media paths;
+- safe HTML sanitization and plain-text fallback;
+- dismissible upload errors that clear on navigation or a successful action;
+- Escape closes dialogs, drawers, menus, and popups;
+- the first available conversation is selected on the Messages page;
+- unread conversations sort before read conversations, by latest unread message;
+- read-only messages have no separate attachment delete action;
+- attachment deletion is available only while editing its message.
 
-## Open decisions
+Chat attachment deletion removes the attachment with its owning message. It is
+not exposed as a standalone destructive action in the normal message view.
 
-**Does the portal stay in the staff Next.js app?** Recommended: same repo, own
-route group with its own layout and stylesheet (T8). Same deploy, same auth
-session, no shared CSS blast radius.
+## APIs and authorization
 
-**Do clients create listings directly, or request them?** Recommended: a
-client-created listing enters as `draft` with a booking request, staff confirm into
-`booked`. The client sees "Coming Soon".
+Important endpoints:
 
-**Are ETAs entered or computed?** Recommended, as an input to T5: staff-entered per
-service, with a per-service-type default turnaround seeded from the catalog. Render
-nothing when unknown.
+```http
+# Catalog
+GET/PATCH /api/v1/products/:id
+GET/POST/PATCH/DELETE /api/v1/products/:product_id/components/:id
 
-**Is the internal board visible to organization admins?** Recommended: yes. An
-admin who cannot audit a board in their own tenant is a support problem, not a
-privacy feature. If a genuinely private board is needed, add `visibility: private`
-explicitly rather than weakening the admin rule.
+# Orders and production
+POST /api/v1/orders/:id/approve
+GET  /api/v1/orders/:id/deliverables
+GET  /api/v1/order_deliverables/:id
+PATCH /api/v1/order_deliverables/:id
 
-## Out of scope
+# Portal
+GET  /api/v1/portal/listings/:listing_id/media
+POST /api/v1/portal/listings/:listing_id/deliverables/:deliverable_id/change_requests
 
-- Context-aware AI answering. T8 ships the entry point and context payload only.
-- The Promote section. Nav slot and route stub only.
-- Property website editor. Rendering the branded site is the marketing site's job.
-- Matterport / 3D tour embedding. Carried into T5 as a service type; the viewer
-  integration is not scoped here.
+# Board workflows
+GET/POST/PATCH/DELETE /api/v1/boards/:board_id/workflows
+GET /api/v1/boards/:board_id/workflow_runs
+POST /api/v1/boards/:board_id/workflow_runs/:id/retry
+
+# Media
+POST /api/v1/media_assets/upload
+POST /api/v1/media_assets/link
+POST /api/v1/media_assets/reorder
+GET  /api/v1/media_assets/:id/preview
+GET  /api/v1/media_assets/:id/download
+
+# Conversations
+GET/POST /api/v1/conversations
+GET/PATCH/DELETE /api/v1/conversations/:id
+POST /api/v1/conversations/:id/messages
+POST /api/v1/conversations/:conversation_id/messages/:message_id/attachments
+```
+
+Authorization is enforced by `Api::V1::BaseController` and Pundit. Every
+controller action either authorizes its record or declares a documented
+public/webhook exception. Policies answer `view?`, `create?`, `update?`,
+`destroy?`, and `manage?`; `manage?` means changing how a resource works for
+others, such as configuring workflows or granting board access.
+
+Required negative cases include:
+
+- a customer cannot read another customer's listing, deliverable, or media;
+- a customer cannot reference another deliverable's media;
+- a customer cannot request changes from non-delivered work;
+- private preview/download routes cannot be used across organizations;
+- a specialist cannot read customer billing or an ungranted customer chat;
+- board members cannot move tasks on boards they cannot access;
+- product components cannot cross organizations or nest packages;
+- workflows cannot target another organization's board, user, or group;
+- private media streaming authorizes the parent record before bytes are read.
+
+Capabilities are serialized for rendering hints. The server remains the
+authorization boundary even if a browser hides or shows the wrong control.
+
+## Migration rules
+
+- Keep relational product variant rows and existing order snapshots.
+- Add product deliverable fields, product components, and order deliverables.
+- Add workflow definitions, conditions, actions, mappings, runs, and steps.
+- Add task placements and deliverable links; migrate existing tasks to home
+  placements before removing redundant direct board/status storage.
+- Merge existing listing-specific customer conversations into account-wide
+  conversations while preserving message listing context and attachment keys.
+- Preserve existing media storage keys and storage boundaries.
+- Do not backfill old approved orders into new deliverables unless explicitly
+  requested; new approvals use the materializer.
+- Do not create `listing_services`, `revision_requests`, or JSON pricing arrays.
+- Do not store a plan Markdown path or task-plan reference in runtime data.
+- Any cleanup of legacy columns happens only after every API and UI path uses
+  the replacement relationship and a migration spec covers existing rows.
+
+## Verification plan
+
+The backend has unit/service/job coverage and request-level API scenarios. The
+critical test matrix includes:
+
+### Unit and service tests
+
+- product component organization, package, nesting, quantity, and ordering rules;
+- deliverable scopes, statuses, customer-visible asset filtering, and lineage;
+- workflow condition matching and status mapping validation;
+- approval materialization for standalone services and package components;
+- business-day target dates and idempotent materialization;
+- workflow runner parent/child creation, grouping, placement, assignment,
+  warnings, retries, and idempotency;
+- task mover status, completion time, shared placement synchronization, and
+  linked deliverable status;
+- workflow trigger and job execution boundaries.
+
+### Request and scenario tests
+
+- catalog component CRUD and cross-organization denial;
+- order approval to deliverables to workflow tasks to portal media;
+- package billing once while creating multiple production deliverables;
+- shared tasks moving across multiple boards;
+- workflow definition/run-history manager-only access and failed-run retry;
+- portal listing/deliverable/media access-control negatives;
+- API-relative preview/download serialization with no storage keys;
+- chat account-thread creation, unread ordering, message context, and private
+  attachment upload/preview failures;
+- selected media reference validation and change-request transition;
+- board attachment access, content-type validation, and storage boundaries;
+- migration preservation of existing task/conversation rows.
+
+### Local commands
+
+The test suite uses PostgreSQL on `localhost:5432`. In a sandboxed Codex
+session, grant local-service/elevated access before the first invocation:
+
+```bash
+env -u DATABASE_URL TEST_DATABASE_URL=postgresql://localhost/project_red_crm_test \
+  RAILS_ENV=test bundle exec rspec
+```
+
+Targeted examples are appropriate while diagnosing one failure. The full suite
+is run once when the feature is complete and before a push. Always report the
+exact example and failure counts. Run RuboCop with cache disabled when the
+environment cannot write its default cache:
+
+```bash
+bundle exec rubocop --cache false
+```
+
+The UI must pass:
+
+```bash
+pnpm exec tsc --noEmit
+pnpm run build
+```
+
+After code and specs pass, perform browser smoke checks for staff board/workflow
+navigation, catalog package editing, staff listing media, portal listing media,
+customer change requests, chat attachment display, and Escape/error behavior.
+
+## Completion criteria
+
+The implementation is complete when:
+
+- a service can be sold alone or included in a package;
+- the package is billed once and approval creates durable deliverables;
+- deliverables create linked, retry-safe workflow tasks;
+- a task can appear on multiple authorized boards and move them together;
+- task movement updates internal and customer-facing delivery state;
+- staff can upload, reorder, version, preview, and download media in the CRM;
+- customers can view/download only authorized ready media;
+- customers can request changes from delivered work with selected asset context;
+- requests appear in the account-wide chat without copying existing assets;
+- workflow runs and failed retries are visible to managers;
+- staff and customer UIs use the supplied hierarchy and audience boundaries;
+- chat and issue editors share attachment, URL, error, and keyboard behavior;
+- the full backend suite, UI checks, and browser smoke checks have passed.

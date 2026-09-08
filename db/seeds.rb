@@ -237,6 +237,24 @@ else
         ]
       },
       {
+        slug: "standard-property-photography", title: "Standard Property Photography", kind: :service,
+        description: "A complete set of bright, consistent interior and exterior property photos.",
+        capabilities: %w[photo.standard], deliverable_type: "photography", sla_days: 2,
+        variants: [
+          { external_id: "photography-under-2000", title: "Up to 2,000 sq ft", price_cents: 29_900, duration_minutes: 90, sqft_min: 0, sqft_max: 2000 },
+          { external_id: "photography-2001-3500", title: "2,001–3,500 sq ft", price_cents: 39_900, duration_minutes: 120, sqft_min: 2001, sqft_max: 3500 }
+        ]
+      },
+      {
+        slug: "cinematic-property-video", title: "Cinematic Property Video", kind: :service,
+        description: "A polished walkthrough video for the property's marketing campaign.",
+        capabilities: %w[video.premium], deliverable_type: "video", sla_days: 3,
+        variants: [
+          { external_id: "video-under-2000", title: "Up to 2,000 sq ft", price_cents: 39_900, duration_minutes: 120, sqft_min: 0, sqft_max: 2000 },
+          { external_id: "video-2001-3500", title: "2,001–3,500 sq ft", price_cents: 49_900, duration_minutes: 150, sqft_min: 2001, sqft_max: 3500 }
+        ]
+      },
+      {
         slug: "floor-plan-measurements", title: "Floor Plan and Measurements", kind: :service,
         description: "Measured floor plan with room labels and dimensions.", capabilities: %w[floorplan.standard],
         variants: [ { external_id: "floorplan-standard", title: "Standard floor plan", price_cents: 12_500, duration_minutes: 45 } ]
@@ -253,20 +271,44 @@ else
       }
     ]
 
+    products = {}
     variants = {}
     product_definitions.each do |definition|
       product = ensure_record.call(organization.products, slug: definition.fetch(:slug)) do |record|
         record.assign_attributes(
           title: definition.fetch(:title), kind: definition.fetch(:kind),
           description: definition.fetch(:description), capabilities: definition.fetch(:capabilities),
-          active: true, bundle_candidate: definition.fetch(:kind) == :package
+          active: true, bundle_candidate: definition.fetch(:kind) == :package,
+          deliverable_type: definition[:deliverable_type], sla_days: definition[:sla_days]
         )
       end
+      products[definition.fetch(:slug)] = product
 
       definition.fetch(:variants).each do |variant_definition|
         variant_key = variant_definition.fetch(:external_id)
         variants[variant_key] = ensure_record.call(product.product_variants, external_id: variant_key) do |record|
           record.assign_attributes(variant_definition)
+        end
+      end
+    end
+
+    # Keep the demo catalog useful on a fresh install and on an additive seed
+    # rerun. Package contents are relational records, so the package editor and
+    # approval workflow exercise the same component model as real catalog data.
+    [
+      {
+        package: "premium-photo-video-package",
+        services: [ "standard-property-photography", "cinematic-property-video", "property-website" ]
+      },
+      {
+        package: "standard-photo-package",
+        services: [ "standard-property-photography" ]
+      }
+    ].each do |definition|
+      definition.fetch(:services).each_with_index do |service_slug, position|
+        ensure_record.call(organization.product_components, package_product: products.fetch(definition.fetch(:package)),
+                           service_product: products.fetch(service_slug)) do |record|
+          record.assign_attributes(quantity: 1, position:)
         end
       end
     end
@@ -494,9 +536,9 @@ else
     conversation_definitions.each do |definition|
       conversation = ensure_record.call(
         organization.conversations,
-        listing: definition.fetch(:listing), client_account: definition.fetch(:client_account), kind: :client
+        client_account: definition.fetch(:client_account), kind: :client
       ) do |record|
-        record.assign_attributes(subject: definition.fetch(:subject), last_message_at: now)
+        record.assign_attributes(listing: nil, subject: definition.fetch(:subject), last_message_at: now)
       end
 
       definition.fetch(:users).each do |user, role|
@@ -530,5 +572,5 @@ else
   puts "Producer: producer@projectred.local"
   puts "Editor: editor@projectred.local"
   puts "Customer: client@projectred.local"
-  puts "Workspace: 1 organization, 2 boards, 5 listings, 9 tasks, 5 products"
+  puts "Workspace: 1 organization, 2 boards, 5 listings, 9 tasks, 7 products"
 end

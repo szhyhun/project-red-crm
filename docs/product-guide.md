@@ -99,12 +99,12 @@ already paid, is not payable yet, or has not been issued by the agency.
 3. Continue the same thread for follow-up questions and confirmation. Do not
    create a new general chat for every change request.
 
-Staff see the reply in the listing workspace and in **Messages**. They can
-turn the request into a production task, assign it to the right person, and
-keep the customer updated in the same listing conversation. The current portal
-does not yet have a separate **Request changes** button; the listing
-conversation is the supported workflow today. A dedicated shortcut can be
-added later without changing the conversation model.
+Staff see the request in the listing workspace and in **Messages**. They can
+assign it to the right person, update the linked deliverable, and keep the
+customer updated in the same account conversation. On a delivered service,
+the portal also provides **Request changes** on that service's media card; the
+request keeps the selected files linked by ID instead of copying them into the
+chat.
 
 After delivery, the customer can also submit the separate **Feedback** form.
 Feedback rates delivery, service, and final media; it is not a replacement for
@@ -229,9 +229,10 @@ People see a conversation only when they are allowed to participate in it.
 Messages support rich text and file attachments. A message can be edited or
 deleted, and a top-level message can have replies one level deep.
 
-Customer conversations are always tied to the relevant listing when the
-discussion is about a job. This keeps payment, appointment, production, and
-change-request conversations in the same customer context. Organization-wide
+Customer conversations belong to the customer account. A message can carry
+the relevant listing and delivered service as context, which keeps payment,
+appointment, production, and change-request discussions in the right property
+workspace without creating a separate chat for every service. Organization-wide
 team chats are for internal work that does not belong to one listing.
 
 Chat history has a retention policy on each conversation. The default is two
