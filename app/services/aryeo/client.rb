@@ -52,8 +52,8 @@ module Aryeo
         break if stop_requested
 
         pagination = payload["pagination"] || payload["meta"] || {}
-        total_pages = pagination["total_pages"] || pagination["pages"]
-        next_page = pagination["next_page"] || payload.dig("links", "next")
+        total_pages = pagination["total_pages"] || pagination["pages"] || pagination["last_page"]
+        next_page = pagination["next_page"] || pagination["next"] || payload.dig("links", "next")
         break if records.empty? || (total_pages && page >= total_pages.to_i)
 
         if next_page.to_s.match?(%r{\A(?:https?://|/)})

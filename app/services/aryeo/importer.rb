@@ -15,6 +15,14 @@ module Aryeo
     }.freeze
     RESOURCE_KEYS = ENDPOINTS.keys.map(&:to_s).freeze
     DATE_FILTERED_RESOURCES = %i[listings orders appointments].freeze
+    ORDER_INCLUDE = %w[
+      items
+      listing
+      customer
+      appointments
+      appointments.users
+      unconfirmed_appointments
+    ].join(",").freeze
     LISTING_INCLUDE = %w[
       list_agent
       co_list_agent
@@ -46,6 +54,7 @@ module Aryeo
       @dependency_counts = Hash.new(0)
       @dependency_conflict_counts = Hash.new(0)
       @deferred_skipped_resources = []
+      @pending_package_components = []
       @coverage = {}
       @errors = []
     end
@@ -61,8 +70,10 @@ module Aryeo
         end
 
         import_collection(name, endpoint, limit: name == :listings ? @listing_limit : nil)
+        sync_pending_package_components! if name == :products
       end
 
+      sync_pending_package_components!
       finish!
     rescue StandardError => error
       @run.update!(status: :failed, phase: "failed", completed_at: Time.current,
@@ -161,7 +172,7 @@ module Aryeo
 
       password = SecureRandom.urlsafe_base64(32)
       @organization.users.create!(
-        name: value(payload, "name", "full_name", "display_name").presence || email.split("@").first,
+        name: person_name(payload).presence || email.split("@").first,
         email: email,
         role: :production_staff,
         status: :suspended,
@@ -178,7 +189,7 @@ module Aryeo
       client = record_for("clients", external)&.record || @organization.client_accounts.find_by("metadata ->> 'aryeo_id' = ?", external)
       client ||= @organization.client_accounts.build(metadata: { "aryeo_id" => external })
       client.assign_attributes(
-        name: value(payload, "name", "full_name", "company_name").presence || "Aryeo client #{external}",
+        name: person_name(payload, "company_name").presence || "Aryeo client #{external}",
         email: value(payload, "email", "email_address"),
         phone: value(payload, "phone", "phone_number"),
         brokerage_name: value(payload, "brokerage_name", "company"),
@@ -210,8 +221,12 @@ module Aryeo
       )
       team.save!
 
-      customer_ids(payload).each do |customer_id|
+      customer_payloads(payload).each do |customer_payload|
+        customer_id = external_id(customer_payload)
         account = record_for("clients", customer_id)&.record
+        if customer_id.present? && account.blank? && customer_payload_has_profile?(customer_payload)
+          account = import_resource(:clients, customer_payload, dependency: true)
+        end
         team.customer_team_memberships.find_or_create_by!(client_account: account) if account
       end
       team
@@ -236,6 +251,8 @@ module Aryeo
         title: value(payload, "title", "name").presence || "Aryeo product #{external}",
         description: value(payload, "description"),
         kind: product_kind(payload),
+        deliverable_type: product_deliverable_type(payload),
+        sla_days: integer_value(payload, "sla_days", "turnaround_days", "delivery_days") || 0,
         active: active?(payload),
         categories: Array(payload["categories"] || payload["category_names"] || payload.dig("category", "name")).compact,
         source_payload: PayloadSanitizer.call(payload),
@@ -249,6 +266,7 @@ module Aryeo
       Array(payload["variants"] || payload["product_variants"] || payload["prices"]).each do |variant_payload|
         import_variant(product, stringify(variant_payload))
       end
+      queue_package_components(product, payload)
       product
     end
 
@@ -260,15 +278,92 @@ module Aryeo
       sqft_min, sqft_max = sqft_range(payload)
       variant.assign_attributes(
         title: value(payload, "title", "name").presence || product.title,
-        price_cents: cents(payload),
-        duration_minutes: value(payload, "duration_minutes", "duration").presence,
+        price_cents: cents(payload, "price_cents", "price_amount", "unit_price_amount", "base_price_amount", "price", "amount"),
+        duration_minutes: integer_value(payload, "duration_minutes", "duration"),
         sqft_min: sqft_min,
         sqft_max: sqft_max,
-        quantity_label: value(payload, "quantity_label", "quantity", "label"),
+        quantity_label: value(payload, "quantity_label", "quantity_label_text", "label", "subtitle", "sub_title"),
         active: active?(payload),
         source_payload: PayloadSanitizer.call(payload)
       )
       variant.save!
+    end
+
+    def queue_package_components(product, payload)
+      return unless product.package?
+
+      component_keys = %w[components product_components package_components included_products included_services]
+      return unless component_keys.any? { |key| payload.key?(key) }
+
+      component_payloads = component_keys.flat_map { |key| raw_records(payload, key) }.uniq
+      @pending_package_components << [ product, component_payloads ]
+    end
+
+    def sync_pending_package_components!
+      @pending_package_components.each do |package_product, component_payloads|
+        resolved_components = component_payloads.each_with_index.filter_map do |component_payload, position|
+          service_product = resolve_package_component(component_payload)
+          if service_product.blank?
+            @errors << "products #{package_product.external_id}: could not resolve package component #{component_payload.inspect}"
+            next
+          end
+          if service_product.package?
+            @errors << "products #{package_product.external_id}: package components cannot contain package #{service_product.external_id}"
+            next
+          end
+
+          [ service_product, component_quantity(component_payload), position ]
+        end
+        next unless resolved_components.length == component_payloads.length
+
+        ProductComponent.transaction do
+          package_product.package_components.delete_all
+          resolved_components.each do |service_product, quantity, position|
+            package_product.package_components.create!(organization: @organization, service_product:, quantity:, position:)
+          end
+        end
+      rescue ActiveRecord::RecordInvalid => error
+        @errors << "products #{package_product.external_id}: package components were not saved: #{error.message}"
+      end
+    ensure
+      @pending_package_components.clear
+    end
+
+    def resolve_package_component(payload)
+      payload = payload.is_a?(Hash) ? stringify(payload) : { "product_id" => payload }
+      product_payload = package_component_product_payload(payload)
+      return if product_payload.blank?
+
+      external = external_id(product_payload)
+      return if external.blank?
+
+      product = record_for("products", external)&.record || @organization.products.find_by(external_source: "aryeo", external_id: external)
+      return product if product.present?
+      return if product_payload.keys == [ "id" ]
+
+      import_resource(:products, product_payload, dependency: true)
+    end
+
+    def package_component_product_payload(payload)
+      nested = %w[product service_product included_product service].filter_map do |key|
+        value = payload[key]
+        stringify(value) if value.is_a?(Hash)
+      end.find { |candidate| external_id(candidate).present? }
+      return nested if nested.present?
+
+      variant = stringify(payload["product_variant"] || payload["variant"] || {})
+      nested_variant_product = stringify(variant["product"] || variant["service_product"] || {})
+      return nested_variant_product if external_id(nested_variant_product).present?
+
+      external = value(payload, "service_product_id", "product_id", "included_product_id", "service_id")
+      return { "id" => external.to_s } if external.present?
+
+      payload if external_id(payload).present? && value(payload, "title", "name").present?
+    end
+
+    def component_quantity(payload)
+      quantity = integer_value(stringify(payload), "quantity", "count")
+      quantity&.positive? ? quantity : 1
     end
 
     def import_listing(payload)
@@ -314,7 +409,7 @@ module Aryeo
     def import_listing_clients(payload)
       listing_client_payloads(payload).filter_map do |client_payload|
         client = client_for_payload(client_payload)
-        if client.blank? && external_id(client_payload).present? && !@resources.include?(:clients)
+        if client.blank? && external_id(client_payload).present?
           client = import_resource(:clients, client_payload, dependency: true)
         end
         import_related_customer_team(client_payload, client)
@@ -347,12 +442,8 @@ module Aryeo
       return if team_payload.blank? || external_id(team_payload).blank?
 
       team_payload = team_payload.merge("customer_ids" => (customer_ids(team_payload) + [ external_id(client_payload) ]).compact.uniq)
-      team =
-        if @resources.include?(:customer_teams)
-          record_for("customer_teams", external_id(team_payload))&.record
-        else
-          import_resource(:customer_teams, team_payload, dependency: true)
-        end
+      team = record_for("customer_teams", external_id(team_payload))&.record
+      team ||= import_resource(:customer_teams, team_payload, dependency: true)
       team&.customer_team_memberships&.find_or_create_by!(client_account: client)
     end
 
@@ -361,21 +452,24 @@ module Aryeo
       return if external.blank?
 
       listing = listing_for(payload)
-      client = client_for(payload) || listing&.client_account || imported_client
+      listing ||= import_resource(:listings, stringify(payload["listing"]), dependency: true) if listing.blank? && payload["listing"].is_a?(Hash)
+      client = client_for(payload)
+      client ||= import_order_client(payload)
+      client ||= listing&.client_account || imported_client
       order = record_for("orders", external)&.record || @organization.orders.find_by("metadata ->> 'aryeo_id' = ?", external)
       order ||= @organization.orders.build(client_account: client, listing: listing, metadata: { "aryeo_id" => external })
       order.assign_attributes(
         client_account: client, listing: listing, source: "aryeo", origin: :aryeo,
         status: order_status(payload), payment_mode: :pay_later, currency: currency(payload),
-        subtotal_cents: cents(payload, "subtotal_cents", "subtotal", "sub_total"),
-        tax_cents: cents(payload, "tax_cents", "tax"), fee_cents: cents(payload, "fee_cents", "fees"),
-        total_cents: cents(payload, "total_cents", "total", "amount"),
+        subtotal_cents: cents(payload, "subtotal_cents", "subtotal_amount", "subtotal", "sub_total"),
+        tax_cents: cents(payload, "tax_cents", "tax_amount", "tax"), fee_cents: cents(payload, "fee_cents", "fee_amount", "fees"),
+        total_cents: cents(payload, "total_cents", "total_amount", "total", "amount"),
         fulfillment_status: fulfillment_status(payload),
         tags: Array(payload["tags"]).filter_map { |tag| tag.is_a?(Hash) ? tag["name"] : tag },
         metadata: order.metadata.merge("aryeo_id" => external, "aryeo_status" => value(payload, "status"))
       )
       order.save!
-      Array(payload["items"] || payload["order_items"]).each { |item| import_order_item(order, stringify(item)) }
+      records(payload, "items", "order_items", "product_items").each { |item| import_order_item(order, item) }
       import_payment_metadata(order, payload)
       import_order_appointments(order, payload) unless @resources.include?(:appointments)
       order
@@ -393,15 +487,70 @@ module Aryeo
 
     def import_order_item(order, payload)
       external = external_id(payload)
-      title = value(payload, "title", "name", "product_name").presence || "Aryeo order item"
       item = external.present? ? order.order_items.find_by("options ->> 'aryeo_id' = ?", external) : nil
       item ||= order.order_items.build(options: external.present? ? { "aryeo_id" => external } : {})
       quantity = integer_value(payload, "quantity") || 1
-      item.assign_attributes(title: title, description: value(payload, "description"), quantity: quantity,
-                             unit_price_cents: cents(payload, "unit_price_cents", "unit_price", "price"),
-                             total_cents: cents(payload, "total_cents", "total", "amount"),
-                             snapshot: PayloadSanitizer.call(payload))
+      product, variant = order_item_catalog_reference(payload)
+      sync_pending_package_components!
+      title = value(payload, "title", "name", "product_name").presence || product&.title || "Aryeo order item"
+      unit_price_cents = cents(payload, "unit_price_cents", "unit_price_amount", "unit_price", "price_amount", "price")
+      total_cents = cents(payload, "total_cents", "total_amount", "gross_total_amount", "total", "amount")
+      unit_price_cents = variant.price_cents if !money_value_present?(payload, "unit_price_cents", "unit_price_amount", "unit_price", "price_amount", "price") && variant.present?
+      total_cents = unit_price_cents * quantity if !money_value_present?(payload, "total_cents", "total_amount", "gross_total_amount", "total", "amount")
+      snapshot = PayloadSanitizer.call(payload)
+      snapshot = OrderItem.catalog_snapshot(variant, price_cents: unit_price_cents).merge("aryeo_order_item" => snapshot) if variant.present?
+      item.assign_attributes(title: title, description: value(payload, "description", "subtitle", "sub_title"), quantity: quantity,
+                             product:, product_variant: variant,
+                             unit_price_cents:, total_cents:, cancelled_at: imported_cancelled_at(payload), snapshot:)
       item.save!
+    end
+
+    def import_order_client(payload)
+      client_payload = listing_client_payloads(payload).first
+      return if client_payload.blank? || external_id(client_payload).blank?
+
+      import_resource(:clients, client_payload, dependency: true)
+    end
+
+    def order_item_catalog_reference(payload)
+      variant_payload = stringify(payload["product_variant"] || payload["variant"] || {})
+      product_payload = order_item_product_payload(payload, variant_payload)
+      product = resolve_order_item_product(product_payload)
+      variant_external = external_id(variant_payload).presence || value(payload, "product_variant_id", "variant_id")&.to_s
+      variant = product&.product_variants&.find_by(external_id: variant_external) if variant_external.present?
+      variant ||= @organization.product_variants.joins(:product)
+                                     .where(products: { organization_id: @organization.id })
+                                     .find_by(external_id: variant_external) if variant_external.present?
+      variant ||= product&.product_variants&.find_by(title: value(variant_payload, "title", "name")) if variant_payload.present?
+
+      [ product || variant&.product, variant ]
+    end
+
+    def order_item_product_payload(payload, variant_payload)
+      nested = %w[product service_product].filter_map do |key|
+        candidate = payload[key]
+        stringify(candidate) if candidate.is_a?(Hash)
+      end.find { |candidate| external_id(candidate).present? }
+      return nested if nested.present?
+
+      variant_product = stringify(variant_payload["product"] || variant_payload["service_product"] || {})
+      return variant_product if external_id(variant_product).present?
+
+      external = value(payload, "product_id", "service_product_id")
+      external.present? ? { "id" => external.to_s } : nil
+    end
+
+    def resolve_order_item_product(payload)
+      return if payload.blank?
+
+      external = external_id(payload)
+      return if external.blank?
+
+      product = record_for("products", external)&.record || @organization.products.find_by(external_source: "aryeo", external_id: external)
+      return product if product.present?
+      return if payload.keys == [ "id" ]
+
+      import_resource(:products, payload, dependency: true)
     end
 
     def import_payment_metadata(order, payload)
@@ -409,7 +558,7 @@ module Aryeo
       return if payment_payload.blank?
 
       invoice = @organization.invoices.find_or_initialize_by(number: "ARYEO-#{external_id(payload)}")
-      total = cents(payload, "total_cents", "total", "amount")
+      total = cents(payload, "total_cents", "total_amount", "total", "amount")
       invoice.assign_attributes(client_account: order.client_account, listing: order.listing, order: order, origin: :aryeo,
                                 status: payment_status(payment_payload), currency: currency(payload), subtotal_cents: total,
                                 total_cents: total, balance_due_cents: payment_paid?(payment_payload) ? 0 : total,
@@ -539,9 +688,15 @@ module Aryeo
     end
 
     def paginate_collection(name, endpoint, &block)
-      return @client.paginate(endpoint, &block) unless name == :listings
+      params =
+        case name
+        when :listings then { "include" => LISTING_INCLUDE }
+        when :orders then { "include" => ORDER_INCLUDE }
+        else {}
+        end
+      return @client.paginate(endpoint, &block) if params.empty?
 
-      @client.paginate(endpoint, params: { "include" => LISTING_INCLUDE }, &block)
+      @client.paginate(endpoint, params:, &block)
     end
 
     def date_filter_reason(name, payload)
@@ -649,11 +804,53 @@ module Aryeo
     end
 
     def product_kind(payload)
-      values = [ value(payload, "title", "name"), *Array(payload["categories"]), value(payload.dig("category") || {}, "name") ].compact.join(" ").downcase
+      source_kind = value(payload, "kind", "product_kind", "type").to_s.downcase
+      return "addon" if source_kind.match?(/add[ _-]?on/)
+      return "package" if source_kind.match?(/package|bundle/)
+      return "package" if boolean_value(payload, "is_package")
+      return "package" if %w[components product_components package_components included_products included_services].any? { |key| payload.key?(key) }
+
+      values = [ value(payload, "title", "name"), *text_values(payload["categories"]), *text_values(payload["category"]) ].compact.join(" ").downcase
       return "package" if values.match?(/package|budget friendly/)
       return "addon" if values.match?(/add[ -]?on/)
 
       "service"
+    end
+
+    def person_name(payload, *fallback_keys)
+      full_name = [ value(payload, "first_name"), value(payload, "last_name") ].compact.join(" ").presence
+      full_name || value(payload, "name", "full_name", "display_name", *fallback_keys)
+    end
+
+    def product_deliverable_type(payload)
+      explicit = value(payload, "deliverable_type", "service_type", "deliverable", "service_category")
+      candidate = normalize_deliverable_type(explicit)
+      return candidate if candidate.present?
+
+      searchable = [ value(payload, "title", "name", "description"), *text_values(payload["categories"]),
+                     *text_values(payload["category"]) ].compact.join(" ").downcase
+      return "photography" if searchable.match?(/photo|image|photograph/)
+      return "vertical_reel" if searchable.match?(/vertical|reel|short.?form/)
+      return "video" if searchable.match?(/video|cinema|film/)
+      return "drone" if searchable.match?(/drone|aerial/)
+      return "floor_plan" if searchable.match?(/floor.?plan|flooring/)
+      return "tour" if searchable.match?(/tour|matterport|3d/)
+      return "property_site" if searchable.match?(/property.?site|website/)
+      return "files" if searchable.match?(/file|document/)
+
+      "other"
+    end
+
+    def normalize_deliverable_type(value)
+      normalized = value.to_s.downcase.parameterize(separator: "_")
+      {
+        "photo" => "photography", "photos" => "photography", "photography" => "photography",
+        "image" => "photography", "images" => "photography",
+        "video" => "video", "videos" => "video", "vertical_reel" => "vertical_reel",
+        "drone" => "drone", "aerial" => "drone", "floor_plan" => "floor_plan",
+        "tour" => "tour", "property_site" => "property_site", "files" => "files",
+        "other" => "other"
+      }[normalized]
     end
 
     def client_kind(payload)
@@ -722,13 +919,20 @@ module Aryeo
       value(payload, "status").to_s.match?(/paid|succeed|complete/i)
     end
 
+    def imported_cancelled_at(payload)
+      return unless boolean_value(payload, "is_canceled", "is_cancelled", "cancelled", "canceled")
+
+      time_value(payload, "cancelled_at", "canceled_at") || Time.current
+    end
+
     def currency(payload)
       value(payload, "currency").presence&.downcase || "cad"
     end
 
     def active?(payload)
-      value = payload["active"]
-      value.nil? || value == true || value.to_s != "false"
+      return boolean_value(payload, "active") if payload.key?("active")
+
+      true
     end
 
     def boolean_value(payload, *keys)
@@ -739,18 +943,50 @@ module Aryeo
     end
 
     def customer_ids(payload)
-      values = payload["customer_ids"] || payload["client_ids"] || payload["customers"] || payload["clients"] || []
-      Array(values).filter_map do |item|
-        item.is_a?(Hash) ? external_id(stringify(item)) : item.to_s.presence
-      end
+      customer_payloads(payload).filter_map { |customer| external_id(customer) }
+    end
+
+    def customer_payload_has_profile?(payload)
+      person_name(payload).present? || value(payload, "email", "email_address", "phone", "phone_number").present?
     end
 
     def records(payload, *keys)
-      raw = keys.lazy.map { |key| payload[key.to_s] || payload[key.to_sym] }.find(&:present?)
-      return [] if raw.blank?
+      raw_records(payload, *keys).filter_map { |item| item.is_a?(Hash) ? stringify(item) : nil }
+    end
 
-      values = raw.is_a?(Array) ? raw : [ raw ]
-      values.filter_map { |item| item.is_a?(Hash) ? stringify(item) : nil }
+    def customer_payloads(payload)
+      raw_records(payload, "customers", "clients", "customer_ids", "client_ids").filter_map do |item|
+        item.is_a?(Hash) ? stringify(item) : { "id" => item.to_s }
+      end.reject { |customer| external_id(customer).blank? }
+    end
+
+    def raw_records(payload, *keys)
+      raw = keys.lazy.map do |key|
+        next payload[key.to_s] if payload.key?(key.to_s)
+        next payload[key.to_sym] if payload.key?(key.to_sym)
+      end.find { |value| !value.nil? }
+      return [] if raw.nil?
+
+      values = collection_values(raw)
+      values.is_a?(Array) ? values : [ values ]
+    end
+
+    def collection_values(value)
+      return value unless value.is_a?(Hash)
+
+      value["data"] || value["results"] || value["items"] || value
+    end
+
+    def text_values(value)
+      case value
+      when Hash then value.values.flat_map { |entry| text_values(entry) }
+      when Array then value.flat_map { |entry| text_values(entry) }
+      else [ value.to_s ]
+      end
+    end
+
+    def money_value_present?(payload, *keys)
+      keys.any? { |key| payload[key.to_s].present? || payload[key.to_sym].present? }
     end
 
     def content_type_for(category)
@@ -765,8 +1001,10 @@ module Aryeo
     def sqft_range(payload)
       min = integer_value(payload, "sqft_min", "square_feet_min", "minimum_square_feet")
       max = integer_value(payload, "sqft_max", "square_feet_max", "maximum_square_feet")
-      label = value(payload, "title", "name", "label", "quantity_label").to_s
-      match = label.match(/(\d[\d,]*)\s*(?:-|to)\s*(\d[\d,]*)\s*(?:sq\.?\s*ft|sqft)?/i)
+      label = value(payload, "title", "name", "label", "quantity_label", "subtitle", "sub_title").to_s
+      match = label.match(/(\d[\d,]*)\s*(?:-|–|—|to)\s*(\d[\d,]*)\s*(?:sq\.?\s*ft|sqft)?/i)
+      max ||= label.match(/(?:up\s*to|under)\s*(\d[\d,]*)/i)&.captures&.first&.delete(",")&.to_i
+      min ||= label.match(/(\d[\d,]*)\s*\+/)&.captures&.first&.delete(",")&.to_i
       [ min || match&.captures&.first&.delete(",")&.to_i, max || match&.captures&.second&.delete(",")&.to_i ]
     end
 
@@ -778,8 +1016,8 @@ module Aryeo
     # scale a value that actually carries a decimal fraction -- that shape comes
     # from a hand-written fixture or a CSV, never from the Aryeo API.
     def cents(payload, *keys)
-      keys = %w[price_cents price amount] if keys.empty?
-      value = keys.lazy.map { |key| payload[key] }.find(&:present?)
+      keys = %w[price_cents price_amount unit_price_amount base_price_amount price amount] if keys.empty?
+      value = keys.lazy.map { |key| payload[key.to_s] || payload[key.to_sym] }.find(&:present?)
       return 0 if value.blank?
 
       digits = value.to_s.gsub(/[^0-9.\-]/, "")
