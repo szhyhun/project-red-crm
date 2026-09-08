@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_07_042000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -141,6 +141,95 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.index ["member_type", "member_id"], name: "index_board_memberships_on_member_type_and_member_id"
   end
 
+  create_table "board_workflow_actions", force: :cascade do |t|
+    t.bigint "board_workflow_id", null: false
+    t.string "action_type", null: false
+    t.jsonb "configuration", default: {}, null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_workflow_id", "position"], name: "index_board_workflow_actions_on_board_workflow_id_and_position"
+    t.index ["board_workflow_id"], name: "index_board_workflow_actions_on_board_workflow_id"
+  end
+
+  create_table "board_workflow_conditions", force: :cascade do |t|
+    t.bigint "board_workflow_id", null: false
+    t.string "field", null: false
+    t.string "operator", null: false
+    t.jsonb "value", default: {}, null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_workflow_id", "position"], name: "idx_on_board_workflow_id_position_cfc135b29c"
+    t.index ["board_workflow_id"], name: "index_board_workflow_conditions_on_board_workflow_id"
+  end
+
+  create_table "board_workflow_run_steps", force: :cascade do |t|
+    t.bigint "board_workflow_run_id", null: false
+    t.bigint "board_workflow_action_id", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "position", default: 0, null: false
+    t.jsonb "input", default: {}, null: false
+    t.jsonb "output", default: {}, null: false
+    t.text "error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_workflow_action_id"], name: "index_board_workflow_run_steps_on_board_workflow_action_id"
+    t.index ["board_workflow_run_id", "position"], name: "index_workflow_run_steps_on_run_and_position"
+    t.index ["board_workflow_run_id"], name: "index_board_workflow_run_steps_on_board_workflow_run_id"
+  end
+
+  create_table "board_workflow_runs", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "board_workflow_id", null: false
+    t.bigint "order_id", null: false
+    t.string "idempotency_key", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "triggered_at", null: false
+    t.datetime "started_at"
+    t.datetime "completed_at"
+    t.integer "retry_count", default: 0, null: false
+    t.text "error"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_workflow_id"], name: "index_board_workflow_runs_on_board_workflow_id"
+    t.index ["idempotency_key"], name: "index_board_workflow_runs_on_idempotency_key", unique: true
+    t.index ["order_id"], name: "index_board_workflow_runs_on_order_id"
+    t.index ["organization_id", "status", "created_at"], name: "idx_on_organization_id_status_created_at_6abfe0b3c1"
+    t.index ["organization_id"], name: "index_board_workflow_runs_on_organization_id"
+  end
+
+  create_table "board_workflow_status_mappings", force: :cascade do |t|
+    t.bigint "board_workflow_id", null: false
+    t.string "source_status", null: false
+    t.string "target_column_key", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_workflow_id", "source_status"], name: "index_workflow_status_mappings_on_workflow_and_source", unique: true
+    t.index ["board_workflow_id"], name: "index_board_workflow_status_mappings_on_board_workflow_id"
+  end
+
+  create_table "board_workflows", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "board_id", null: false
+    t.bigint "created_by_id"
+    t.string "name", null: false
+    t.text "description"
+    t.boolean "enabled", default: true, null: false
+    t.string "trigger_key", default: "order_approved", null: false
+    t.boolean "is_default", default: false, null: false
+    t.integer "workflow_version", default: 1, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_id", "name"], name: "index_board_workflows_on_board_id_and_name", unique: true
+    t.index ["board_id"], name: "index_board_workflows_on_board_id"
+    t.index ["created_by_id"], name: "index_board_workflows_on_created_by_id"
+    t.index ["organization_id", "trigger_key", "enabled"], name: "idx_on_organization_id_trigger_key_enabled_b070f5cca6"
+    t.index ["organization_id"], name: "index_board_workflows_on_organization_id"
+  end
+
   create_table "boards", force: :cascade do |t|
     t.bigint "organization_id", null: false
     t.string "name", null: false
@@ -252,6 +341,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.string "retention_period", default: "two_months", null: false
     t.index ["client_account_id"], name: "index_conversations_on_client_account_id"
     t.index ["listing_id"], name: "index_conversations_on_listing_id"
+    t.index ["organization_id", "client_account_id"], name: "index_one_client_conversation_per_account", unique: true, where: "(((kind)::text = 'client'::text) AND (client_account_id IS NOT NULL))"
     t.index ["organization_id", "kind", "last_message_at"], name: "idx_on_organization_id_kind_last_message_at_fcb0d57e64"
     t.index ["organization_id"], name: "index_conversations_on_organization_id"
     t.index ["retention_period"], name: "index_conversations_on_retention_period"
@@ -565,12 +655,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.bigint "order_item_id"
     t.bigint "media_group_id"
     t.string "origin", default: "native", null: false
+    t.bigint "order_deliverable_id"
+    t.integer "version", default: 1, null: false
+    t.bigint "superseded_by_id"
     t.index ["listing_id", "category", "position"], name: "index_media_assets_on_listing_id_and_category_and_position"
     t.index ["listing_id", "category"], name: "index_media_assets_on_listing_id_and_category"
     t.index ["listing_id", "cover"], name: "index_media_assets_on_listing_id_and_cover"
     t.index ["listing_id"], name: "index_media_assets_on_listing_id"
     t.index ["media_group_id", "position"], name: "index_media_assets_on_media_group_id_and_position"
     t.index ["media_group_id"], name: "index_media_assets_on_media_group_id"
+    t.index ["order_deliverable_id", "version"], name: "index_media_assets_on_order_deliverable_id_and_version"
+    t.index ["order_deliverable_id"], name: "index_media_assets_on_order_deliverable_id"
     t.index ["order_id", "order_item_id"], name: "index_media_assets_on_order_id_and_order_item_id"
     t.index ["order_id"], name: "index_media_assets_on_order_id"
     t.index ["order_item_id"], name: "index_media_assets_on_order_item_id"
@@ -579,6 +674,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.index ["origin"], name: "index_media_assets_on_origin"
     t.index ["source_url"], name: "index_media_assets_on_source_url"
     t.index ["storage_key"], name: "index_media_assets_on_storage_key", unique: true
+    t.index ["superseded_by_id"], name: "index_media_assets_on_superseded_by_id"
     t.index ["uploaded_by_id"], name: "index_media_assets_on_uploaded_by_id"
   end
 
@@ -596,6 +692,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.index ["organization_id"], name: "index_media_groups_on_organization_id"
   end
 
+  create_table "message_media_references", force: :cascade do |t|
+    t.bigint "message_id", null: false
+    t.bigint "media_asset_id", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["media_asset_id"], name: "index_message_media_references_on_media_asset_id"
+    t.index ["message_id", "media_asset_id"], name: "index_message_media_references_on_message_and_asset", unique: true
+    t.index ["message_id"], name: "index_message_media_references_on_message_id"
+  end
+
   create_table "messages", force: :cascade do |t|
     t.bigint "conversation_id", null: false
     t.bigint "author_id", null: false
@@ -604,10 +711,16 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.text "body_html"
+    t.string "message_kind", default: "message", null: false
+    t.bigint "listing_id"
+    t.bigint "order_deliverable_id"
     t.index ["author_id"], name: "index_messages_on_author_id"
     t.index ["conversation_id", "created_at"], name: "index_messages_on_conversation_id_and_created_at"
+    t.index ["conversation_id", "message_kind", "created_at"], name: "index_messages_on_conversation_kind_created_at"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
     t.index ["created_at"], name: "index_messages_on_created_at"
+    t.index ["listing_id"], name: "index_messages_on_listing_id"
+    t.index ["order_deliverable_id"], name: "index_messages_on_order_deliverable_id"
   end
 
   create_table "notification_deliveries", force: :cascade do |t|
@@ -627,6 +740,42 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.index ["notifiable_type", "notifiable_id"], name: "index_notification_deliveries_on_notifiable"
     t.index ["organization_id"], name: "index_notification_deliveries_on_organization_id"
     t.index ["status", "created_at"], name: "index_notification_deliveries_on_status_and_created_at"
+  end
+
+  create_table "order_deliverables", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "listing_id"
+    t.bigint "order_id", null: false
+    t.bigint "order_item_id", null: false
+    t.bigint "product_component_id"
+    t.bigint "service_product_id", null: false
+    t.string "title", null: false
+    t.text "description"
+    t.string "deliverable_type", null: false
+    t.integer "sla_days", default: 0, null: false
+    t.integer "scope_sqft_min"
+    t.integer "scope_sqft_max"
+    t.string "scope_label"
+    t.string "status", default: "not_started", null: false
+    t.date "target_on"
+    t.datetime "delivered_at"
+    t.integer "delivery_version", default: 0, null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "cancelled_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.string "materialization_key", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["listing_id", "status"], name: "index_order_deliverables_on_listing_id_and_status"
+    t.index ["listing_id"], name: "index_order_deliverables_on_listing_id"
+    t.index ["materialization_key"], name: "index_order_deliverables_on_materialization_key", unique: true
+    t.index ["order_id", "position"], name: "index_order_deliverables_on_order_id_and_position"
+    t.index ["order_id"], name: "index_order_deliverables_on_order_id"
+    t.index ["order_item_id"], name: "index_order_deliverables_on_order_item_id"
+    t.index ["organization_id", "status"], name: "index_order_deliverables_on_organization_id_and_status"
+    t.index ["organization_id"], name: "index_order_deliverables_on_organization_id"
+    t.index ["product_component_id"], name: "index_order_deliverables_on_product_component_id"
+    t.index ["service_product_id"], name: "index_order_deliverables_on_service_product_id"
   end
 
   create_table "order_items", force: :cascade do |t|
@@ -671,6 +820,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.integer "fee_cents", default: 0, null: false
     t.string "fee_label", default: "Service fee", null: false
     t.string "origin", default: "native", null: false
+    t.datetime "approved_at"
+    t.index ["approved_at"], name: "index_orders_on_approved_at"
     t.index ["client_account_id"], name: "index_orders_on_client_account_id"
     t.index ["listing_id"], name: "index_orders_on_listing_id"
     t.index ["organization_id", "fulfillment_status"], name: "index_orders_on_organization_id_and_fulfillment_status"
@@ -778,6 +929,21 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.check_constraint "client_account_id IS NOT NULL AND customer_team_id IS NULL OR client_account_id IS NULL AND customer_team_id IS NOT NULL", name: "pricing_plans_exactly_one_owner"
   end
 
+  create_table "product_components", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "package_product_id", null: false
+    t.bigint "service_product_id", null: false
+    t.integer "quantity", default: 1, null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id"], name: "index_product_components_on_organization_id"
+    t.index ["package_product_id", "position"], name: "index_product_components_on_package_position"
+    t.index ["package_product_id", "service_product_id"], name: "index_product_components_on_package_and_service", unique: true
+    t.index ["package_product_id"], name: "index_product_components_on_package_product_id"
+    t.index ["service_product_id"], name: "index_product_components_on_service_product_id"
+  end
+
   create_table "product_variants", force: :cascade do |t|
     t.bigint "product_id", null: false
     t.string "external_id"
@@ -813,6 +979,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "origin", default: "native", null: false
+    t.string "deliverable_type", default: "other", null: false
+    t.integer "sla_days", default: 0, null: false
+    t.index ["deliverable_type"], name: "index_products_on_deliverable_type"
     t.index ["organization_id", "external_source", "external_id"], name: "index_products_on_org_and_external_identity", unique: true
     t.index ["organization_id", "slug"], name: "index_products_on_organization_id_and_slug", unique: true
     t.index ["organization_id"], name: "index_products_on_organization_id"
@@ -977,6 +1146,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.index ["organization_id"], name: "index_workflow_columns_on_organization_id"
   end
 
+  create_table "workflow_task_deliverables", force: :cascade do |t|
+    t.bigint "workflow_task_id", null: false
+    t.bigint "order_deliverable_id", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["order_deliverable_id"], name: "index_workflow_task_deliverables_on_order_deliverable_id"
+    t.index ["workflow_task_id", "order_deliverable_id"], name: "index_task_deliverables_on_task_and_deliverable", unique: true
+    t.index ["workflow_task_id"], name: "index_workflow_task_deliverables_on_workflow_task_id"
+  end
+
   create_table "workflow_task_labels", force: :cascade do |t|
     t.bigint "workflow_task_id", null: false
     t.bigint "board_label_id", null: false
@@ -985,6 +1165,22 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.index ["board_label_id"], name: "index_workflow_task_labels_on_board_label_id"
     t.index ["workflow_task_id", "board_label_id"], name: "index_workflow_task_labels_on_task_and_label", unique: true
     t.index ["workflow_task_id"], name: "index_workflow_task_labels_on_workflow_task_id"
+  end
+
+  create_table "workflow_task_placements", force: :cascade do |t|
+    t.bigint "workflow_task_id", null: false
+    t.bigint "board_id", null: false
+    t.bigint "workflow_column_id", null: false
+    t.integer "position", default: 0, null: false
+    t.boolean "is_home", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["board_id", "workflow_column_id", "position"], name: "index_task_placements_on_board_column_position"
+    t.index ["board_id"], name: "index_workflow_task_placements_on_board_id"
+    t.index ["workflow_column_id"], name: "index_workflow_task_placements_on_workflow_column_id"
+    t.index ["workflow_task_id", "board_id"], name: "index_task_placements_on_task_and_board", unique: true
+    t.index ["workflow_task_id"], name: "index_one_home_placement_per_task", unique: true, where: "is_home"
+    t.index ["workflow_task_id"], name: "index_workflow_task_placements_on_workflow_task_id"
   end
 
   create_table "workflow_tasks", force: :cascade do |t|
@@ -1007,13 +1203,18 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
     t.bigint "reporter_id"
     t.datetime "started_at"
     t.text "description_html"
+    t.bigint "parent_task_id"
+    t.string "task_kind", default: "task", null: false
+    t.string "workflow_group_key"
     t.index ["assignee_id"], name: "index_workflow_tasks_on_assignee_id"
     t.index ["board_id", "status", "position"], name: "index_workflow_tasks_on_board_id_and_status_and_position"
     t.index ["board_id"], name: "index_workflow_tasks_on_board_id"
     t.index ["listing_id"], name: "index_workflow_tasks_on_listing_id"
     t.index ["organization_id", "status", "position"], name: "idx_on_organization_id_status_position_3a4fef4137"
+    t.index ["organization_id", "workflow_group_key"], name: "index_workflow_tasks_on_organization_id_and_workflow_group_key"
     t.index ["organization_id"], name: "index_workflow_tasks_on_organization_id"
     t.index ["origin"], name: "index_workflow_tasks_on_origin"
+    t.index ["parent_task_id"], name: "index_workflow_tasks_on_parent_task_id"
     t.index ["reporter_id"], name: "index_workflow_tasks_on_reporter_id"
   end
 
@@ -1036,6 +1237,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
   add_foreign_key "board_attachments", "workflow_tasks"
   add_foreign_key "board_labels", "boards"
   add_foreign_key "board_memberships", "boards"
+  add_foreign_key "board_workflow_actions", "board_workflows"
+  add_foreign_key "board_workflow_conditions", "board_workflows"
+  add_foreign_key "board_workflow_run_steps", "board_workflow_actions"
+  add_foreign_key "board_workflow_run_steps", "board_workflow_runs"
+  add_foreign_key "board_workflow_runs", "board_workflows"
+  add_foreign_key "board_workflow_runs", "orders"
+  add_foreign_key "board_workflow_runs", "organizations"
+  add_foreign_key "board_workflow_status_mappings", "board_workflows"
+  add_foreign_key "board_workflows", "boards"
+  add_foreign_key "board_workflows", "organizations"
+  add_foreign_key "board_workflows", "users", column: "created_by_id"
   add_foreign_key "boards", "organizations"
   add_foreign_key "boards", "users", column: "created_by_id"
   add_foreign_key "catalog_sync_runs", "organizations"
@@ -1084,16 +1296,28 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
   add_foreign_key "marketing_materials", "organizations"
   add_foreign_key "marketing_materials", "users", column: "created_by_id"
   add_foreign_key "media_assets", "listings"
+  add_foreign_key "media_assets", "media_assets", column: "superseded_by_id"
   add_foreign_key "media_assets", "media_groups"
+  add_foreign_key "media_assets", "order_deliverables"
   add_foreign_key "media_assets", "order_items"
   add_foreign_key "media_assets", "orders"
   add_foreign_key "media_assets", "organizations"
   add_foreign_key "media_assets", "users", column: "uploaded_by_id"
   add_foreign_key "media_groups", "listings"
   add_foreign_key "media_groups", "organizations"
+  add_foreign_key "message_media_references", "media_assets"
+  add_foreign_key "message_media_references", "messages"
   add_foreign_key "messages", "conversations"
+  add_foreign_key "messages", "listings"
+  add_foreign_key "messages", "order_deliverables"
   add_foreign_key "messages", "users", column: "author_id"
   add_foreign_key "notification_deliveries", "organizations"
+  add_foreign_key "order_deliverables", "listings"
+  add_foreign_key "order_deliverables", "order_items"
+  add_foreign_key "order_deliverables", "orders"
+  add_foreign_key "order_deliverables", "organizations"
+  add_foreign_key "order_deliverables", "product_components"
+  add_foreign_key "order_deliverables", "products", column: "service_product_id"
   add_foreign_key "order_items", "orders"
   add_foreign_key "order_items", "product_variants"
   add_foreign_key "order_items", "products"
@@ -1115,6 +1339,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
   add_foreign_key "pricing_plans", "coupons"
   add_foreign_key "pricing_plans", "customer_teams"
   add_foreign_key "pricing_plans", "organizations"
+  add_foreign_key "product_components", "organizations"
+  add_foreign_key "product_components", "products", column: "package_product_id"
+  add_foreign_key "product_components", "products", column: "service_product_id"
   add_foreign_key "product_variants", "products"
   add_foreign_key "products", "organizations"
   add_foreign_key "property_sites", "listings"
@@ -1134,11 +1361,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_030000) do
   add_foreign_key "users", "organizations"
   add_foreign_key "workflow_columns", "boards"
   add_foreign_key "workflow_columns", "organizations"
+  add_foreign_key "workflow_task_deliverables", "order_deliverables"
+  add_foreign_key "workflow_task_deliverables", "workflow_tasks"
   add_foreign_key "workflow_task_labels", "board_labels"
   add_foreign_key "workflow_task_labels", "workflow_tasks"
+  add_foreign_key "workflow_task_placements", "boards"
+  add_foreign_key "workflow_task_placements", "workflow_columns"
+  add_foreign_key "workflow_task_placements", "workflow_tasks"
   add_foreign_key "workflow_tasks", "boards"
   add_foreign_key "workflow_tasks", "listings"
   add_foreign_key "workflow_tasks", "organizations"
   add_foreign_key "workflow_tasks", "users", column: "assignee_id"
   add_foreign_key "workflow_tasks", "users", column: "reporter_id"
+  add_foreign_key "workflow_tasks", "workflow_tasks", column: "parent_task_id"
 end
