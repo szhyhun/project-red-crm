@@ -86,6 +86,10 @@ class Api::V1::PortalController < Api::V1::BaseController
       .includes(:service_product, :media_assets).active.ordered
     assets = listing.media_assets.current_version.final.ready.where(customer_visible: true, hidden: false)
       .order(cover: :desc, position: :asc, created_at: :asc)
+    # Imported listings can have ready media before an order workflow has
+    # created deliverables. Keep those assets visible without fabricating a
+    # deliverable that could incorrectly enable customer change requests.
+    listing_assets = assets.where(order_deliverable_id: nil)
     render json: {
       listing: {
         id: listing.id,
@@ -98,9 +102,11 @@ class Api::V1::PortalController < Api::V1::BaseController
       },
       summary: {
         deliverable_count: deliverables.size,
-        delivered_count: deliverables.count(&:delivered?)
+        delivered_count: deliverables.count(&:delivered?),
+        asset_count: assets.size
       },
-      deliverables: deliverables.map { |deliverable| serialize_portal_deliverable(deliverable) }
+      deliverables: deliverables.map { |deliverable| serialize_portal_deliverable(deliverable) },
+      listing_assets: listing_assets.map { |asset| serialize_portal_asset(asset) }
     }
   end
 

@@ -71,6 +71,30 @@ RSpec.describe "Media workflow API", type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
+  it "returns ready listing media when an imported listing has no deliverables yet" do
+    imported_listing = Listing.create!(organization:, client_account:, address_line_1: "Imported Media Street")
+    asset = imported_listing.media_assets.create!(organization:, kind: :final, status: :ready,
+                                                  storage_key: "organizations/#{organization.id}/imported/front.jpg",
+                                                  filename: "front.jpg", content_type: "image/jpeg", byte_size: 5,
+                                                  customer_visible: true)
+
+    sign_in client_user
+    get "/api/v1/portal/listings/#{imported_listing.id}/media"
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body
+    expect(payload.fetch("summary")).to include("deliverable_count" => 0, "delivered_count" => 0, "asset_count" => 1)
+    expect(payload.fetch("deliverables")).to be_empty
+    expect(payload.fetch("listing_assets")).to contain_exactly(
+      hash_including(
+        "id" => asset.id,
+        "preview_path" => "/api/v1/media_assets/#{asset.id}/preview",
+        "download_path" => "/api/v1/media_assets/#{asset.id}/download"
+      )
+    )
+    expect(payload.fetch("listing_assets").sole).not_to have_key("storage_key")
+  end
+
   it "creates an account conversation change request and returns the deliverable to work" do
     asset = deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,
                                               storage_key: "organizations/#{organization.id}/deliverables/request.jpg",
