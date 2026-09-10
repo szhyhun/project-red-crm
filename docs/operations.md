@@ -68,6 +68,24 @@ sent. After a Redis outage, enqueue pending and failed records with:
 bundle exec rake notifications:dispatch_pending
 ```
 
+## Live chat delivery
+
+Chat messages are persisted first, then `Conversations::NotifyJob` broadcasts a
+small per-user notification through Action Cable. The API, Resque worker, and
+Action Cable adapter must use the same `REDIS_URL`. The Nginx proxy in front of
+the API must also forward WebSocket upgrades on `/cable`:
+
+```nginx
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $connection_upgrade;
+```
+
+If chat messages save but unread badges and open tabs do not update, check the
+worker and Redis first, then look for `Failed to upgrade to WebSocket` in the
+API journal. That log entry means the proxy dropped the upgrade request; it is
+not an application authorization failure.
+
 ## Chat retention cleanup
 
 Recurring jobs are registered in `config/resque_schedule.yml` and run by the

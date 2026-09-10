@@ -97,6 +97,11 @@ chmod 600 /etc/project-red-crm/api.env
 chmod 640 /etc/project-red-crm/ui.env
 
 printf '%s\n' \
+  'map $http_upgrade $connection_upgrade {' \
+  '  default upgrade;' \
+  "  '' close;" \
+  '}' \
+  '' \
   'server {' \
   '  listen 80;' \
   '  server_name api.projectred.ca;' \
@@ -108,6 +113,8 @@ printf '%s\n' \
   '    proxy_set_header X-Real-IP $remote_addr;' \
   '    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' \
   '    proxy_set_header X-Forwarded-Proto $scheme;' \
+  '    proxy_set_header Upgrade $http_upgrade;' \
+  '    proxy_set_header Connection $connection_upgrade;' \
   '  }' \
   '}' \
   '' \
@@ -121,6 +128,8 @@ printf '%s\n' \
   '    proxy_set_header X-Real-IP $remote_addr;' \
   '    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' \
   '    proxy_set_header X-Forwarded-Proto $scheme;' \
+  '    proxy_set_header Upgrade $http_upgrade;' \
+  '    proxy_set_header Connection $connection_upgrade;' \
   '  }' \
   '}' > /etc/nginx/conf.d/project-red-crm.conf
 

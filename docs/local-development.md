@@ -48,6 +48,10 @@ The development Action Cable adapter also uses Redis. This is intentional: chat
 notifications are enqueued by the Resque worker, which is a separate process
 from Rails. The worker and the web process must share Redis or new messages will
 be saved but other open tabs will not receive live updates and unread badges.
+When testing through Nginx or another reverse proxy, the `/cable` route must use
+HTTP/1.1 and forward both `Upgrade` and `Connection` headers. Without those
+headers the browser repeatedly falls back to an ordinary HTTP request, so the
+worker can successfully broadcast while no browser receives it.
 
 ## Start the scheduler
 
