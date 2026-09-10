@@ -133,4 +133,11 @@ if [[ "${api_healthy}" != true ]]; then
   exit 1
 fi
 
+nginx_websocket_config="${NGINX_WEBSOCKET_CONFIG:-/etc/nginx/conf.d/project-red-crm-temporary-sslip.conf}"
+if [[ -f "${nginx_websocket_config}" ]]; then
+  echo "[deploy] applying Nginx WebSocket proxy configuration"
+  NGINX_WEBSOCKET_CONFIG="${nginx_websocket_config}" \
+    bash "${CURRENT_DIR}/scripts/aws/configure-nginx-websocket.sh"
+fi
+
 echo "[deploy] API release is active"

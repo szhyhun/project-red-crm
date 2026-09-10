@@ -86,6 +86,15 @@ worker and Redis first, then look for `Failed to upgrade to WebSocket` in the
 API journal. That log entry means the proxy dropped the upgrade request; it is
 not an application authorization failure.
 
+The temporary `sslip.io` Nginx file is Certbot-managed after HTTPS is enabled.
+Application releases therefore do not replace that file wholesale. The release
+script runs `scripts/aws/configure-nginx-websocket.sh`, which preserves the
+certificate and listener blocks, adds the shared upgrade map and headers to
+proxy locations that do not have them, validates the active configuration with
+`nginx -t`, and reloads Nginx. If a deployment is performed manually, run that
+script against the active file rather than copying the repository template over
+the Certbot-managed file.
+
 ## Chat retention cleanup
 
 Recurring jobs are registered in `config/resque_schedule.yml` and run by the
