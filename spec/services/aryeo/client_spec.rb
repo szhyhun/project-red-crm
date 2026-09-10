@@ -29,4 +29,20 @@ RSpec.describe Aryeo::Client do
     expect { |block| client.paginate("products", per_page: 1, &block) }.to yield_successive_args({ "id" => "one" }, { "id" => "two" })
     expect(client).to have_received(:get).with("products", params: { page: 2, per_page: 1 })
   end
+
+  it "treats a hash data payload as one record instead of iterating its keys" do
+    client = described_class.new(api_key: "aryeo-key")
+    allow(client).to receive(:get).and_return({ "data" => { "id" => "listing-1", "address" => { "address_line_1" => "Oak Bay Ave" } } })
+
+    expect { |block| client.paginate("listings", &block) }.to yield_with_args(
+      "id" => "listing-1", "address" => { "address_line_1" => "Oak Bay Ave" }
+    )
+  end
+
+  it "unwraps a named collection nested inside the data payload" do
+    client = described_class.new(api_key: "aryeo-key")
+    allow(client).to receive(:get).and_return({ "data" => { "listings" => [ { "id" => "listing-1" } ] } })
+
+    expect { |block| client.paginate("listings", &block) }.to yield_with_args({ "id" => "listing-1" })
+  end
 end

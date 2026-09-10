@@ -142,7 +142,23 @@ RSpec.describe Aryeo::Importer do
             "customer_team" => { "id" => "team-1", "name" => "Oak Bay Realty" }
           },
           "address" => { "address_line_1" => "111 Oak Bay Ave", "city" => "Victoria", "province" => "BC" },
-          "images" => [ { "id" => "image-1", "filename" => "front.jpg", "original_url" => "https://media.example.test/front.jpg" } ],
+          "images" => [
+            { "id" => "image-1", "filename" => "front.jpg", "original_url" => "https://media.example.test/front.jpg", "index" => 2 },
+            { "id" => "image-2", "filename" => "backyard", "large_url" => "https://media.example.test/backyard.jpg", "index" => 1 }
+          ],
+          "videos" => [
+            { "id" => "video-1", "title" => "Property video", "duration" => 92,
+              "download_url" => "https://videos.aryeo.com/listings/listing-1/video-1.mp4" }
+          ],
+          "floor_plans" => [
+            { "id" => "floor-plan-1", "title" => "Main floor", "large_url" => "https://media.example.test/main-floor.png", "index" => 3 }
+          ],
+          "files" => [
+            { "uuid" => "file-1", "filename" => "property-brochure", "file_type" => "pdf",
+              "url" => "https://cdn.aryeo.com/listings/listing-1/brochure.pdf" },
+            { "uuid" => "file-2", "filename" => "site-photo", "file_type" => "jpg",
+              "url" => "https://cdn.aryeo.com/listings/listing-1/site-photo.jpg" }
+          ],
           "orders" => [
             {
               "id" => "order-1",
@@ -157,11 +173,23 @@ RSpec.describe Aryeo::Importer do
     end
 
     run = import_run(resources: [ "listings" ])
-    described_class.new(run:, client:, resources: [ "listings" ], import_start_date: "2026-07-03").call
+    expect {
+      described_class.new(run:, client:, resources: [ "listings" ], import_start_date: "2026-07-03").call
+    }.to have_enqueued_job(AryeoMediaCopyJob).exactly(6).times
 
     listing = organization.listings.find_by!(address_line_1: "111 Oak Bay Ave")
     expect(listing.client_account.email).to eq("avery@example.test")
-    expect(listing.media_assets.find_by!(filename: "front.jpg").category).to eq("images")
+    expect(listing.media_assets.pluck(:category, :filename, :content_type, :position)).to contain_exactly(
+      [ "images", "front.jpg", "image/jpeg", 2 ],
+      [ "images", "backyard.jpg", "image/jpeg", 1 ],
+      [ "videos", "Property video.mp4", "video/mp4", 0 ],
+      [ "floor_plans", "Main floor.png", "image/png", 3 ],
+      [ "files", "property-brochure.pdf", "application/pdf", 0 ],
+      [ "images", "site-photo.jpg", "image/jpeg", 0 ]
+    )
+    expect(listing.media_assets.where(status: :pending).count).to eq(6)
+    expect(connection.external_records.where(resource_type: "media_assets", sync_status: :pending_media_copy).count).to eq(6)
+    expect(run.reload.coverage.fetch("listings")).to include("media_assets" => { "queued" => 6 })
     order = organization.orders.find_by!("metadata ->> 'aryeo_id' = ?", "order-1")
     expect(order.listing).to eq(listing)
     expect(order.order_items.pluck(:title)).to contain_exactly("Premium photos")
@@ -173,6 +201,29 @@ RSpec.describe Aryeo::Importer do
       "orders" => include("status" => "imported_as_dependency"),
       "appointments" => include("status" => "imported_as_dependency")
     )
+  end
+
+  it "records a listing media failure when Aryeo omits a downloadable URL" do
+    client = instance_double(Aryeo::Client)
+    allow(client).to receive(:paginate) do |endpoint, &block|
+      next unless endpoint == "listings"
+
+      block.call(
+        "id" => "listing-without-video-download",
+        "address" => { "address_line_1" => "Missing Video Download Street" },
+        "videos" => [ { "id" => "video-without-download", "title" => "Hosted video", "playback_url" => "https://player.example.test/video" } ]
+      )
+    end
+
+    run = import_run(resources: [ "listings" ])
+    described_class.new(run:, client:, resources: [ "listings" ]).call
+
+    asset = organization.media_assets.find_by!(filename: "Hosted video")
+    expect(asset).to have_attributes(status: "failed", content_type: "video/mp4")
+    expect(connection.external_records.find_by!(resource_type: "media_assets", external_id: "video-without-download")).to be_failed
+    expect(run.reload).to be_completed_with_errors
+    expect(run.coverage.fetch("listings")).to include("media_assets" => { "failed" => 1 })
+    expect(run.error_details).to include(/video-without-download.*no downloadable URL/)
   end
 
   it "filters orders and appointments locally while retaining records without an order date" do

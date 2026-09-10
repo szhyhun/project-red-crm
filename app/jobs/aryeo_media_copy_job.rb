@@ -7,7 +7,8 @@ class AryeoMediaCopyJob < ApplicationJob
     asset = external_record.record
     return unless asset.is_a?(MediaAsset)
 
-    Aryeo::RemoteMediaCopy.call(asset:, source_url: external_record.metadata["media_url"])
+    Aryeo::RemoteMediaCopy.call(asset:, source_url: external_record.metadata["media_url"],
+                                api_key: external_record.integration_connection.api_key)
     external_record.update!(sync_status: :copied)
   rescue Aryeo::RemoteMediaCopy::RetryableError => error
     Rails.logger.warn("Aryeo media copy failed: #{error.class}: #{error.message}")

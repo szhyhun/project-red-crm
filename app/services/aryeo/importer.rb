@@ -1,5 +1,6 @@
 require "securerandom"
 require "set"
+require "uri"
 
 module Aryeo
   class Importer
@@ -34,6 +35,34 @@ module Aryeo
       property_website
       orders.appointments
     ].join(",").freeze
+    LISTING_MEDIA = {
+      "images" => "images",
+      "videos" => "videos",
+      "floor_plans" => "floor_plans",
+      "interactive_content" => "tours",
+      "files" => "files",
+      "media" => "files"
+    }.freeze
+    MEDIA_SOURCE_KEYS = {
+      "images" => %w[original_url large_url url download_url file_url],
+      "videos" => %w[download_url url original_url file_url],
+      "floor_plans" => %w[original_url large_url url download_url file_url],
+      "tours" => %w[url share_url],
+      "files" => %w[url download_url original_url file_url]
+    }.freeze
+    MEDIA_CONTENT_TYPES = {
+      "jpg" => "image/jpeg",
+      "jpeg" => "image/jpeg",
+      "png" => "image/png",
+      "webp" => "image/webp",
+      "gif" => "image/gif",
+      "heic" => "image/heic",
+      "mp4" => "video/mp4",
+      "mov" => "video/quicktime",
+      "webm" => "video/webm",
+      "pdf" => "application/pdf",
+      "zip" => "application/zip"
+    }.freeze
 
     def initialize(run:, client: nil, resources: nil, import_start_date: nil, import_end_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
       @run = run
@@ -53,6 +82,7 @@ module Aryeo
       @date_unavailable_counts = Hash.new(0)
       @dependency_counts = Hash.new(0)
       @dependency_conflict_counts = Hash.new(0)
+      @media_counts = Hash.new(0)
       @deferred_skipped_resources = []
       @pending_package_components = []
       @coverage = {}
@@ -124,7 +154,8 @@ module Aryeo
         skipped_conflicts: @conflict_counts[name],
         filtered_before_date: @filtered_counts[name],
         filtered_after_date: @filtered_after_counts[name],
-        date_unavailable: @date_unavailable_counts[name]
+        date_unavailable: @date_unavailable_counts[name],
+        media_assets: name == :listings && @media_counts.present? ? @media_counts.dup : nil
       }.compact
     rescue Client::EndpointUnavailable => error
       @coverage[name] = { status: "unavailable", detail: error.message }
@@ -612,9 +643,13 @@ module Aryeo
     end
 
     def import_listing_media(listing, payload)
-      { "images" => "images", "videos" => "videos", "floor_plans" => "floor_plans",
-        "interactive_content" => "tours", "files" => "files", "media" => "files" }.each do |key, category|
-        records(payload, key).each { |media| import_media_asset(listing, media, category) }
+      LISTING_MEDIA.each do |key, category|
+        records(payload, key).each do |media|
+          import_media_asset(listing, media, category)
+        rescue ActiveRecord::RecordInvalid => error
+          @media_counts["failed"] += 1
+          @errors << "media_assets #{external_id(media) || "unknown"}: #{error.record.errors.full_messages.to_sentence}"
+        end
       end
     end
 
@@ -622,20 +657,32 @@ module Aryeo
       external = external_id(payload)
       return if external.blank?
 
-      source_url = value(payload, "url", "download_url", "original_url", "file_url")
+      source_url = value(payload, *MEDIA_SOURCE_KEYS.fetch(category, MEDIA_SOURCE_KEYS["files"])).to_s.presence
       asset = record_for("media_assets", external)&.record
       asset ||= @organization.media_assets.build(listing: listing, metadata: { "aryeo_id" => external })
-      asset.assign_attributes(listing: listing, filename: value(payload, "filename", "name", "title").presence || "Aryeo media #{external}",
-                              content_type: value(payload, "content_type", "mime_type").presence || content_type_for(category),
+      filename = media_filename(payload, external, source_url)
+      metadata = asset.metadata.merge("aryeo_id" => external)
+      if source_url.present?
+        metadata["aryeo_source_url"] = source_url
+        metadata.delete("processing_error")
+      else
+        metadata["processing_error"] = "missing_media_url"
+        @errors << "media_assets #{external}: Aryeo #{category} record has no downloadable URL"
+      end
+      content_type = content_type_for(category, payload, source_url)
+      asset.assign_attributes(listing: listing, filename:,
+                              content_type:,
                               byte_size: integer_value(payload, "byte_size", "filesize", "size"), width: integer_value(payload, "width"),
                               height: integer_value(payload, "height"), duration_seconds: integer_value(payload, "duration_seconds", "duration"),
-                              category: MediaAsset::CATEGORIES.include?(category) ? category : "files", status: :pending,
-                              storage_key: DeliveryStorage.key_for(organization: @organization, listing: listing, filename: value(payload, "filename", "name", "title")),
-                              source_url: nil, customer_visible: true, origin: :aryeo,
-                              metadata: asset.metadata.merge("aryeo_id" => external, "aryeo_source_url" => source_url))
+                              category: media_category_for(category, content_type),
+                              position: integer_value(payload, "index", "order_index", "position") || 0,
+                              status: source_url.present? ? :pending : :failed,
+                              storage_key: asset.storage_key.presence || DeliveryStorage.key_for(organization: @organization, listing: listing, filename:),
+                              source_url: nil, customer_visible: true, origin: :aryeo, metadata:)
       asset.save!
+      @media_counts[source_url.present? ? "queued" : "failed"] += 1
       external_record = archive!("media_assets", payload, record: asset,
-                                 metadata: { "media_url" => source_url }, sync_status: source_url.present? ? :pending_media_copy : :imported)
+                                 metadata: { "media_url" => source_url }, sync_status: source_url.present? ? :pending_media_copy : :failed)
       AryeoMediaCopyJob.perform_later(external_record.id) if source_url.present? && !asset.ready?
       asset
     end
@@ -974,7 +1021,11 @@ module Aryeo
     def collection_values(value)
       return value unless value.is_a?(Hash)
 
-      value["data"] || value["results"] || value["items"] || value
+      collection = %w[data results items records listings].filter_map do |key|
+        candidate = value[key]
+        candidate if candidate.is_a?(Array) || candidate.is_a?(Hash)
+      end.first
+      collection || value
     end
 
     def text_values(value)
@@ -989,8 +1040,43 @@ module Aryeo
       keys.any? { |key| payload[key.to_s].present? || payload[key.to_sym].present? }
     end
 
-    def content_type_for(category)
-      category == "images" ? "image/*" : category == "videos" ? "video/*" : "application/octet-stream"
+    def content_type_for(category, payload = {}, source_url = nil)
+      explicit = value(payload, "content_type", "mime_type").to_s.split(";").first.presence
+      return explicit if explicit.present?
+
+      extension = value(payload, "file_type", "extension").to_s.downcase.sub(/\A\./, "")
+      extension = File.extname(source_filename(source_url).to_s).delete_prefix(".").downcase if extension.blank?
+      return MEDIA_CONTENT_TYPES[extension] if MEDIA_CONTENT_TYPES.key?(extension)
+
+      case category
+      when "images", "floor_plans" then "image/jpeg"
+      when "videos" then "video/mp4"
+      else "application/octet-stream"
+      end
+    end
+
+    def media_filename(payload, external, source_url)
+      filename = value(payload, "filename", "file_name", "name", "title").to_s.strip
+      source_name = source_filename(source_url)
+      return filename if filename.present? && (File.extname(filename).present? || source_name.blank?)
+      return "#{filename}#{File.extname(source_name)}" if filename.present? && File.extname(source_name).present?
+
+      filename.presence || source_name.presence || "Aryeo media #{external}"
+    end
+
+    def media_category_for(category, content_type)
+      return "images" if category == "files" && content_type.start_with?("image/")
+      return "videos" if category == "files" && content_type.start_with?("video/")
+
+      MediaAsset::CATEGORIES.include?(category) ? category : "files"
+    end
+
+    def source_filename(source_url)
+      return if source_url.blank?
+
+      File.basename(URI.parse(source_url).path.to_s).presence
+    rescue URI::InvalidURIError
+      nil
     end
 
     def unique_product_slug(title, external)

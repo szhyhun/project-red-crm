@@ -47,7 +47,7 @@ module Aryeo
       request_params = params.merge(page:, per_page:)
       loop do
         payload = get(request_path, params: request_params)
-        records = Array(payload["data"] || payload["results"] || payload["items"])
+        records = collection_records(payload["data"] || payload["results"] || payload["items"])
         stop_requested = records.any? { |record| yield(record) == :stop }
         break if stop_requested
 
@@ -75,6 +75,18 @@ module Aryeo
     end
 
     private
+
+    def collection_records(value)
+      return [] if value.nil?
+      return value if value.is_a?(Array)
+      return [ value ] unless value.is_a?(Hash)
+
+      collection = %w[data results items records listings].filter_map do |key|
+        candidate = value[key]
+        candidate if candidate.is_a?(Array) || candidate.is_a?(Hash)
+      end.first
+      collection.is_a?(Array) ? collection : [ collection || value ]
+    end
 
     def build_uri(path, params)
       requested = URI(path.to_s)
