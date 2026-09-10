@@ -104,6 +104,7 @@ module Aryeo
       end
 
       sync_pending_package_components!
+      reconcile_imported_delivery_graph!
       finish!
     rescue StandardError => error
       @run.update!(status: :failed, phase: "failed", completed_at: Time.current,
@@ -547,6 +548,7 @@ module Aryeo
       variant_payload = stringify(payload["product_variant"] || payload["variant"] || {})
       product_payload = order_item_product_payload(payload, variant_payload)
       product = resolve_order_item_product(product_payload)
+      product ||= imported_product_by_title(payload)
       variant_external = external_id(variant_payload).presence || value(payload, "product_variant_id", "variant_id")&.to_s
       variant = product&.product_variants&.find_by(external_id: variant_external) if variant_external.present?
       variant ||= @organization.product_variants.joins(:product)
@@ -555,6 +557,13 @@ module Aryeo
       variant ||= product&.product_variants&.find_by(title: value(variant_payload, "title", "name")) if variant_payload.present?
 
       [ product || variant&.product, variant ]
+    end
+
+    def imported_product_by_title(payload)
+      title = value(payload, "title", "name", "product_name").to_s.strip
+      return if title.blank?
+
+      @organization.products.where(origin: :aryeo).find_by("lower(title) = ?", title.downcase)
     end
 
     def order_item_product_payload(payload, variant_payload)
@@ -732,6 +741,19 @@ module Aryeo
       status = @errors.empty? ? :completed : :completed_with_errors
       @run.update!(status:, phase: "completed", completed_at: Time.current, counts: @counts, coverage: @coverage, error_details: @errors)
       @connection.update!(status: :connected, last_imported_at: Time.current, endpoint_coverage: @coverage)
+    end
+
+    def reconcile_imported_delivery_graph!
+      # Listings and media are imported before the complete order/catalog graph
+      # is known. Reconcile only after all endpoints and package components have
+      # been processed, so media is linked to real deliverables by category and
+      # provider relationship instead of being left as an orphan listing file.
+      result = Aryeo::ImportedDeliveryMaterializer.new(run: @run).call
+      linked_count = result.fetch(:linked_media_assets).size
+      @media_counts["linked"] += linked_count if linked_count.positive?
+      return unless @coverage[:listings].present? && @media_counts.present?
+
+      @coverage[:listings][:media_assets] = @media_counts.dup
     end
 
     def paginate_collection(name, endpoint, &block)

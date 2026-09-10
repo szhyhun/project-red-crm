@@ -263,11 +263,19 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
   end
 
   def serialize(asset)
+    # Customer-visible deliverable files may be read directly from the public
+    # CDN; private or non-ready files must remain behind the authorized API
+    # route. Never substitute a private storage URL here: API redirects to S3
+    # are not a browser-safe preview contract without matching bucket CORS.
+    cdn_url = if asset.ready? && asset.customer_visible? && !asset.hidden?
+      asset.order_deliverable.blank? ? (asset.source_url.presence || cdn_url_for(asset.storage_key)) : cdn_url_for(asset.storage_key)
+    end
+
     asset.slice(:id, :listing_id, :kind, :status, :source_url, :filename, :content_type,
                 :byte_size, :width, :height, :duration_seconds, :category, :customer_visible,
                 :position, :cover, :hidden, :metadata, :processed_at, :created_at, :order_id, :order_item_id,
                 :order_deliverable_id, :media_group_id, :version, :superseded_by_id).merge(
-      cdn_url: asset.ready? && asset.order_deliverable.blank? ? (asset.source_url.presence || cdn_url_for(asset.storage_key)) : nil,
+      cdn_url:,
       preview_path: asset.ready? && !asset.external? ? preview_api_v1_media_asset_path(asset) : nil,
       download_path: asset.ready? && !asset.external? ? download_api_v1_media_asset_path(asset) : nil,
       uploaded_by: asset.uploaded_by && asset.uploaded_by.slice(:id, :name)

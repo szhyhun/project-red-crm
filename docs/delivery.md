@@ -17,9 +17,18 @@ Statuses:
 - `pending`, `processing`, `ready`, and `failed`.
 
 Only `final` + `ready` media is exposed to clients and public property sites.
-When `MEDIA_CDN_URL` is configured, the API serializes a CloudFront URL from a
-record's storage key. It does not manufacture a CDN URL when the setting is
-absent.
+When `PROJECT_RED_MEDIA_CDN_URL` (or the legacy `MEDIA_CDN_URL` fallback) is
+configured, the API serializes a public CDN URL from a record's storage key.
+It does not manufacture a CDN URL when the setting is absent. Customer-visible
+deliverable media is eligible for the CDN URL as well as listing-level media;
+staff-only, hidden, and non-ready records stay behind authorized API routes.
+
+The browser media contract is deliberately tested at the serialization
+boundary. A private S3 object can return `200` and still render as a broken
+image if the browser reached it through a credentialed API redirect without
+bucket CORS. Listing serializers must return `cdn_url` when available, and
+the UI must resolve it through `mediaAssetUrl`; React components must never
+construct storage or provider URLs themselves.
 
 ## Current local workflow
 
@@ -52,11 +61,12 @@ against the bucket's CORS policy. Downloads may use a short-lived S3 URL after
 the same authorization check.
 
 The portal must resolve the returned paths through its shared `apiUrl`/
-`mediaAssetUrl` helpers. Never use `preview_path` or `download_path` directly
-as a relative URL from the CRM UI origin. If the temporary `sslip.io` hosts are
-used, the UI build-time `NEXT_PUBLIC_CRM_API_URL` and API `CRM_UI_ORIGINS` must
-refer to the matching temporary API and CRM hosts; restore the real DNS names
-only together.
+`mediaAssetUrl` helpers. `mediaAssetUrl` must prefer `cdn_url`, then resolve
+the API-relative preview path through `apiUrl`. Never use `preview_path` or
+`download_path` directly as a relative URL from the CRM UI origin. If the
+temporary `sslip.io` hosts are used, the UI build-time `NEXT_PUBLIC_CRM_API_URL`
+and API `CRM_UI_ORIGINS` must refer to the matching temporary API and CRM hosts;
+restore the real DNS names only together.
 
 ## Chat attachment delivery
 

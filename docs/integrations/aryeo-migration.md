@@ -12,7 +12,7 @@ The Aryeo integration is a manual, organization-level historical import. An orga
 
 ## Imported data
 
-The importer upserts readable Aryeo staff, clients, customer teams, catalog products and variants, listings, nested property-site/media metadata, orders/items, safe payment metadata, appointments, and tasks. Each record is marked `origin: aryeo`. Every source object is also retained in `external_records` with its Aryeo ID, sanitized payload, import-run link, and any unsupported endpoint coverage result.
+The importer upserts readable Aryeo staff, clients, customer teams, catalog products and variants, listings, nested property-site/media metadata, orders/items, safe payment metadata, appointments, and tasks. Each record is marked `origin: aryeo`. Every source object is also retained in `external_records` with its Aryeo ID, sanitized payload, import-run link, and any unsupported endpoint coverage result. After all selected endpoints finish, the importer reconciles imported order items, production deliverables, and listing media as one graph.
 
 ## Normalized catalog and order contract
 
@@ -41,6 +41,27 @@ the word “package” never invents included services. A package component alwa
 references the reusable service `Product`, never a price tier. Standalone
 services and package services therefore use the same `OrderItem` and
 `OrderDeliverable` path after import.
+
+### Imported delivery reconciliation
+
+Aryeo can return a listing, its media, and its order before ProjectRed has
+finished importing the catalog. The importer therefore materializes
+`OrderDeliverable` rows only after products, package components, orders, and
+media have been processed. Every non-cancelled imported order item that points
+to a local service or package creates the same deliverable records used by a
+newly approved ProjectRed order. This does not change the imported order total
+and does not add invoice lines.
+
+Imported media is then attached to those deliverables. An explicit Aryeo order
+or order-item relationship wins; when the provider omits that relationship,
+the importer uses the only imported order for the listing and the media
+category (`images`, `videos`, `floor_plans`, `tours`, or `files`) to choose the
+matching service. The reconciliation is idempotent and never crosses an
+organization boundary. Source-completed orders are shown as delivered. When
+the source order is still open, only deliverables with imported delivery media
+are shown as delivered; open deliverables without media keep the not-started
+state. This prevents the
+portal from collapsing real imported files into an untyped fallback card.
 
 If a selected order or listing contains an expanded customer, listing,
 product, or package service that was not selected as a top-level resource, the
@@ -89,7 +110,22 @@ organizations must remain untouched.
 
 Remote Aryeo media is imported as pending metadata first, then copied by `AryeoMediaCopyJob`. The importer maps the provider's documented fields instead of assuming one generic URL: photos prefer `original_url` and fall back to `large_url`/`url`, videos use `download_url`, floor plans prefer `original_url` and fall back to `large_url`, and files use `url`. Image/video files returned in the generic files collection are classified into the matching media section from their file type. The asset keeps its provider ID, filename, content type, position, and original source URL in sanitized internal metadata, so a re-import can update the same asset without creating a duplicate.
 
-The copy job downloads the source on the server with the encrypted Aryeo API key when the host is an Aryeo media host. It validates every HTTPS hop, allows only public addresses, follows a small bounded number of redirects, and never forwards the bearer token to a different host. It writes the response to the configured ProjectRed delivery storage with the returned content type. The source URL is never constructed in a React component or exposed as a raw private storage URL; the UI receives the normal authorized API-relative media paths.
+The copy job downloads the source on the server with the encrypted Aryeo API key when the host is an Aryeo media host. It validates every HTTPS hop, allows only public addresses, follows a small bounded number of redirects, and never forwards the bearer token to a different host. It writes the response to the configured ProjectRed delivery storage with the returned content type. The source URL is never constructed in a React component or exposed as a raw private storage URL.
+
+For ready, customer-visible listing media, the portal and staff media
+serializers include `cdn_url` from `PROJECT_RED_MEDIA_CDN_URL`. The shared UI
+URL helper must prefer that URL for `<img>` and `<video>` elements. The
+authorized API-relative `preview_path` and `download_path` remain in the
+response as the fallback and for controlled downloads. Do not make a browser
+preview use the API path when a CDN URL is available: the API preview may
+redirect to private S3, and the final S3 response will not necessarily include
+the portal origin's CORS headers. Board and chat attachments are different:
+they remain private and must continue to stream through their API routes.
+
+Whenever this contract changes, test the serialized JSON and the final browser
+URL selection. Checking only that an S3 object exists is insufficient; the
+failure can be a successful storage response that the browser blocks after a
+cross-origin redirect.
 
 If a provider record has no downloadable URL, the importer creates a failed asset and records `completed_with_errors` plus the missing-URL error in the import run. Listing endpoint coverage includes a `media_assets` breakdown (`queued` and `failed`) so an import cannot appear healthy while silently dropping media. If a download or storage write fails, the job retries up to five times, then marks both the external record and asset as failed with the safe error code `media_copy_failed`. A successful later overwrite re-queues the copy and clears the processing error. A green `AryeoImportJob` log only means the import transaction completed; always inspect endpoint coverage, run errors, pending media-copy records, and failed assets before considering listing media available.
 

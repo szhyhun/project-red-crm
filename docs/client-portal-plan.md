@@ -338,13 +338,17 @@ Storage boundaries are explicit:
 
 Staff can see older media versions. Customers see only ready, final,
 customer-visible, non-hidden assets. Every serializer exposes authorized API
-relative `preview_path` and `download_path` values. It never exposes a storage
-key, private bucket URL, or raw CDN construction to React.
+relative `preview_path` and `download_path` values. Ready customer-visible
+listing media also includes the configured public `cdn_url`. It never exposes
+a storage key, private bucket URL, or raw CDN construction to React.
 
 Preview routes authorize the parent record before streaming. Download routes
 may redirect to a short-lived signed URL only after the same authorization
 check. UI media tags resolve serialized paths through `apiUrl`,
-`mediaAssetUrl`, `mediaAssetDownloadUrl`, and `apiMediaNeedsCredentials`.
+`mediaAssetUrl`, `mediaAssetDownloadUrl`, and `apiMediaNeedsCredentials`;
+`mediaAssetUrl` must prefer `cdn_url` when present. An API preview that
+redirects a credentialed browser request to private S3 is not a substitute for
+the CDN URL because the final response may not allow the portal origin.
 
 When a new attachment type is added, the change is incomplete until storage,
 serializer, API types, URL helpers, renderer, and a negative access-control

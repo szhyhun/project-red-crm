@@ -98,6 +98,13 @@ Client-visible tasks additionally require `Board#client_visible`.
 - When adding an attachment type, update the storage boundary, serializer,
   API/UI types, URL helper, renderer, and a negative access-control spec
   together. Do not repeat the old raw-path/CDN-host mistake.
+- When diagnosing a broken preview, inspect the serialized response URL and the
+  browser's final response separately. A private object returning `200` from
+  S3 is not proof that an image can render: a credentialed API-to-S3 redirect
+  can still be blocked by bucket CORS. Listing delivery media must prefer the
+  serialized public `cdn_url` when configured; board and chat attachments must
+  stay on their authorized API streaming routes. Add a regression that follows
+  this URL contract whenever this pipeline changes.
 
 ## Conventions
 

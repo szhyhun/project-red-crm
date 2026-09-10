@@ -21,7 +21,8 @@ RSpec.describe Aryeo::Importer do
           block.call({ "id" => "listing-1", "customer_id" => "customer-1", "address" => { "address_line_1" => "111 Oak Bay Ave", "city" => "Victoria", "province" => "BC" } })
         when "orders"
           block.call({ "id" => "order-1", "listing_id" => "listing-1", "customer_id" => "customer-1", "status" => "submitted", "total" => 54_900,
-                       "items" => [ { "id" => "item-1", "title" => "Premium photos", "quantity" => 1, "price" => 54_900 } ] })
+                       "items" => [ { "id" => "item-1", "product_id" => "product-1", "product_variant_id" => "variant-1",
+                                     "title" => "Premium photos", "quantity" => 1, "price" => 54_900 } ] })
         end
       end
     end
@@ -44,6 +45,9 @@ RSpec.describe Aryeo::Importer do
     expect(Listing.where(origin: "aryeo").pluck(:address_line_1)).to include("111 Oak Bay Ave")
     expect(Order.where(origin: "aryeo").count).to eq(1)
     expect(Order.first.order_items.count).to eq(1)
+    expect(Order.first.order_deliverables).to contain_exactly(
+      have_attributes(deliverable_type: "photography", status: "not_started")
+    )
     expect(ExternalRecord.where(provider: "aryeo").count).to be >= 4
     expect(Listing.find(local_listing.id)).to be_present
   end

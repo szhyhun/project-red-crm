@@ -259,7 +259,13 @@ class Api::V1::PortalController < Api::V1::BaseController
   end
 
   def serialize_portal_asset(asset)
+    # Listing media is allowed to use the configured public CDN. Returning only
+    # the API preview path makes a credentialed browser request follow Rails'
+    # redirect into private S3, where the final response has no CORS headers.
+    # Keep the authorized API paths as a fallback, but let the browser use the
+    # CDN directly whenever a ready listing asset has one.
     asset.slice(:id, :filename, :content_type, :byte_size, :width, :height, :duration_seconds).merge(
+      cdn_url: asset.ready? ? DeliveryStorage.public_url(asset.storage_key) : nil,
       preview_path: "/api/v1/media_assets/#{asset.id}/preview",
       download_path: "/api/v1/media_assets/#{asset.id}/download"
     )

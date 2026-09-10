@@ -46,6 +46,8 @@ RSpec.describe "Media workflow API", type: :request do
                                               filename: "front.jpg", content_type: "image/jpeg", byte_size: 5,
                                               customer_visible: true)
     deliverable.update!(status: :delivered, delivered_at: Time.current)
+    allow(DeliveryStorage).to receive(:public_url).with(asset.storage_key)
+      .and_return("https://media.example.test/organizations/#{organization.id}/deliverables/front.jpg")
 
     sign_in client_user
     get "/api/v1/portal/listings/#{listing.id}/media"
@@ -57,6 +59,7 @@ RSpec.describe "Media workflow API", type: :request do
     expect(serialized).to include("status" => "delivered", "can_request_changes" => true, "asset_count" => 1)
     expect(serialized.dig("assets", 0)).to include(
       "id" => asset.id,
+      "cdn_url" => "https://media.example.test/organizations/#{organization.id}/deliverables/front.jpg",
       "preview_path" => "/api/v1/media_assets/#{asset.id}/preview",
       "download_path" => "/api/v1/media_assets/#{asset.id}/download"
     )
