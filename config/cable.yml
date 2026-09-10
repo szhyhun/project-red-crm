@@ -1,5 +1,11 @@
 development:
-  adapter: async
+  # Resque workers broadcast notifications from a separate process. The
+  # in-memory async adapter cannot deliver those broadcasts to the Rails web
+  # process, so local realtime behavior must use the same Redis boundary as
+  # production.
+  adapter: redis
+  url: <%= ENV.fetch("REDIS_URL") { "redis://localhost:6379/1" } %>
+  channel_prefix: project_red_crm_development
 
 test:
   adapter: test

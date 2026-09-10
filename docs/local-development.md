@@ -44,6 +44,11 @@ development uses Rails' `:test` delivery method, so it never sends external mail
 Inspect a branded message through Rails mailer previews at
 `http://localhost:3010/rails/mailers/customer_mailer`.
 
+The development Action Cable adapter also uses Redis. This is intentional: chat
+notifications are enqueued by the Resque worker, which is a separate process
+from Rails. The worker and the web process must share Redis or new messages will
+be saved but other open tabs will not receive live updates and unread badges.
+
 ## Start the scheduler
 
 In a third terminal, run the recurring jobs registered in
