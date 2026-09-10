@@ -61,7 +61,7 @@ RSpec.describe "Conversation workflow API", type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
-  it "puts the conversation with the newest unread message before newer read conversations" do
+  it "keeps team conversation order independent from message activity" do
     unread = Conversation.create!(organization:, kind: :internal, subject: "Unread room")
     read = Conversation.create!(organization:, kind: :internal, subject: "Read room")
     [ unread, read ].each do |conversation|

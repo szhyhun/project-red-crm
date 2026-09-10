@@ -2,6 +2,7 @@ require "rails_helper"
 
 RSpec.describe Conversations::Notifier do
   let!(:organization) { Organization.create!(name: "ProjectRed", slug: "projectred-notifier") }
+  let!(:admin) { staff("notifier-admin@example.test", :organization_admin) }
   let!(:author) { staff("notifier-author@example.test", :manager) }
   let!(:teammate) { staff("notifier-teammate@example.test", :production_staff) }
   let!(:client_account) { ClientAccount.create!(organization:, name: "Avery Agent", kind: :agent) }
@@ -37,6 +38,12 @@ RSpec.describe Conversations::Notifier do
     message = conversation.messages.create!(author:, body: "Files are up")
 
     expect { described_class.call(message:) }.not_to have_broadcasted_to(stream_for(author))
+  end
+
+  it "tells an organization admin about customer threads even without membership" do
+    message = conversation.messages.create!(author: customer, body: "Please review the gallery")
+
+    expect { described_class.call(message:) }.to have_broadcasted_to(stream_for(admin)).exactly(:once)
   end
 
   # Visibility is decided at broadcast time so the channel carries no rules.

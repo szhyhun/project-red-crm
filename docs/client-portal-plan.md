@@ -505,7 +505,10 @@ The chat editor and issue comment editor share rich-text behavior:
 - dismissible upload errors that clear on navigation or a successful action;
 - Escape closes dialogs, drawers, menus, and popups;
 - the first available conversation is selected on the Messages page;
-- unread conversations sort before read conversations, by latest unread message;
+- customer conversations sort by latest message, while staff team conversations
+  keep each user's saved drag-and-drop order;
+- unread counts appear in the Messages navigation item and beside each unread
+  conversation without changing either ordering rule;
 - read-only messages have no separate attachment delete action;
 - attachment deletion is available only while editing its message.
 

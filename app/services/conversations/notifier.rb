@@ -2,8 +2,9 @@ module Conversations
   # Announces a new message to everyone in the thread except its author.
   #
   # Visibility is decided here, once, at broadcast time: a staff-only message
-  # never reaches a client user, and nobody is told about a thread they are not
-  # a member of. That keeps the channel itself free of authorization logic.
+  # never reaches a client user. Organization admins are implicit recipients of
+  # customer threads because the policy lets them see every customer thread,
+  # even when they have not been explicitly added as a participant.
   class Notifier
     def self.call(message:)
       new(message:).call
@@ -26,6 +27,12 @@ module Conversations
 
     def recipients
       scope = conversation.users.where.not(id: message.author_id)
+      if conversation.client?
+        admins = conversation.organization.users.active
+                  .where(role: %w[organization_admin platform_owner])
+                  .where.not(id: message.author_id)
+        scope = User.where(id: scope.select(:id)).or(User.where(id: admins.select(:id)))
+      end
       return scope unless message.staff_only?
 
       scope.where.not(role: %w[client_admin client_member])

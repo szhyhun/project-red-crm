@@ -33,7 +33,7 @@ RSpec.describe "Customer portal conversations API scenario", type: :request do
     expect(hidden.conversation_memberships.pluck(:user_id)).to eq([ manager.id ])
   end
 
-  it "sorts a customer's latest unread conversation ahead of a newer read conversation" do
+  it "sorts a customer's conversations by their latest message while preserving unread counts" do
     unread = customer_conversation(first_account, "Unread customer room")
     read = customer_conversation(second_account, "Read customer room")
     unread_time = 2.hours.ago
@@ -49,8 +49,8 @@ RSpec.describe "Customer portal conversations API scenario", type: :request do
 
     expect(response).to have_http_status(:ok)
     conversations = response.parsed_body.fetch("conversations")
-    expect(conversations.first).to include("id" => unread.id, "unread_count" => 1)
-    expect(conversations.second).to include("id" => read.id, "unread_count" => 0)
+    expect(conversations.first).to include("id" => read.id, "unread_count" => 0)
+    expect(conversations.second).to include("id" => unread.id, "unread_count" => 1)
   end
 
   it "lets a customer send a message and exposes it to staff with its account context" do

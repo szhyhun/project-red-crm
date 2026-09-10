@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_07_042000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_10_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -324,6 +324,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_07_042000) do
     t.datetime "last_read_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "position", default: 0, null: false
     t.index ["conversation_id", "user_id"], name: "index_conversation_memberships_on_conversation_and_user", unique: true
     t.index ["conversation_id"], name: "index_conversation_memberships_on_conversation_id"
     t.index ["user_id"], name: "index_conversation_memberships_on_user_id"

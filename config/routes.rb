@@ -63,6 +63,7 @@ Rails.application.routes.draw do
         post :messages, on: :member, action: :create_message
         resources :members, only: %i[create destroy], controller: "conversation_memberships"
       end
+      post "conversations/reorder", to: "conversations#reorder"
       post "conversations/:conversation_id/messages/:message_id/attachments", to: "conversation_attachments#create"
       get "conversations/:conversation_id/messages/:message_id/attachments/:id/preview", to: "conversation_attachments#preview"
       get "conversations/:conversation_id/messages/:message_id/attachments/:id/download", to: "conversation_attachments#download"

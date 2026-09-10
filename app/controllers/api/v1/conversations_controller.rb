@@ -5,11 +5,38 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     authorize Conversation, :index?
     conversations = conversations.to_a
     conversations.sort_by! do |conversation|
-      unread = unread_message_stats.fetch(conversation.id, { count: 0, last_unread_message_at: nil })
-      last_activity = unread[:last_unread_message_at] || conversation.last_message_at || conversation.created_at
-      [ unread[:count].positive? ? 0 : 1, -last_activity.to_f ]
+      if conversation.client?
+        last_activity = conversation.last_message_at || conversation.created_at
+        [ 0, -last_activity.to_f, conversation.id ]
+      else
+        membership = conversation.conversation_memberships.find { |item| item.user_id == current_user.id }
+        position = membership&.position
+        [ 1, position.nil? ? 1 : 0, position || 0, conversation.created_at.to_f, conversation.id ]
+      end
     end
     render json: { conversations: conversations.map { |conversation| serialize(conversation) } }
+  end
+
+  def reorder
+    authorize Current.organization.conversations.build(kind: :internal), :reorder?
+    conversation_ids = Array(params.require(:conversation_ids)).map(&:to_i)
+    if conversation_ids.empty? || conversation_ids.uniq.length != conversation_ids.length
+      return render json: { error: "invalid_conversation_order" }, status: :unprocessable_entity
+    end
+
+    conversations = policy_scope(Conversation).internal.where(id: conversation_ids)
+    memberships = current_user.conversation_memberships.where(conversation_id: conversation_ids).index_by(&:conversation_id)
+    if conversations.size != conversation_ids.size || memberships.size != conversation_ids.size
+      return render json: { error: "invalid_conversation_order" }, status: :unprocessable_entity
+    end
+
+    ConversationMembership.transaction do
+      conversation_ids.each_with_index do |conversation_id, position|
+        memberships.fetch(conversation_id).update!(position:)
+      end
+    end
+
+    render json: { conversation_ids: }
   end
 
   def show
@@ -174,13 +201,16 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   # it, so the count cannot drift from what the operator has actually seen.
   def mark_read!(conversation)
     membership = conversation.conversation_memberships.find_by(user: current_user)
+    if membership.blank? && (current_user.organization_admin? || current_user.platform_owner?) && conversation.client?
+      membership = conversation.conversation_memberships.create!(user: current_user, role: :participant)
+    end
     membership&.update_columns(last_read_at: Time.current, updated_at: Time.current)
   end
 
   # One grouped query for the whole list rather than a count per conversation.
   # A membership with a null last_read_at has never been opened, so every
-  # message in it is unread. The timestamp lets clients put the conversation
-  # with the newest unread message first even when a newer read message exists.
+  # message in it is unread. The timestamp is retained for the client-side
+  # unread indicator and future notification details; it does not reorder rooms.
   def unread_message_stats
     @unread_message_stats ||= begin
       rows = unread_message_scope
@@ -193,20 +223,35 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def unread_message_scope
-    scope = Message
-            .joins("INNER JOIN conversation_memberships cm ON cm.conversation_id = messages.conversation_id")
-            .where("cm.user_id = ?", current_user.id)
-            .where("messages.created_at > COALESCE(cm.last_read_at, '-infinity'::timestamp)")
-            .where.not(messages: { author_id: current_user.id })
+    scope = Message.joins(:conversation)
+    if current_user.organization_admin? || current_user.platform_owner?
+      # Organization admins can see every customer thread without being listed
+      # as a participant, so their unread state needs a left join. Opening the
+      # thread creates the membership that stores the admin's read marker.
+      scope = scope
+               .joins("LEFT JOIN conversation_memberships cm ON cm.conversation_id = messages.conversation_id AND cm.user_id = #{current_user.id}")
+               .where(conversations: { organization_id: current_user.organization_id })
+               .where("cm.id IS NOT NULL OR conversations.kind = ?", Conversation.kinds.fetch("client"))
+    else
+      scope = scope
+               .joins("INNER JOIN conversation_memberships cm ON cm.conversation_id = messages.conversation_id")
+               .where("cm.user_id = ?", current_user.id)
+    end
+
+    scope = scope
+             .where("messages.created_at > COALESCE(cm.last_read_at, '-infinity'::timestamp)")
+             .where.not(messages: { author_id: current_user.id })
     scope = scope.participants unless current_user.internal?
     scope
   end
 
   def serialize(conversation, include_messages: false)
     unread = unread_message_stats.fetch(conversation.id, { count: 0, last_unread_message_at: nil })
+    membership = conversation.conversation_memberships.find { |item| item.user_id == current_user.id }
     data = conversation.slice(:id, :listing_id, :client_account_id, :kind, :subject, :retention_period, :last_message_at, :created_at).merge(
       unread_count: unread[:count],
       last_unread_message_at: unread[:last_unread_message_at],
+      position: membership&.position,
       listing: conversation.listing && { id: conversation.listing.id, address: conversation.listing.address },
       client_account: conversation.client_account && conversation.client_account.slice(:id, :name),
       can_delete: policy(conversation).destroy?,
