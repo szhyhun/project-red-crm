@@ -31,17 +31,17 @@ if ! grep -RqsF 'map $http_upgrade $connection_upgrade' /etc/nginx/conf.d; then
 fi
 
 awk '
-function emit_location(   index) {
+function emit_location(   line_number) {
   if (location_has_proxy && !location_has_upgrade) {
-    for (index = 1; index <= line_count; index++) {
-      if (index == line_count && lines[index] ~ /^[[:space:]]*}/) {
+    for (line_number = 1; line_number <= line_count; line_number++) {
+      if (line_number == line_count && lines[line_number] ~ /^[[:space:]]*}/) {
         print "    proxy_set_header Upgrade $http_upgrade;"
         print "    proxy_set_header Connection $connection_upgrade;"
       }
-      print lines[index]
+      print lines[line_number]
     }
   } else {
-    for (index = 1; index <= line_count; index++) print lines[index]
+    for (line_number = 1; line_number <= line_count; line_number++) print lines[line_number]
   }
 
   delete lines
