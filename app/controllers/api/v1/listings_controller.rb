@@ -1,7 +1,10 @@
 class Api::V1::ListingsController < Api::V1::BaseController
   def index
     base = policy_scope(Listing)
-    listings = Listings::Query.new(scope: base, params: params).call
+    # Filtering by payment status reveals it just as surely as showing it: a
+    # count of "paid" listings is billing data. Only billing staff may use it.
+    query_params = current_user.billing_access? || !current_user.internal? ? params : params.except(:payment_status)
+    listings = Listings::Query.new(scope: base, params: query_params).call
       .includes(:client_account, :assigned_users, :media_assets, :listing_feedbacks, :order_deliverables,
                 appointments: :assigned_user, orders: %i[order_items invoices order_deliverables])
       .order(created_at: :desc)
@@ -126,10 +129,8 @@ class Api::V1::ListingsController < Api::V1::BaseController
       listing_customers: listing.listing_customers.map { |customer| serialize_listing_customer(customer) },
       appointment: appointment && serialize_appointment(appointment),
       assigned_team_member: appointment&.assigned_user&.slice(:id, :name, :email, :role) || listing.assigned_users.first&.slice(:id, :name, :email, :role),
-      order: order && { id: order.id, status: order.status, fulfillment_status: order.fulfillment_status,
-                        total_cents: order.total_cents, currency: order.currency,
-                        items: order.order_items.map { |item| item.slice(:id, :product_id, :title) } },
-      payment_status: payment_status,
+      order: order && serialize_listing_order(order),
+      payment_status: current_user.billing_access? ? payment_status : nil,
       feedback_summary: listing_feedback_summary(listing),
       cover_image_url: cover && media_url_for(cover),
       order_deliverables: listing.order_deliverables.active.ordered.map { |deliverable| serialize_deliverable(deliverable) }
@@ -229,6 +230,16 @@ class Api::V1::ListingsController < Api::V1::BaseController
     return cdn_url if cdn_url.present?
 
     preview_api_v1_media_asset_path(asset)
+  end
+
+  # The order total is customer billing; a production specialist sees what was
+  # ordered but not what it cost.
+  def serialize_listing_order(order)
+    data = { id: order.id, status: order.status, fulfillment_status: order.fulfillment_status,
+             items: order.order_items.map { |item| item.slice(:id, :product_id, :title) } }
+    return data unless current_user.billing_access?
+
+    data.merge(total_cents: order.total_cents, currency: order.currency)
   end
 
   def listing_payment_status(listing)

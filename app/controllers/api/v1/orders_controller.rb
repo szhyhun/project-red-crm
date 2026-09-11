@@ -75,6 +75,15 @@ class Api::V1::OrdersController < Api::V1::BaseController
                                   :discount_rate_basis_points, :tax_cents, :fee_cents, :fee_label, tags: [])
   end
 
+  # A specialist needs an order's items and deliverables to do the work, not
+  # what the customer paid for it. Customers see their own order's money.
+  ORDER_MONEY_KEYS = %i[payment_mode currency subtotal_cents discount_type discount_cents discount_rate_basis_points
+                        tax_cents fee_cents fee_label total_cents payment_status balance_due_cents].freeze
+
+  def billing_visible?
+    !current_user.internal? || current_user.billing_access?
+  end
+
   def serialize(order, include_details: false)
     data = order.slice(:id, :status, :fulfillment_status, :payment_mode, :currency, :subtotal_cents, :discount_type,
                        :discount_cents, :discount_rate_basis_points, :tax_cents, :fee_cents, :fee_label, :total_cents,
@@ -84,11 +93,16 @@ class Api::V1::OrdersController < Api::V1::BaseController
       payment_status: order.payment_status,
       balance_due_cents: order.balance_due_cents
     )
+    data = data.except(*ORDER_MONEY_KEYS) unless billing_visible?
     return data unless include_details
 
-    data.merge(
+    details = {
       items: order.order_items.map { |item| serialize_item(item) },
-      deliverables: order.order_deliverables.ordered.map { |deliverable| serialize_deliverable(deliverable) },
+      deliverables: order.order_deliverables.ordered.map { |deliverable| serialize_deliverable(deliverable) }
+    }
+    return data.merge(details) unless billing_visible?
+
+    data.merge(details).merge(
       invoices: order.invoices.map do |invoice|
         invoice.slice(:id, :number, :status, :subtotal_cents, :discount_cents, :tax_cents, :fee_cents, :fee_label,
                       :total_cents, :balance_due_cents, :due_on, :sent_at, :paid_at).merge(
@@ -102,11 +116,12 @@ class Api::V1::OrdersController < Api::V1::BaseController
   end
 
   def serialize_item(item)
-    item.slice(:id, :product_id, :product_variant_id, :title, :description, :options, :quantity,
-               :unit_price_cents, :total_cents, :cancelled_at).merge(
+    data = item.slice(:id, :product_id, :product_variant_id, :title, :description, :options, :quantity,
+                      :unit_price_cents, :total_cents, :cancelled_at).merge(
       product: item.product&.slice(:id, :title, :kind),
       product_variant: item.product_variant&.slice(:id, :title, :sqft_min, :sqft_max, :quantity_label)
     )
+    billing_visible? ? data : data.except(:unit_price_cents, :total_cents)
   end
 
   def serialize_deliverable(deliverable)

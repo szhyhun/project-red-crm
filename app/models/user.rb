@@ -46,4 +46,11 @@ class User < ApplicationRecord
   def admin?
     organization_admin? || platform_owner?
   end
+
+  # Staff who handle money: they create, send and chase invoices. A production
+  # specialist works on an order but not on what it costs, so customer billing
+  # is not theirs to read.
+  def billing_access?
+    organization_admin? || platform_owner? || manager?
+  end
 end

@@ -1,14 +1,21 @@
 class InvoicePolicy < OrganizationRecordPolicy
   def index?
-    true
+    billing_staff? || customer?
   end
 
+  # Asked at class level for the session capability map, where there is no
+  # invoice yet: the answer is then simply whether this person may see billing.
   def view?
-    belongs_to_current_organization? && (user.internal? || user.client_account_ids.include?(record.client_account_id))
+    return index? if record.is_a?(Class)
+
+    belongs_to_current_organization? &&
+      (billing_staff? || user.client_account_ids.include?(record.client_account_id))
   end
 
   def update?
-    belongs_to_current_organization? && user.internal?
+    return billing_staff? if record.is_a?(Class)
+
+    belongs_to_current_organization? && billing_staff?
   end
 
   def pay?
@@ -18,9 +25,20 @@ class InvoicePolicy < OrganizationRecordPolicy
   class Scope < Scope
     def resolve
       invoices = scope.where(organization_id: user.organization_id)
-      return invoices if user.internal?
+      return invoices if user.internal? && user.billing_access?
+      return invoices.none if user.internal?
 
       invoices.where(client_account_id: user.client_account_ids)
     end
+  end
+
+  private
+
+  def billing_staff?
+    user.internal? && user.billing_access?
+  end
+
+  def customer?
+    !user.internal?
   end
 end
