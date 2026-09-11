@@ -77,35 +77,38 @@ class Api::V1::ConversationsController < Api::V1::BaseController
       return render_validation_errors(invalid)
     end
 
-    conversations = if client_conversation
-      if client_accounts.empty?
-        [ Current.organization.conversations.build(attributes.merge(listing: nil)) ]
-      else
-        # Client visibility is account-bound, so a multi-select fans out to
-        # one private account thread per customer instead of sharing data
-        # between unrelated customer portals.
-        client_accounts.map do |client_account|
-          Conversation.account_thread_for(
-            organization: Current.organization,
-            client_account:,
-            subject: attributes[:subject].presence || "Client conversation"
-          ).tap do |conversation|
-            conversation.assign_attributes(attributes.merge(listing: nil, client_account:)) unless conversation.persisted?
+    # Account threads are created on lookup, so they are built inside the
+    # transaction: a rejected member list must not leave an empty room behind.
+    conversations = Conversation.transaction do
+      built = if client_conversation
+        if client_accounts.empty?
+          [ Current.organization.conversations.build(attributes.merge(listing: nil)) ]
+        else
+          # Client visibility is account-bound, so a multi-select fans out to
+          # one private account thread per customer instead of sharing data
+          # between unrelated customer portals.
+          client_accounts.map do |client_account|
+            Conversation.account_thread_for(
+              organization: Current.organization,
+              client_account:,
+              subject: attributes[:subject].presence || "Client conversation"
+            ).tap do |conversation|
+              conversation.assign_attributes(attributes.merge(listing: nil, client_account:)) unless conversation.persisted?
+            end
           end
         end
+      else
+        [ Current.organization.conversations.build(attributes.merge(listing:)) ]
       end
-    else
-      [ Current.organization.conversations.build(attributes.merge(listing:)) ]
-    end
 
-    Conversation.transaction do
-      conversations.each do |conversation|
+      built.each do |conversation|
         conversation.save! unless conversation.persisted?
         add_conversation_memberships!(conversation)
         if create_params[:body].present? || create_params[:body_html].present?
           create_message!(conversation, create_params[:body], create_params[:body_html], nil, listing:)
         end
       end
+      built
     end
 
     serialized = conversations.map { |conversation| serialize(conversation, include_messages: true) }

@@ -118,6 +118,22 @@ RSpec.describe "Conversation creation API scenario", type: :request do
     expect(response.parsed_body.dig("details", "client_account_ids")).to include("contains an unavailable customer account")
   end
 
+  it "leaves no customer room behind when a selected member is unavailable" do
+    expect {
+      post "/api/v1/conversations", params: {
+        conversation: {
+          kind: "client",
+          subject: "Room with a missing member",
+          client_account_ids: [ client_account.id ],
+          member_ids: [ 999_999 ]
+        }
+      }
+    }.not_to change(Conversation, :count)
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.dig("details", "member_ids")).to include("contains an unavailable organization member")
+  end
+
   it "does not allow a customer to create an internal conversation with a client member" do
     sign_out manager
     sign_in client_user
