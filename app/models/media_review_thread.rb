@@ -1,6 +1,8 @@
 class MediaReviewThread < ApplicationRecord
   STATUSES = %w[open resolved outdated].freeze
-  ANCHOR_TYPES = %w[asset region timestamp page].freeze
+  # `deliverable` is a comment on a whole service rather than one file, which is
+  # how a customer asks for a change to a service that has no file yet.
+  ANCHOR_TYPES = %w[asset region timestamp page deliverable].freeze
 
   belongs_to :media_review
   belongs_to :media_review_asset, optional: true
@@ -13,6 +15,9 @@ class MediaReviewThread < ApplicationRecord
   enum :anchor_type, ANCHOR_TYPES.index_by(&:itself), validate: true
 
   validates :time_start_ms, :time_end_ms, :page_number, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  # Regions are percentages of the rendered file, so they stay valid at any size.
+  validates :anchor_x, :anchor_y, :anchor_width, :anchor_height,
+            numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }, allow_nil: true
   validate :thread_context_matches_review
   validate :anchor_values_are_consistent
 
@@ -31,8 +36,16 @@ class MediaReviewThread < ApplicationRecord
   end
 
   def anchor_values_are_consistent
+    if deliverable?
+      errors.add(:order_deliverable, "is required for a comment on a service") if order_deliverable.blank?
+    elsif media_review_asset.blank?
+      errors.add(:media_review_asset, "is required for a comment on a file")
+    end
     if timestamp? && time_start_ms.blank?
       errors.add(:time_start_ms, "is required for a timestamp comment")
+    end
+    if time_start_ms.present? && time_end_ms.present? && time_end_ms < time_start_ms
+      errors.add(:time_end_ms, "must not be before the start time")
     end
     if page? && page_number.blank?
       errors.add(:page_number, "is required for a page comment")

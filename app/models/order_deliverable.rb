@@ -31,6 +31,8 @@ class OrderDeliverable < ApplicationRecord
   validate :scope_is_valid
   validate :order_item_matches_product_lineage
   before_update :advance_delivery_version, if: :new_delivery_version?
+  # An open draft was written about the files this delivery just replaced.
+  after_update :outdate_open_reviews, if: :saved_change_to_delivery_version?
 
   scope :active, -> { where(cancelled_at: nil) }
   scope :ordered, -> { order(:position, :id) }
@@ -90,5 +92,9 @@ class OrderDeliverable < ApplicationRecord
 
   def advance_delivery_version
     self.delivery_version = delivery_version.to_i + 1
+  end
+
+  def outdate_open_reviews
+    media_reviews.open.find_each(&:mark_outdated!)
   end
 end

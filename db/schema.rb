@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_10_110000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_11_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -782,6 +782,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_10_110000) do
     t.index ["created_by_id"], name: "index_media_reviews_on_created_by_id"
     t.index ["listing_id", "client_account_id", "delivery_version"], name: "index_media_reviews_on_listing_account_version"
     t.index ["listing_id", "client_account_id", "number"], name: "index_media_reviews_on_listing_account_number", unique: true
+    t.index ["listing_id", "client_account_id"], name: "index_media_reviews_one_open_per_listing_account", unique: true, where: "((status)::text = 'open'::text)"
     t.index ["listing_id"], name: "index_media_reviews_on_listing_id"
     t.index ["organization_id", "listing_id", "client_account_id"], name: "index_media_reviews_on_organization_listing_account"
     t.index ["organization_id"], name: "index_media_reviews_on_organization_id"

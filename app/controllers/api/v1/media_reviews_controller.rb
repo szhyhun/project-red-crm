@@ -1,74 +1,50 @@
 class Api::V1::MediaReviewsController < Api::V1::BaseController
+  # The listing's review page for either side: current files, every review
+  # round, and every thread the viewer may see.
   def listing_index
     listing = policy_scope(Listing).find(params[:listing_id])
     authorize listing, :view?
-    reviews = policy_scope(MediaReview).where(listing: listing).ordered
-    current_review = reviews.first
 
-    render json: {
-      reviews: reviews.map { |review| serialize_summary(review) },
-      current_review: current_review && serialize_summary(current_review),
-      review_state: current_review&.status || "implicitly_accepted"
-    }
+    render json: { workspace: workspace_payload(listing) }
   end
 
   def create
     listing = policy_scope(Listing).find(params[:listing_id])
     authorize listing, :view?
     client_account = listing.client_account
-    review = policy_scope(MediaReview).where(listing:, client_account:).open.ordered.first
-    return render json: { media_review: serialize_review(review) }, status: :ok if review.present?
-
     deliverables = selected_deliverables(listing)
-    reviewable_assets = reviewable_assets(listing, deliverables)
-    if reviewable_assets.empty?
+    assets = reviewable_assets(listing, deliverables)
+    if deliverables.empty? && assets.empty?
       return render json: { error: "no_delivered_media_to_review" }, status: :unprocessable_entity
     end
-    # Customer review follows published media, not the internal order workflow.
-    # An imported or manually uploaded file can be customer-visible without an
-    # OrderDeliverable, and it must still be reviewable.
-    current_version = (deliverables.map(&:delivery_version) + reviewable_assets.map(&:version)).max.to_i
-    existing_review = policy_scope(MediaReview)
-      .where(listing:, client_account:, delivery_version: current_version)
-      .where.not(status: :outdated)
-      .ordered.first
-    return render json: { media_review: serialize_review(existing_review) }, status: :ok if existing_review.present?
 
-    review = Current.organization.media_reviews.build(
+    review = open_draft_for(listing, client_account)
+    status = review.present? ? :ok : :created
+    review ||= Current.organization.media_reviews.build(
       listing:,
       client_account:,
       created_by: current_user,
       number: Current.organization.media_reviews.where(listing:, client_account:).maximum(:number).to_i + 1,
-      delivery_version: current_version
+      delivery_version: (deliverables.map(&:delivery_version) + assets.map(&:version)).max.to_i
     )
-    authorize review, :create?
+    authorize review, review.new_record? ? :create? : :update?
 
     MediaReview.transaction do
-      review.save!
-      deliverables.each_with_index do |deliverable, deliverable_position|
-        review.media_review_deliverables.create!(
-          order_deliverable: deliverable,
-          delivery_version: deliverable.delivery_version,
-          position: deliverable_position
-        )
+      if review.new_record?
+        review.save!
+        ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: review,
+                              event_type: "media_review.created", payload: { listing_id: listing.id })
       end
-      reviewable_assets.each_with_index do |asset, asset_position|
-        deliverable = deliverables.find { |candidate| candidate.id == asset.order_deliverable_id }
-        review.media_review_assets.create!(
-          media_asset: asset,
-          order_deliverable: deliverable,
-          asset_version: asset.version.to_i,
-          filename: asset.filename,
-          content_type: asset.content_type,
-          byte_size: asset.byte_size,
-          position: asset_position
-        )
-      end
-      ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: review,
-                            event_type: "media_review.created", payload: { listing_id: listing.id })
+      review.include_media!(deliverables:, assets:)
     end
 
-    render json: { media_review: serialize_review(review.reload) }, status: :created
+    render json: { media_review: serialize_review(review.reload) }, status:
+  rescue ActiveRecord::RecordNotUnique
+    # Another tab or a double click opened the draft first; resume that one.
+    review = MediaReview.open_for(listing:, client_account:)
+    raise if review.blank?
+
+    render json: { media_review: serialize_review(review) }, status: :ok
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
   end
@@ -83,16 +59,17 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
     review = find_review
     authorize review, :update?
     attributes = thread_params
-    review_asset = review.media_review_assets.find_by(id: attributes[:media_review_asset_id])
-    if attributes[:media_review_asset_id].present? && review_asset.blank?
+    review_asset = resolve_review_asset(review, attributes)
+    if (attributes[:media_review_asset_id].present? || attributes[:media_asset_id].present?) && review_asset.blank?
       return render json: { error: "invalid_review_asset_reference" }, status: :unprocessable_entity
     end
 
+    deliverable = resolve_review_deliverable(review, attributes[:order_deliverable_id])
     thread = review.media_review_threads.build(
       media_review_asset: review_asset,
-      order_deliverable: resolve_review_deliverable(review, attributes[:order_deliverable_id]),
+      order_deliverable: deliverable || review_asset&.order_deliverable,
       created_by: current_user,
-      anchor_type: attributes[:anchor_type].presence || (review_asset.present? ? :asset : :page),
+      anchor_type: attributes[:anchor_type].presence || (review_asset.present? ? :asset : :deliverable),
       page_number: attributes[:page_number],
       time_start_ms: attributes[:time_start_ms],
       time_end_ms: attributes[:time_end_ms],
@@ -114,11 +91,13 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
     render_validation_errors(error.record)
   end
 
+  # A reply joins the draft while the review is open and is published at once
+  # after submission, the way a reply to a merge request thread is.
   def create_comment
     thread = visible_thread
-    authorize thread, :create?
+    authorize thread, :update?
     comment = thread.media_review_comments.build(
-      comment_attributes.merge(author: current_user, status: current_user.internal? ? :published : :draft)
+      comment_attributes.merge(author: current_user, status: thread.media_review.open? ? :draft : :published)
     )
     authorize comment, :create?
 
@@ -144,7 +123,13 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
   def destroy_comment
     comment = visible_comment
     authorize comment, :destroy?
-    comment.destroy!
+    thread = comment.media_review_thread
+    MediaReview.transaction do
+      comment.destroy!
+      # A thread is its comments; removing the only one must not leave an empty
+      # anchor behind for staff to find after submission.
+      thread.destroy! unless thread.media_review_comments.exists?
+    end
     head :no_content
   end
 
@@ -175,10 +160,35 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
     thread = visible_thread
     authorize thread, :manage?
     thread.update!(status: :open, resolved_by: nil, resolved_at: nil)
+    ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: thread.media_review,
+                          event_type: "media_review.thread_reopened", payload: { thread_id: thread.id })
     render json: { media_review: serialize_review(thread.media_review.reload) }
   end
 
   private
+
+  def workspace_payload(listing)
+    MediaReviews::Workspace.new(
+      listing:,
+      user: current_user,
+      reviews: policy_scope(MediaReview).where(listing:, client_account_id: listing.client_account_id),
+      # Services delivered at least once stay on the page while they are back in
+      # production, so the threads that sent them back stay beside their files.
+      deliverables: policy_scope(OrderDeliverable).where(listing:).active
+        .where("order_deliverables.delivery_version > 0 OR order_deliverables.status = ?", "delivered").ordered
+    ).as_json
+  end
+
+  # A draft is retired once an included service is delivered again, and the
+  # customer starts over on the new files rather than resuming comments that
+  # were written about the old ones.
+  def open_draft_for(listing, client_account)
+    review = policy_scope(MediaReview).where(listing:, client_account:).open.ordered.first
+    return review unless review&.stale?
+
+    review.mark_outdated!
+    nil
+  end
 
   def find_review
     MediaReviewPolicy::Scope.new(current_user, MediaReview).resolve
@@ -213,14 +223,22 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
     selected.length == ids.length ? selected : []
   end
 
+  # Customer review follows published media, not the internal order workflow.
+  # An imported or manually uploaded file can be customer-visible without an
+  # OrderDeliverable, and it must still be reviewable.
   def reviewable_assets(listing, deliverables)
     assets = listing.media_assets.current_version.final.ready
       .where(customer_visible: true, hidden: false)
       .order(:position, :created_at, :id)
-    return assets.to_a if deliverables.empty?
+    assets.where(order_deliverable_id: nil).or(assets.where(order_deliverable_id: deliverables.map(&:id))).to_a
+  end
 
-    assets.where(order_deliverable_id: nil)
-      .or(assets.where(order_deliverable_id: deliverables.map(&:id))).to_a
+  def resolve_review_asset(review, attributes)
+    if attributes[:media_review_asset_id].present?
+      review.media_review_assets.find_by(id: attributes[:media_review_asset_id])
+    elsif attributes[:media_asset_id].present?
+      review.media_review_assets.find_by(media_asset_id: attributes[:media_asset_id])
+    end
   end
 
   def resolve_review_deliverable(review, id)
@@ -235,7 +253,7 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
 
   def thread_params
     params.fetch(:thread, {}).permit(
-      :media_review_asset_id, :order_deliverable_id, :anchor_type, :page_number,
+      :media_review_asset_id, :media_asset_id, :order_deliverable_id, :anchor_type, :page_number,
       :time_start_ms, :time_end_ms, :anchor_x, :anchor_y, :anchor_width, :anchor_height
     )
   end
@@ -248,20 +266,14 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
     params.fetch(:media_review, {}).permit(:outcome, :summary, :summary_html)
   end
 
-  def serialize_summary(review)
-    review.slice(:id, :number, :delivery_version, :status, :outcome, :created_at, :submitted_at).merge(
-      pending_comment_count: review.open? && current_user.client_account_ids.include?(review.client_account_id) ? review.media_review_comments.where(status: :draft).count : 0,
-      listing: { id: review.listing_id, address: review.listing.address }
-    )
-  end
-
   def serialize_review(review)
     deliverable_assets = review.media_review_assets.group_by(&:order_deliverable_id)
+    comments = visible_review_comments(review)
     review.slice(:id, :listing_id, :client_account_id, :number, :delivery_version, :status, :outcome,
                  :summary, :summary_html, :created_at, :submitted_at).merge(
       listing: { id: review.listing.id, address: review.listing.address },
-      can_submit: review.open? && current_user.client_account_ids.include?(review.client_account_id) && !current_user.internal?,
-      pending_comment_count: visible_review_comments(review).count(&:draft?),
+      can_submit: review.open? && MediaReviewPolicy.new(current_user, review).submit?,
+      pending_comment_count: comments.count(&:draft?),
       deliverables: review.media_review_deliverables.sort_by { |join| [ join.position, join.id ] }.map do |join|
         deliverable = join.order_deliverable
         deliverable.slice(:id, :title, :description, :deliverable_type, :status, :target_on, :delivered_at,
@@ -272,57 +284,47 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
         )
       end,
       asset_groups: serialize_review_asset_groups(review),
-      threads: review.media_review_threads.sort_by { |thread| [ thread.created_at, thread.id ] }.map { |thread| serialize_thread(thread) }
+      threads: review.media_review_threads.sort_by { |thread| [ thread.created_at, thread.id ] }.filter_map { |thread| serialize_thread(thread, comments) }
     )
   end
 
   def serialize_review_asset_groups(review)
-    grouped_assets = review.media_review_assets.select { |review_asset| review_asset.order_deliverable_id.nil? }
-      .group_by do |review_asset|
-        category = review_asset.media_asset&.category.to_s
-        Api::V1::PortalController::PORTAL_ASSET_GROUPS.key?(category) ? category : "files"
-      end
-
-    grouped_assets.sort_by { |category, _| MediaAsset::CATEGORIES.index(category) || MediaAsset::CATEGORIES.length }
+    review.media_review_assets.select { |review_asset| review_asset.order_deliverable_id.nil? }
+      .group_by { |review_asset| MediaReviews::Workspace.group_key(review_asset.media_asset) }
+      .sort_by { |category, _| MediaReviews::Workspace.group_order(category) }
       .map do |category, assets|
-        definition = Api::V1::PortalController::PORTAL_ASSET_GROUPS.fetch(category)
-        {
+        MediaReviews::Workspace.group_definition(category).merge(
           key: category,
-          title: definition.fetch(:title),
-          description: definition.fetch(:description),
-          deliverable_type: definition.fetch(:deliverable_type),
           status: "delivered",
           asset_count: assets.length,
           assets: assets.sort_by { |asset| [ asset.position, asset.id ] }.map { |asset| serialize_review_asset(asset) }
-        }
+        )
       end
   end
 
   def serialize_review_asset(review_asset)
     asset = review_asset.media_asset
-    visible = asset.present? && MediaAssetPolicy.new(current_user, asset).view?
+    visible = MediaAssetPolicy.new(current_user, asset).view?
     review_asset.slice(:id, :media_asset_id, :order_deliverable_id, :asset_version, :filename, :content_type,
                        :byte_size, :position).merge(
-      category: asset&.category,
-      width: asset&.width,
-      height: asset&.height,
-      duration_seconds: asset&.duration_seconds,
-      cdn_url: visible && asset.ready? ? asset.source_url.presence || DeliveryStorage.public_url(asset.storage_key) : nil,
-      preview_path: visible && asset.ready? ? "/api/v1/media_assets/#{asset.id}/preview" : nil,
-      download_path: visible && asset.ready? ? "/api/v1/media_assets/#{asset.id}/download" : nil
+      MediaReviews::Workspace.serialize_asset(asset, visible:)
+        .slice(:category, :width, :height, :duration_seconds, :cdn_url, :preview_path, :download_path)
     )
   end
 
-  def serialize_thread(thread)
+  def serialize_thread(thread, visible_comments)
+    comments = visible_comments.select { |comment| comment.media_review_thread_id == thread.id }
+    # Staff must not see a thread that is still only the customer's draft.
+    return if comments.empty?
+
     thread.slice(:id, :media_review_asset_id, :order_deliverable_id, :status, :anchor_type, :page_number,
                  :time_start_ms, :time_end_ms, :anchor_x, :anchor_y, :anchor_width, :anchor_height,
                  :resolved_at, :created_at).merge(
-      comments: visible_review_comments(thread.media_review).select { |comment| comment.media_review_thread_id == thread.id }
-        .sort_by { |comment| [ comment.created_at, comment.id ] }.map do |comment|
-          comment.slice(:id, :body, :body_html, :status, :edited_at, :created_at).merge(
-            author: comment.author.slice(:id, :name, :role)
-          )
-        end
+      comments: comments.sort_by { |comment| [ comment.created_at, comment.id ] }.map do |comment|
+        comment.slice(:id, :body, :body_html, :status, :edited_at, :created_at).merge(
+          author: comment.author.slice(:id, :name, :role)
+        )
+      end
     )
   end
 

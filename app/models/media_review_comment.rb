@@ -13,7 +13,12 @@ class MediaReviewComment < ApplicationRecord
   private
 
   def normalize_body_content
-    return unless will_save_change_to_body_html?
+    unless will_save_change_to_body_html?
+      # A plain-text edit replaces the rich text too; otherwise the old HTML
+      # keeps rendering in place of the edit.
+      self.body_html = nil if will_save_change_to_body? && body_html.present?
+      return
+    end
 
     if body_html.blank?
       self.body_html = nil

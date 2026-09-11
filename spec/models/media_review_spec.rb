@@ -90,7 +90,7 @@ RSpec.describe MediaReview, type: :model do
   end
 
   it "reopens the included deliverable only for a request-changes outcome" do
-    review.submit!(outcome: "request_changes", submitted_by: customer)
+    review.submit!(outcome: "request_changes", submitted_by: customer, summary: "Replace the front photo.")
 
     expect(review.reload).to be_changes_requested
     expect(deliverable.reload).to have_attributes(status: "in_progress", delivered_at: nil)

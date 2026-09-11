@@ -30,9 +30,9 @@ on the strength of a plan alone.
 | Media and storage boundaries | Done | — |
 | Catalog interface | Done | — |
 | Staff CRM listing workspace | Partial | version history, Download All, Custom Image Sizing, Interactive Floor Plan, poster/duration |
-| Customer listing media page | Partial | video poster/duration, floor-plan viewer; review workspace is implemented, but the staff-side review screen remains |
+| Customer listing media page | Partial | video poster/duration, floor-plan viewer |
 | Change requests | Partial | legacy endpoint remains for older clients; new portal flow uses media reviews |
-| Media reviews | Partial | customer draft/review workspace and staff reply API are implemented; staff review UI and replacement-to-new-revision flow remain |
+| Media reviews | Partial | image pins and video timecodes in the interface (the API already stores them); viewed marks kept on the server; replacing a file from the review page |
 | Chat interface | Partial | customer users still auto-joined; no message editing; Escape does not close the thread menu |
 | APIs and authorization | Done | — |
 | Customer portal shell | Not started | left navigation, account switcher, Book a shoot, Billing |
@@ -67,9 +67,9 @@ What each row rests on:
   covered by specs, but no staff screen shows them yet.
 - **Customer listing media page** — deliverable/category cards, the "Media will
   appear when ready" empty state, Download All, accepted-by-default state, and
-  the GitLab-style media review workspace. Review media is present and enabled
-  whenever any customer-visible media exists; it is omitted when there is
-  nothing to view. The legacy change-request endpoint stays available for old
+  the media review page shared with staff (see Media review UI contract).
+  Review media is present whenever any customer-visible media exists; it is
+  omitted when there is nothing to view. The legacy change-request endpoint stays available for old
   clients, but the portal no longer presents a second standalone request
   composer.
 - **Change requests** — the compatibility endpoint still validates listing,
@@ -95,11 +95,9 @@ What each row rests on:
 - **Customer accounts, teams, and roles** — `ClientMembership.role` exists but no
   policy reads it; there are no portal team or chat-management endpoints.
 
-Browser smoke checks recorded on 2026-09-10: local customer portal showed
-separate photography, video, floor-plan, and empty service groups; opening
-Review media showed the `+` buttons and focused comment panel; adding a draft
-comment updated the pending count; Escape closed the review window; the
-temporary QA records were removed afterward.
+Browser smoke checks recorded on 2026-09-10 covered the first review window
+(a dialog with a side comment panel). That window has since been replaced by
+the review page described below, which has not had a browser check yet.
 
 ## Product rules
 
@@ -558,20 +556,33 @@ implicitly accepted; the system does not create a fake approval row. The
 portal shows the media and offers **Review media** whenever there is something
 to view.
 
-Opening **Review media** creates or resumes an open draft review for the
-currently published customer-visible media snapshot. The snapshot may contain
-assets linked to an internal `OrderDeliverable` and assets that were uploaded
-or imported directly to the listing. Draft comments remain private to the
-customer until the review is submitted. A draft that is abandoned is not an
-approval and remains available to resume.
+Opening **Review media** shows the listing's review page and creates nothing.
+The customer's first comment opens a draft review for the currently published
+customer-visible media snapshot. The snapshot may contain assets linked to an
+internal `OrderDeliverable` and assets that were uploaded or imported directly
+to the listing; resuming a draft adds anything published since. Draft
+comments remain private to the customer until the review is submitted. A draft
+that is abandoned is not an approval and remains available to resume.
+
+There is at most one open draft per listing and customer account, enforced by
+a partial unique index. When a service in an open draft is delivered again,
+the draft is retired as `outdated`: its unsent comments stay visible to the
+customer, marked as not sent, and the next comment starts a new draft. After a
+review is submitted the customer may start another one, as in a merge request.
+
+After submission the discussion stays on the review page. Both sides reply on
+the same threads, and replies are published immediately. Either side may
+resolve or reopen a thread. Staff never see a draft or its threads.
 
 Submitting an explicit **Approve delivery** creates a `MediaReview` with
 `outcome: approve` and `status: approved`. This is distinct from implicit
 acceptance because it records that the customer actively reviewed and approved
 the files. The other review outcomes are `comment` and `request_changes`.
 
-`request_changes` marks the reviewed customer media as needing work and adds a
-production activity/task when an internal deliverable exists. It still works
+`request_changes` must carry at least one comment or a summary, so production
+is never sent work without knowing what to change. It marks the reviewed
+customer media as needing work and adds a production activity/task when an
+internal deliverable exists. It still works
 for directly uploaded or imported listing media that has no order deliverable.
 It does not introduce a separate customer-review status. Review comments stay
 attached to their exact asset snapshot, with optional image/PDF coordinates or
@@ -683,18 +694,28 @@ POST   /api/v1/portal/listings/:listing_id/reviews
 GET    /api/v1/portal/reviews/:id
 POST   /api/v1/portal/reviews/:id/threads
 POST   /api/v1/portal/review_threads/:id/comments
+POST   /api/v1/portal/review_threads/:id/resolve
+POST   /api/v1/portal/review_threads/:id/reopen
 PATCH  /api/v1/portal/review_comments/:id
 DELETE /api/v1/portal/review_comments/:id
 POST   /api/v1/portal/reviews/:id/submit
 ```
 
-Creating a review accepts `media_review.order_deliverable_ids` as an optional
-internal scoping hint for older clients. The server always includes ready,
-current, customer-visible media for the listing, including assets without an
-`OrderDeliverable`. The server rejects files that are not ready, current, and
-customer-visible. A second create request resumes the open draft or returns
-the existing review for the same media snapshot; it cannot create duplicate
-reviews for the same snapshot.
+`GET .../reviews` returns the review page as `workspace`: delivered services
+with their current files, unassigned files grouped by kind, every review round
+the viewer may see, and every thread with its comments and capabilities. A
+thread follows its file through replacements: `media_asset_id` is the file it
+shows on now, `original_media_asset_id` the file that was commented on, and
+`outdated` marks the difference. Staff read the same payload from
+`GET /api/v1/listings/:listing_id/media_reviews`.
+
+Creating a review resumes the open draft, bringing its snapshot up to date, or
+opens a new one; a double submission resolves to the same draft.
+`media_review.order_deliverable_ids` remains an optional scoping hint for older
+clients. The server always includes ready, current, customer-visible media for
+the listing, including assets without an `OrderDeliverable`, and rejects files
+that are not ready, current, and customer-visible. A draft whose services were
+delivered again is retired rather than resumed.
 
 The thread request is shaped like:
 
@@ -714,6 +735,10 @@ The thread request is shaped like:
   }
 }
 ```
+
+A thread may name its file by `media_asset_id` instead of
+`media_review_asset_id`. A comment on a whole service, including one with no
+files yet, is `{ "order_deliverable_id": 5, "anchor_type": "deliverable" }`.
 
 The submit request is:
 
@@ -743,49 +768,50 @@ POST /api/v1/media_review_threads/:id/resolve
 POST /api/v1/media_review_threads/:id/reopen
 ```
 
-Staff replies are published, while customer draft comments are intentionally
-omitted from staff responses until submission. Every route scopes through the
+Staff replies are published. Staff can neither see nor reply to a thread while
+its review is still a draft, and a thread whose only comment is deleted is
+removed rather than left empty. Every route scopes through the
 organization and the listing/customer relationship before Pundit authorization
 runs. A customer cannot use a review ID, review asset ID, deliverable ID, or
 media asset from another account or listing.
 
 ### Media review UI contract
 
-The customer opens **Review media** from the listing media page. The action is
-shown only when the listing has at least one ready, customer-visible media
-asset, and is always enabled while the review is opening. It is omitted when
-there is nothing to view. Category groups for imported or directly uploaded
-files are valid review sections; they do not need to be turned into fake
-`OrderDeliverable` records.
+The customer opens **Review media** from the listing media page; the review
+page replaces the media list rather than opening over it. Staff see the same
+page as the **Customer review** section of the listing workspace. Category
+groups for imported or directly uploaded files are valid review sections; they
+do not need to be turned into fake `OrderDeliverable` records.
 
-The review window follows the interaction pattern from GitLab and GitHub code
-reviews while adapting the anchor from a code line to a media file:
+The page follows a merge request, with the file as the unit a code line is in
+GitLab. A listing can carry fifty photos, so it has two ways to read them:
 
 ```text
-Review media #3
- ├── left: one section per published service or media category
- │    ├── title, type, file count, status
- │    └── asset tiles with preview, download, comment count, and + marker
- ├── right: focused comment panel
- │    ├── selected filename
- │    ├── rich-text comment composer
- │    ├── draft/published thread cards
- │    └── resolved state when staff closes a thread
- └── footer
-      ├── pending comment count
-      ├── optional review summary
-      ├── outcome: Comment / Request changes / Approve delivery
-      └── Submit review
+Toolbar   Files | Conversation · review state · N unresolved ‹ › · Finish review (N pending)
+Filters   All · Not viewed · Unresolved · Replaced · Mine          23 of 50 viewed
+Grid      one section per service or media kind
+            tiles: thumbnail, unresolved/pending/resolved badge, vN, viewed check
+            "Comment on service" with the service's own threads
+Focus     one file large, ‹ 23 of 50 ›, Mark viewed (V), download
+            filmstrip of the filtered files
+            the file's threads directly underneath, then "Comment on this file…"
 ```
 
-The `+` is a real keyboard-focusable button on every tile, not an icon hidden
-inside the image. Selecting it opens the comment panel for that exact
-`media_review_asset_id`. `Add to review` creates a draft thread immediately so
-the customer can leave comments on several files before making one submission.
-The window is responsive: the panel moves below the asset sections on narrow
-screens, the asset grid stays bounded, and the modal closes with Escape or its
-close button. Media URLs still go through `mediaAssetUrl` and
-`mediaAssetDownloadUrl`; the review component never constructs storage URLs.
+- **Grid → focus.** Clicking a tile opens it; `←` `→` step through the filtered
+  files, `V` marks the file viewed and moves on, `Esc` returns to the grid.
+- **Viewed** is per person, kept in the browser for now. A replacement is a new
+  file, so it comes back as not viewed.
+- **Threads** show the conversation in order with a Customer or Team badge,
+  then **Reply…** and **Resolve thread**. Resolved threads fold to one line.
+  Pending comments are marked and visible only to their author until
+  **Finish review**, which offers Comment (the default), Approve, or Request
+  changes, with an optional summary.
+- **Conversation** is the timeline of review rounds, each with its threads and
+  the file they are about.
+- **Unresolved ‹ ›** jumps between files with open threads.
+
+Media URLs still go through `mediaAssetUrl` and `mediaAssetDownloadUrl`; the
+review component never constructs storage URLs.
 
 ### Customer accounts, teams, and roles
 

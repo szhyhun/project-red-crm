@@ -4,14 +4,13 @@ class MediaReviewCommentPolicy < OrganizationRecordPolicy
   end
 
   def create?
-    return false unless thread_visible?
-    return true if user.internal?
-
-    record.media_review_thread.media_review.open? && own_draft_author?
+    thread.present? && MediaReviewThreadPolicy.new(user, thread).update?
   end
 
+  # Only an unsent draft can change. A published comment is part of the record
+  # the other side has already read and answered.
   def update?
-    thread_visible? && record.author_id == user.id && record.draft? && record.media_review_thread.media_review.open?
+    thread_visible? && record.author_id == user.id && record.draft? && thread.media_review.open?
   end
 
   def destroy?
@@ -24,11 +23,11 @@ class MediaReviewCommentPolicy < OrganizationRecordPolicy
 
   private
 
-  def thread_visible?
-    record.media_review_thread.present? && MediaReviewThreadPolicy.new(user, record.media_review_thread).view?
+  def thread
+    record.media_review_thread
   end
 
-  def own_draft_author?
-    record.author_id == user.id || user.client_account_ids.include?(record.media_review_thread.media_review.client_account_id)
+  def thread_visible?
+    thread.present? && MediaReviewThreadPolicy.new(user, thread).view?
   end
 end

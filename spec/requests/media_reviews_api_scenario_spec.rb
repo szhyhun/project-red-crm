@@ -129,7 +129,8 @@ RSpec.describe "Media reviews API scenario", type: :request do
     sign_in manager
     get "/api/v1/media_reviews/#{review.id}"
     expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig("media_review", "threads", 0, "comments")).to be_empty
+    # The thread is still only the customer's draft, so staff do not see it at all.
+    expect(response.parsed_body.dig("media_review", "threads")).to be_empty
   end
 
   it "publishes an explicit approval without changing the delivered state" do

@@ -32,19 +32,67 @@ class MediaReview < ApplicationRecord
     where(listing:, client_account:).open.ordered.first
   end
 
+  # A draft is written against one delivery. Once an included service is
+  # delivered again its files may have been replaced, and resuming the draft
+  # would put old comments on new work.
+  def stale?
+    media_review_deliverables.includes(:order_deliverable).any? do |join|
+      join.order_deliverable.delivery_version != join.delivery_version
+    end
+  end
+
+  def mark_outdated!
+    transaction do
+      update!(status: :outdated)
+      media_review_threads.update_all(status: "outdated", updated_at: Time.current)
+    end
+  end
+
+  # Brings a draft up to date with what is published now, so a service
+  # delivered after the draft was opened, or a file added since, can still be
+  # commented on. Existing snapshot rows are never rewritten: they record what
+  # the customer was shown.
+  def include_media!(deliverables:, assets:)
+    deliverables.each_with_index do |deliverable, position|
+      media_review_deliverables.find_or_create_by!(order_deliverable: deliverable) do |join|
+        join.delivery_version = deliverable.delivery_version
+        join.position = position
+      end
+    end
+    deliverables_by_id = deliverables.index_by(&:id)
+    assets.each_with_index do |asset, position|
+      media_review_assets.find_or_create_by!(media_asset: asset) do |snapshot|
+        snapshot.assign_attributes(order_deliverable: deliverables_by_id[asset.order_deliverable_id],
+                                   asset_version: asset.version.to_i, filename: asset.filename,
+                                   content_type: asset.content_type, byte_size: asset.byte_size, position:)
+      end
+    end
+  end
+
   def submit!(outcome:, submitted_by:, summary: nil, summary_html: nil)
     outcome = outcome.to_s
     raise ArgumentError, "unsupported review outcome" unless OUTCOMES.include?(outcome)
-    raise ActiveRecord::RecordInvalid, self unless open?
 
-    transaction do
+    # The row lock makes a double click or a second tab wait for the first
+    # submit and then find the review closed, instead of moving the same work
+    # back twice and posting two notifications.
+    with_lock do
+      reject!("This review has already been submitted") unless open?
+
       sanitized_summary_html = RichTextSanitizer.sanitize(summary_html.to_s).presence
+      summary_text = summary.presence || RichTextSanitizer.plain_text(sanitized_summary_html).presence
+      # Sending work back to production with nothing to act on leaves the
+      # team guessing what to change.
+      if outcome == "request_changes" && summary_text.blank? && media_review_comments.none?
+        reject!("Add a comment or a summary that says what should change")
+      end
+
       update!(
         outcome:,
         status: outcome == "approve" ? :approved : outcome == "request_changes" ? :changes_requested : :submitted,
         submitted_by:,
         submitted_at: Time.current,
-        summary: summary.presence || RichTextSanitizer.plain_text(sanitized_summary_html).presence,
+        summary: summary_text,
         summary_html: sanitized_summary_html
       )
       media_review_comments.where(status: :draft).update_all(status: "published", updated_at: Time.current)
@@ -81,6 +129,11 @@ class MediaReview < ApplicationRecord
   end
 
   private
+
+  def reject!(message)
+    errors.add(:base, message)
+    raise ActiveRecord::RecordInvalid, self
+  end
 
   def records_belong_to_same_organization
     errors.add(:listing, "must belong to the same organization") if listing.present? && listing.organization_id != organization_id
