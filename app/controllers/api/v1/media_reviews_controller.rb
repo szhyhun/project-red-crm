@@ -172,10 +172,10 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
       listing:,
       user: current_user,
       reviews: policy_scope(MediaReview).where(listing:, client_account_id: listing.client_account_id),
-      # Services delivered at least once stay on the page while they are back in
-      # production, so the threads that sent them back stay beside their files.
-      deliverables: policy_scope(OrderDeliverable).where(listing:).active
-        .where("order_deliverables.delivery_version > 0 OR order_deliverables.status = ?", "delivered").ordered
+      # Every active service is listed, as on the media page this replaces for
+      # the customer: one still in production shows as such, and one sent back
+      # keeps its threads beside its files.
+      deliverables: policy_scope(OrderDeliverable).where(listing:).active.ordered
     ).as_json
   end
 

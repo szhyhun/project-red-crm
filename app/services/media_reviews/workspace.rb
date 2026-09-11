@@ -101,7 +101,10 @@ module MediaReviews
     end
 
     def serialize_deliverable(deliverable)
-      deliverable.slice(:id, :title, :description, :deliverable_type, :status, :delivered_at, :delivery_version).merge(
+      deliverable.slice(:id, :title, :description, :deliverable_type, :status, :target_on, :delivered_at,
+                        :delivery_version).merge(
+        # Only delivered work is snapshotted into a review, so only it takes comments.
+        reviewable: deliverable.delivered?,
         assets: deliverable_assets.fetch(deliverable.id).map { |asset| self.class.serialize_asset(asset) }
       )
     end

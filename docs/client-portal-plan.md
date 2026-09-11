@@ -32,7 +32,7 @@ on the strength of a plan alone.
 | Staff CRM listing workspace | Partial | version history, Download All, Custom Image Sizing, Interactive Floor Plan, poster/duration |
 | Customer listing media page | Partial | video poster/duration, floor-plan viewer |
 | Change requests | Partial | legacy endpoint remains for older clients; new portal flow uses media reviews |
-| Media reviews | Partial | image pins and video timecodes in the interface (the API already stores them); viewed marks kept on the server; replacing a file from the review page |
+| Media reviews | Partial | image pins and video timecodes in the interface (the API already stores them) |
 | Chat interface | Partial | customer users still auto-joined; no message editing; Escape does not close the thread menu |
 | APIs and authorization | Done | — |
 | Customer portal shell | Not started | left navigation, account switcher, Book a shoot, Billing |
@@ -65,11 +65,10 @@ What each row rests on:
 - **Staff CRM listing workspace** — hero, Media, Marketing, Orders, Activity, and
   conversation sections, with upload and reorder. Versions are stored and
   covered by specs, but no staff screen shows them yet.
-- **Customer listing media page** — deliverable/category cards, the "Media will
-  appear when ready" empty state, Download All, accepted-by-default state, and
-  the media review page shared with staff (see Media review UI contract).
-  Review media is present whenever any customer-visible media exists; it is
-  omitted when there is nothing to view. The legacy change-request endpoint stays available for old
+- **Customer listing media page** — one section per service or media kind, the
+  "Media will appear when ready" empty state, Download All, accepted-by-default
+  state, and review in place: the media page is the review (see Media review UI
+  contract). The legacy change-request endpoint stays available for old
   clients, but the portal no longer presents a second standalone request
   composer.
 - **Change requests** — the compatibility endpoint still validates listing,
@@ -556,8 +555,7 @@ implicitly accepted; the system does not create a fake approval row. The
 portal shows the media and offers **Review media** whenever there is something
 to view.
 
-Opening **Review media** shows the listing's review page and creates nothing.
-The customer's first comment opens a draft review for the currently published
+Viewing media creates nothing. The customer's first comment opens a draft review for the currently published
 customer-visible media snapshot. The snapshot may contain assets linked to an
 internal `OrderDeliverable` and assets that were uploaded or imported directly
 to the listing; resuming a draft adds anything published since. Draft
@@ -777,38 +775,34 @@ media asset from another account or listing.
 
 ### Media review UI contract
 
-The customer opens **Review media** from the listing media page; the review
-page replaces the media list rather than opening over it. Staff see the same
-page as the **Customer review** section of the listing workspace. Category
-groups for imported or directly uploaded files are valid review sections; they
-do not need to be turned into fake `OrderDeliverable` records.
+Review follows a merge request in one respect above all: discussion lives on
+the file it is about, and the same file is never shown twice on a page. There
+is no separate review screen or section.
 
-The page follows a merge request, with the file as the unit a code line is in
-GitLab. A listing can carry fifty photos, so it has two ways to read them:
-
-```text
-Toolbar   Files | Conversation · review state · N unresolved ‹ › · Finish review (N pending)
-Filters   All · Not viewed · Unresolved · Replaced · Mine          23 of 50 viewed
-Grid      one section per service or media kind
-            tiles: thumbnail, unresolved/pending/resolved badge, vN, viewed check
-            "Comment on service" with the service's own threads
-Focus     one file large, ‹ 23 of 50 ›, Mark viewed (V), download
-            filmstrip of the filtered files
-            the file's threads directly underneath, then "Comment on this file…"
-```
-
-- **Grid → focus.** Clicking a tile opens it; `←` `→` step through the filtered
-  files, `V` marks the file viewed and moves on, `Esc` returns to the grid.
-- **Viewed** is per person, kept in the browser for now. A replacement is a new
-  file, so it comes back as not viewed.
+- **Customer.** The listing media page is the review. Each service or media
+  kind is a section of thumbnails. Clicking a thumbnail opens the full-size
+  viewer; the **+** on a thumbnail starts a comment. A file with discussion is
+  outlined, and its threads open as a full-width row directly under it in the
+  same grid, so every comment on the listing is readable in one scroll. A
+  service can take a comment of its own, which is how to ask for work with no
+  file yet.
+- **Staff.** The listing workspace's Media section is the review. Cards with
+  discussion carry an unresolved or resolved badge, their threads open as a
+  full-width row under the card, and a row holding discussion opens by default.
+- **Toolbar**, at the top of either: review state, **N unresolved ‹ ›** to
+  jump between open threads in page order, **Review history** (one line per
+  round, plus threads on files that are no longer delivered), and for the
+  customer **Finish review (N pending)**.
 - **Threads** show the conversation in order with a Customer or Team badge,
   then **Reply…** and **Resolve thread**. Resolved threads fold to one line.
   Pending comments are marked and visible only to their author until
   **Finish review**, which offers Comment (the default), Approve, or Request
   changes, with an optional summary.
-- **Conversation** is the timeline of review rounds, each with its threads and
-  the file they are about.
-- **Unresolved ‹ ›** jumps between files with open threads.
+- **Filters** (All, With comments, Unresolved) narrow the customer's grid once
+  there is any discussion.
+
+Category groups for imported or directly uploaded files are valid sections;
+they do not need to be turned into fake `OrderDeliverable` records.
 
 Media URLs still go through `mediaAssetUrl` and `mediaAssetDownloadUrl`; the
 review component never constructs storage URLs.
