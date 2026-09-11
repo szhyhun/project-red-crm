@@ -14,6 +14,93 @@ field to explain where it came from.
 The existing `/api/v1` URL namespace is retained for API compatibility. It is
 not a release scope or a promise of a smaller product edition.
 
+## Implementation status
+
+Audited against the code on 2026-09-10 (schema `2026_09_10_110000`, 188 spec
+files). **Done** means the schema, API, UI, and specs for that area exist and
+were checked; **Partial** lists what is still missing; nothing is marked done
+on the strength of a plan alone.
+
+| Area | Status | Outstanding |
+| --- | --- | --- |
+| Catalog and packages | Done | — |
+| Orders and deliverables | Done | — |
+| Boards, tasks, and placements | Done | — |
+| Board workflows and automations | Done | — |
+| Media and storage boundaries | Done | — |
+| Catalog interface | Done | — |
+| Staff CRM listing workspace | Partial | version history, Download All, Custom Image Sizing, Interactive Floor Plan, poster/duration |
+| Customer listing media page | Partial | video poster/duration, floor-plan viewer; review workspace is implemented, but the staff-side review screen remains |
+| Change requests | Partial | legacy endpoint remains for older clients; new portal flow uses media reviews |
+| Media reviews | Partial | customer draft/review workspace and staff reply API are implemented; staff review UI and replacement-to-new-revision flow remain |
+| Chat interface | Partial | customer users still auto-joined; no message editing; Escape does not close the thread menu |
+| APIs and authorization | Done | — |
+| Customer portal shell | Not started | left navigation, account switcher, Book a shoot, Billing |
+| Customer accounts, teams, and roles | Not started | all five build steps |
+
+What each row rests on:
+
+- **Catalog and packages** — `products.deliverable_type` and `sla_days`, no
+  `sqft` column; `product_components` rejects nested packages, non-package
+  parents, and self-inclusion; active square-foot ranges cannot overlap;
+  component CRUD API.
+- **Orders and deliverables** — `orders.approved_at`; `order_deliverables` with a
+  unique `materialization_key`; `Orders::DeliverableMaterializer` and
+  `Orders::Approval`; `POST /orders/:id/approve`; target dates skip weekends.
+  Approval enqueues workflows through `Workflows::Trigger`, which is idempotent.
+- **Boards, tasks, and placements** — parent tasks, task kinds, and group keys;
+  `workflow_task_placements` with a partial unique index allowing one home
+  placement per task; `workflow_task_deliverables`; the mover synchronizes
+  shared placements and grouped deliverables.
+- **Board workflows and automations** — all six tables, `Workflows::Runner`,
+  `Workflows::Trigger`, `BoardWorkflowJob`, run history, retry endpoint, and
+  the Board → Workflows screen.
+- **Media and storage** — `media_assets.order_deliverable_id`, `version`, and
+  `superseded_by_id`; upload, link, and reorder endpoints; separate delivery,
+  board, and chat storage; `mediaAssetUrl` prefers `cdn_url`. Customer review
+  is based on ready, customer-visible listing media and does not require an
+  internal order deliverable.
+- **Catalog interface** — service and package editors, drag-and-drop component
+  order, and the "This range overlaps another active range" message.
+- **Staff CRM listing workspace** — hero, Media, Marketing, Orders, Activity, and
+  conversation sections, with upload and reorder. Versions are stored and
+  covered by specs, but no staff screen shows them yet.
+- **Customer listing media page** — deliverable/category cards, the "Media will
+  appear when ready" empty state, Download All, accepted-by-default state, and
+  the GitLab-style media review workspace. Review media is present and enabled
+  whenever any customer-visible media exists; it is omitted when there is
+  nothing to view. The legacy change-request endpoint stays available for old
+  clients, but the portal no longer presents a second standalone request
+  composer.
+- **Change requests** — the compatibility endpoint still validates listing,
+  deliverable, delivered state, and asset ownership, but new portal requests
+  use `MediaReview` and its file-specific threads. A submitted change review
+  adds one notification to `Conversation.account_thread_for`; the detailed
+  review discussion remains outside the chat.
+- **Chat interface** — no listing selector in the new-conversation dialog; the
+  first conversation is selected; staff team chats keep a saved drag order;
+  unread counts; dismissible errors; Escape closes dialogs and the attachment
+  viewer. Chat messages cannot be edited, so the rule that attachment deletion
+  happens only while editing cannot apply as written; today chat attachments
+  cannot be deleted at all. Decide whether to build message editing or amend
+  the rule.
+- **APIs and authorization** — every endpoint listed below exists, and
+  `authorization_coverage_spec` enforces authorization on every controller.
+  Customer billing is limited to `User#billing_access?` (admins, platform
+  owners, managers): invoices, order and item money, listing payment status,
+  and the listings payment filter are withheld from production staff, covered
+  by `billing_access_spec`.
+- **Customer portal shell** — the portal is still a single page with listings
+  above an Updates chat block.
+- **Customer accounts, teams, and roles** — `ClientMembership.role` exists but no
+  policy reads it; there are no portal team or chat-management endpoints.
+
+Browser smoke checks recorded on 2026-09-10: local customer portal showed
+separate photography, video, floor-plan, and empty service groups; opening
+Review media showed the `+` buttons and focused comment panel; adding a draft
+comment updated the pending count; Escape closed the review window; the
+temporary QA records were removed afterward.
+
 ## Product rules
 
 ProjectRed sells media services to a customer and then tracks the production
@@ -342,6 +429,17 @@ relative `preview_path` and `download_path` values. Ready customer-visible
 listing media also includes the configured public `cdn_url`. It never exposes
 a storage key, private bucket URL, or raw CDN construction to React.
 
+The portal response renders one collapsible card for every active
+`OrderDeliverable`. Its title, deliverable type, status, dates, and assets stay
+together, so a package's photography, video, floor-plan, and other services do
+not become one undifferentiated file list. Older or imported listing files that
+still have no `order_deliverable_id` remain visible through
+`listing_asset_groups`, with one honest card per media category (`Property
+photos`, `Videos`, `Floor plans`, `Tours`, or `Files`). Those compatibility cards
+cannot offer deliverable-only change requests. Once the order/import graph is
+materialized, assets are linked to their real deliverables and the category
+fallback is no longer used for those files.
+
 Preview routes authorize the parent record before streaming. Download routes
 may redirect to a short-lived signed URL only after the same authorization
 check. UI media tags resolve serialized paths through `apiUrl`,
@@ -392,13 +490,19 @@ development can share the Next.js application and Rails session:
 
 ```text
 portal shell
- ├── branded organization header and account menu
- ├── Dashboard
- ├── Listings
- ├── Orders
- ├── Messages
- └── Account
+ ├── header: account switcher (only with 2+ accounts), Book a shoot, user menu
+ ├── Listings      needs-attention items sort to the top
+ ├── Messages      the chats this person is a member of
+ ├── Billing       account admins only
+ └── Account       profile; team management for account admins
 ```
+
+There is no Home or Dashboard page: Listings is the landing page, and anything
+waiting on the customer (media to review, feedback requested, a pending
+reschedule) sorts to the top of it with a visible marker. There is no Orders
+page: for a customer an order and a listing are nearly one-to-one, and what
+they need from an order is money, which is Billing. Book a shoot is a primary
+action in the header on every page, not a navigation item.
 
 The customer cannot see CRM boards, staff administration, workflow
 configuration, internal columns, staff-only processing states, billing
@@ -429,9 +533,10 @@ listing media page
 
 Cards begin collapsed and remember expansion for the current page session.
 Empty cards say “Media will appear when ready.” They do not reserve large
-blank regions. A card includes service title, readable description, status,
-target/delivered date, asset count, downloads, and Request Changes only when
-the work is delivered.
+blank regions. A card includes service title or media category, readable
+description, status, target/delivered date when known, asset count, and
+downloads. **Review media** is shown and enabled whenever any ready,
+customer-visible media exists; it is not rendered as a disabled button.
 
 Customer media presentation is type-specific:
 
@@ -443,12 +548,310 @@ Customer media presentation is type-specific:
 There is no customer Add button. A new customer file is sent as a private
 conversation attachment.
 
-### Change requests
+### Media review semantics
 
-Request Changes opens a card-level drawer or mobile full-screen composer with
-the listing, service, selected existing assets, rich-text message, attachment
-control, and Submit request. The request is stored as a normal account-wide
-conversation message with structured context:
+Media review is opt-in. Ready, customer-visible media is customer-delivered as
+soon as the upload/processing pipeline succeeds; no separate CRM order
+approval or manual “mark deliverable as delivered” action is required. A
+listing with customer-visible media but no `MediaReview` record is treated as
+implicitly accepted; the system does not create a fake approval row. The
+portal shows the media and offers **Review media** whenever there is something
+to view.
+
+Opening **Review media** creates or resumes an open draft review for the
+currently published customer-visible media snapshot. The snapshot may contain
+assets linked to an internal `OrderDeliverable` and assets that were uploaded
+or imported directly to the listing. Draft comments remain private to the
+customer until the review is submitted. A draft that is abandoned is not an
+approval and remains available to resume.
+
+Submitting an explicit **Approve delivery** creates a `MediaReview` with
+`outcome: approve` and `status: approved`. This is distinct from implicit
+acceptance because it records that the customer actively reviewed and approved
+the files. The other review outcomes are `comment` and `request_changes`.
+
+`request_changes` marks the reviewed customer media as needing work and adds a
+production activity/task when an internal deliverable exists. It still works
+for directly uploaded or imported listing media that has no order deliverable.
+It does not introduce a separate customer-review status. Review comments stay
+attached to their exact asset snapshot, with optional image/PDF coordinates or
+video time ranges. Staff responses and replacements are tracked in the review
+workspace, while the account conversation receives only a notification and
+link to the review.
+
+### Media review data model
+
+The review model is deliberately separate from both the internal
+`OrderDeliverable` and the source `MediaAsset`:
+
+```text
+media_reviews
+------------
+id
+organization_id
+listing_id
+client_account_id
+created_by_id
+submitted_by_id       nullable
+number                per listing and customer account
+delivery_version      version marker for the customer-visible media snapshot
+status                open | submitted | changes_requested | approved | outdated
+outcome               nullable: comment | request_changes | approve
+summary
+summary_html
+submitted_at
+created_at
+updated_at
+```
+
+```text
+media_review_deliverables
+-------------------------
+media_review_id
+order_deliverable_id
+delivery_version
+position
+```
+
+```text
+media_review_assets
+-------------------
+media_review_id
+media_asset_id
+order_deliverable_id   nullable
+asset_version
+filename
+content_type
+byte_size
+position
+```
+
+`media_review_assets` is a relational snapshot of the exact files offered to
+the customer. Its `order_deliverable_id` is optional: it provides internal
+lineage when available but never gates customer review. The join does not copy
+the file or store another storage key. The original `MediaAsset` remains the
+source of the authorized preview/download path, so storage boundaries and IDOR
+checks stay centralized.
+
+The snapshot version uses the highest relevant media/delivery version. A later
+replacement or newly published media set can therefore invalidate an older
+review without requiring every file to have an order deliverable.
+
+```text
+media_review_threads
+--------------------
+media_review_id
+media_review_asset_id  nullable
+order_deliverable_id   nullable
+created_by_id
+resolved_by_id         nullable
+status                 open | resolved | outdated
+anchor_type            asset | region | timestamp | page
+page_number            nullable
+time_start_ms          nullable
+time_end_ms            nullable
+anchor_x/y/width/height nullable
+resolved_at            nullable
+```
+
+```text
+media_review_comments
+---------------------
+media_review_thread_id
+author_id
+body
+body_html
+status                 draft | published
+edited_at              nullable
+created_at
+updated_at
+```
+
+One review can contain many threads, and one thread can contain the original
+customer comment plus staff replies. Draft comments are visible only to the
+customer account while the review is open. Submitting a review publishes all
+draft comments in one transaction. No review row is created for an untouched
+delivery, which is the database representation of implicit acceptance.
+
+### Media review API
+
+The customer-facing endpoints are:
+
+```http
+GET    /api/v1/portal/listings/:listing_id/reviews
+POST   /api/v1/portal/listings/:listing_id/reviews
+GET    /api/v1/portal/reviews/:id
+POST   /api/v1/portal/reviews/:id/threads
+POST   /api/v1/portal/review_threads/:id/comments
+PATCH  /api/v1/portal/review_comments/:id
+DELETE /api/v1/portal/review_comments/:id
+POST   /api/v1/portal/reviews/:id/submit
+```
+
+Creating a review accepts `media_review.order_deliverable_ids` as an optional
+internal scoping hint for older clients. The server always includes ready,
+current, customer-visible media for the listing, including assets without an
+`OrderDeliverable`. The server rejects files that are not ready, current, and
+customer-visible. A second create request resumes the open draft or returns
+the existing review for the same media snapshot; it cannot create duplicate
+reviews for the same snapshot.
+
+The thread request is shaped like:
+
+```json
+{
+  "thread": {
+    "media_review_asset_id": 17,
+    "anchor_type": "region",
+    "anchor_x": 12.5,
+    "anchor_y": 24,
+    "anchor_width": 18,
+    "anchor_height": 10
+  },
+  "comment": {
+    "body": "Please brighten this room.",
+    "body_html": "<p>Please brighten this room.</p>"
+  }
+}
+```
+
+The submit request is:
+
+```json
+{
+  "media_review": {
+    "outcome": "request_changes",
+    "summary": "Please replace the exterior image."
+  }
+}
+```
+
+`approve` records explicit approval and leaves customer media available.
+`comment` records a submitted review without changing production state.
+`request_changes` creates activity/task work for any linked internal
+deliverables, while still notifying staff about unlinked listing media. It adds
+one `review_notification` message to the account conversation. The notification
+carries `media_review_id` and review context; the review comments themselves
+stay in the review workspace.
+
+Staff can read a review through:
+
+```http
+GET  /api/v1/media_reviews/:id
+POST /api/v1/media_review_threads/:id/comments
+POST /api/v1/media_review_threads/:id/resolve
+POST /api/v1/media_review_threads/:id/reopen
+```
+
+Staff replies are published, while customer draft comments are intentionally
+omitted from staff responses until submission. Every route scopes through the
+organization and the listing/customer relationship before Pundit authorization
+runs. A customer cannot use a review ID, review asset ID, deliverable ID, or
+media asset from another account or listing.
+
+### Media review UI contract
+
+The customer opens **Review media** from the listing media page. The action is
+shown only when the listing has at least one ready, customer-visible media
+asset, and is always enabled while the review is opening. It is omitted when
+there is nothing to view. Category groups for imported or directly uploaded
+files are valid review sections; they do not need to be turned into fake
+`OrderDeliverable` records.
+
+The review window follows the interaction pattern from GitLab and GitHub code
+reviews while adapting the anchor from a code line to a media file:
+
+```text
+Review media #3
+ ├── left: one section per published service or media category
+ │    ├── title, type, file count, status
+ │    └── asset tiles with preview, download, comment count, and + marker
+ ├── right: focused comment panel
+ │    ├── selected filename
+ │    ├── rich-text comment composer
+ │    ├── draft/published thread cards
+ │    └── resolved state when staff closes a thread
+ └── footer
+      ├── pending comment count
+      ├── optional review summary
+      ├── outcome: Comment / Request changes / Approve delivery
+      └── Submit review
+```
+
+The `+` is a real keyboard-focusable button on every tile, not an icon hidden
+inside the image. Selecting it opens the comment panel for that exact
+`media_review_asset_id`. `Add to review` creates a draft thread immediately so
+the customer can leave comments on several files before making one submission.
+The window is responsive: the panel moves below the asset sections on narrow
+screens, the asset grid stays bounded, and the modal closes with Escape or its
+close button. Media URLs still go through `mediaAssetUrl` and
+`mediaAssetDownloadUrl`; the review component never constructs storage URLs.
+
+### Customer accounts, teams, and roles
+
+A customer signs in as a person (`User`) and works inside an account
+(`ClientAccount`). There are two kinds of account:
+
+- **Solo** — one person, who is its admin. One solo account per email.
+- **Team** — one or more admins plus members. Admins invite and remove users.
+
+A person may hold their own solo account and also be a member of any number of
+teams. `ClientMembership.role` is already `admin | member`; finer permissions
+are future work.
+
+| | Account admin | Member |
+| --- | --- | --- |
+| See the account's listings | yes | yes |
+| See billing and pay invoices | yes | no |
+| Create chats | yes | no |
+| Invite account users into a chat | yes | no |
+| See chats | all of the account's | only chats they are in |
+| Invite, remove, and change roles of account users | yes | no |
+
+Rules:
+
+- An account always keeps at least one active admin.
+- With more than one account, an account switcher appears in the header and
+  everything — listings, chats, billing — is scoped to the active account.
+- Permissions are per account, not per person: someone can be admin of their
+  solo account and a member of a team, so Billing appears or disappears as they
+  switch. Capabilities are therefore computed for the user in the active
+  account, and the navigation is built from them.
+- Chats have explicit members; nobody is auto-joined. A new account starts with
+  one chat between its admins and organization admins, which the account admin
+  grows or splits. Organization admins see every customer chat.
+- Existing chats keep their current members. They were auto-joined under the
+  old rule, and removing people silently would cut them off from conversations
+  they are already in.
+
+`CustomerTeam` is a separate, older record and not part of this model: it
+groups client accounts so one pricing plan can apply to all of them. It arrived
+with the Aryeo import model, has no rows today and no CRM screen, and is used
+only by the pricing-plan resolver. Whether to keep it is an open question.
+
+Build order:
+
+1. **Roles and per-account capabilities** — policies read the membership role;
+   billing is admin-only; the last admin cannot be removed or demoted.
+2. **Team management** — account admins invite, remove, and change roles of
+   users from Account → Team.
+3. **Chats** — account admins create chats and choose members; the automatic
+   account thread and its auto-join are removed; a new account gets its admin
+   chat.
+4. **Change requests** — sent into a chat the requester chooses.
+5. **Portal shell** — left navigation, account switcher, Book a shoot, Messages
+   as a full-height single thread, Billing aggregated across listings.
+
+### Legacy change-request compatibility
+
+The original Request Changes endpoint remains available for older clients and
+continues to validate listing access, deliverable ownership, delivered state,
+and selected media references. The current portal does not use that standalone
+composer. Customers use Media review instead, because one review can contain
+comments on several files and one clear outcome.
+
+The compatibility request is still stored as a normal conversation message
+with structured context:
 
 ```text
 messages
@@ -465,9 +868,8 @@ message_media_references
 Selected delivered assets are referenced by ID. New files use the chat
 attachment flow. The server validates listing access, deliverable ownership,
 delivered state, asset ownership/readiness/visibility, and customer access.
-On success the customer sees “Your request was sent” and the service moves to
-in progress. The request appears in the same staff/customer conversation; no
-separate `revision_requests` table is needed.
+No separate `revision_requests` table is needed; new work uses the review tables
+described above.
 
 ## Catalog interface
 
@@ -498,9 +900,15 @@ never creates a product per square-foot tier.
 ## Chat interface
 
 Team chats are always available to staff. Customer chat navigation appears only
-when the user is a member of at least one customer conversation. Customer
-conversations are account-wide and carry listing/service context when a
-message concerns a property.
+when the user is a member of at least one customer conversation. A customer
+account can have many conversations, each with explicit members chosen by the
+account admin (see Customer accounts, teams, and roles). Messages carry
+listing/service context when they concern a property.
+
+The new-conversation dialog has no listing selector and no required first
+message. Client-visible conversations select one or more customer accounts and
+team participants; internal conversations select team participants only. Customer
+users are added by an account admin or by staff, never automatically.
 
 The chat editor and issue comment editor share rich-text behavior:
 
@@ -537,6 +945,16 @@ PATCH /api/v1/order_deliverables/:id
 # Portal
 GET  /api/v1/portal/listings/:listing_id/media
 POST /api/v1/portal/listings/:listing_id/deliverables/:deliverable_id/change_requests
+GET/POST /api/v1/portal/listings/:listing_id/reviews
+GET    /api/v1/portal/reviews/:id
+POST   /api/v1/portal/reviews/:id/threads
+POST   /api/v1/portal/review_threads/:id/comments
+PATCH/DELETE /api/v1/portal/review_comments/:id
+POST   /api/v1/portal/reviews/:id/submit
+GET    /api/v1/media_reviews/:id
+POST   /api/v1/media_review_threads/:id/comments
+POST   /api/v1/media_review_threads/:id/resolve
+POST   /api/v1/media_review_threads/:id/reopen
 
 # Board workflows
 GET/POST/PATCH/DELETE /api/v1/boards/:board_id/workflows
@@ -557,6 +975,13 @@ POST /api/v1/conversations/:id/messages
 POST /api/v1/conversations/:conversation_id/messages/:message_id/attachments
 ```
 
+Staff conversation creation accepts `kind`, `subject`, `member_ids`, and
+`client_account_ids`. Internal rooms use only team members. Client-visible
+creation creates a new room for the selected customer account and includes only
+the account users chosen for it; nobody is added automatically. Account admins
+create rooms and choose members from the portal. The first message is optional,
+and new rooms are not assigned to a listing.
+
 Authorization is enforced by `Api::V1::BaseController` and Pundit. Every
 controller action either authorizes its record or declares a documented
 public/webhook exception. Policies answer `view?`, `create?`, `update?`,
@@ -566,8 +991,11 @@ others, such as configuring workflows or granting board access.
 Required negative cases include:
 
 - a customer cannot read another customer's listing, deliverable, or media;
-- a customer cannot reference another deliverable's media;
-- a customer cannot request changes from non-delivered work;
+- a customer cannot reference another listing's media in a review;
+- a customer cannot review media that is not ready, current, and
+  customer-visible;
+- the legacy change-request endpoint cannot request changes from non-delivered
+  work;
 - private preview/download routes cannot be used across organizations;
 - a specialist cannot read customer billing or an ungranted customer chat;
 - board members cannot move tasks on boards they cannot access;
@@ -585,8 +1013,11 @@ authorization boundary even if a browser hides or shows the wrong control.
 - Add workflow definitions, conditions, actions, mappings, runs, and steps.
 - Add task placements and deliverable links; migrate existing tasks to home
   placements before removing redundant direct board/status storage.
-- Merge existing listing-specific customer conversations into account-wide
-  conversations while preserving message listing context and attachment keys.
+- Do not merge customer conversations into one per account. Accounts may hold
+  many conversations with explicit members; existing conversations and their
+  memberships stay exactly as they are, including people who were auto-joined
+  under the old rule. `Conversation.account_thread_for` is removed with the
+  auto-join once account admins can create chats.
 - Preserve existing media storage keys and storage boundaries.
 - Do not backfill old approved orders into new deliverables unless explicitly
   requested; new approvals use the materializer.
@@ -616,7 +1047,8 @@ critical test matrix includes:
 ### Request and scenario tests
 
 - catalog component CRUD and cross-organization denial;
-- order approval to deliverables to workflow tasks to portal media;
+- published customer media to portal review, with optional order/workflow
+  lineage when it exists;
 - package billing once while creating multiple production deliverables;
 - shared tasks moving across multiple boards;
 - workflow definition/run-history manager-only access and failed-run retry;
@@ -625,6 +1057,9 @@ critical test matrix includes:
 - chat account-thread creation, unread ordering, message context, and private
   attachment upload/preview failures;
 - selected media reference validation and change-request transition;
+- media-review snapshots, private draft comments, asset anchors, review
+  outcomes, explicit approval, unlinked customer-visible media, change-request
+  transitions, notifications, and review-thread authorization;
 - board attachment access, content-type validation, and storage boundaries;
 - migration preservation of existing task/conversation rows.
 
@@ -656,7 +1091,8 @@ pnpm run build
 
 After code and specs pass, perform browser smoke checks for staff board/workflow
 navigation, catalog package editing, staff listing media, portal listing media,
-customer change requests, chat attachment display, and Escape/error behavior.
+media review comments/outcomes, chat attachment display, and Escape/error
+behavior.
 
 ## Completion criteria
 
@@ -669,8 +1105,10 @@ The implementation is complete when:
 - task movement updates internal and customer-facing delivery state;
 - staff can upload, reorder, version, preview, and download media in the CRM;
 - customers can view/download only authorized ready media;
-- customers can request changes from delivered work with selected asset context;
-- requests appear in the account-wide chat without copying existing assets;
+- customers can review delivered work, comment on selected assets, approve it, or
+  request changes from the review workspace;
+- review notifications appear in the account conversation without copying
+  existing assets into chat;
 - workflow runs and failed retries are visible to managers;
 - staff and customer UIs use the supplied hierarchy and audience boundaries;
 - chat and issue editors share attachment, URL, error, and keyboard behavior;

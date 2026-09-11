@@ -12,6 +12,7 @@ class ClientAccount < ApplicationRecord
   has_many :invoices, dependent: :restrict_with_error
   has_many :conversations, dependent: :restrict_with_error
   has_many :listing_feedbacks, dependent: :restrict_with_error
+  has_many :media_reviews, dependent: :destroy
 
   enum :kind, { agent: "agent", team: "team", brokerage: "brokerage" }, validate: true
 

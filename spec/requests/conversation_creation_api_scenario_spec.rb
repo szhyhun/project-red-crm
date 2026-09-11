@@ -73,6 +73,51 @@ RSpec.describe "Conversation creation API scenario", type: :request do
     )
   end
 
+  it "creates one empty account-wide conversation per selected customer account" do
+    second_account = ClientAccount.create!(organization:, name: "Second creation client", kind: :team)
+    second_client = User.create!(organization:, name: "Second creation customer", email: "conversation-creation-client-2@example.test",
+                                 password: "long-enough-password", role: :client_admin)
+    ClientMembership.create!(client_account: second_account, user: second_client, role: :admin)
+
+    expect {
+      post "/api/v1/conversations", params: {
+        conversation: {
+          kind: "client",
+          subject: "Customer rollout",
+          client_account_ids: [ client_account.id, second_account.id ],
+          member_ids: [ producer.id ]
+        }
+      }
+    }.to change(Conversation, :count).by(2)
+
+    expect(response).to have_http_status(:created)
+    created = response.parsed_body.fetch("conversations")
+    expect(created.map { |conversation| conversation.fetch("client_account_id") }).to contain_exactly(client_account.id, second_account.id)
+    expect(created).to all(include("listing_id" => nil, "messages" => []))
+    expect(Conversation.where(client_account_id: [ client_account.id, second_account.id ]).map(&:users)).to all(
+      satisfy { |users| users.include?(manager) && users.include?(producer) }
+    )
+    expect(Conversation.find_by!(client_account: client_account).users).to include(client_user)
+    expect(Conversation.find_by!(client_account: second_account).users).to include(second_client)
+  end
+
+  it "rejects selected customer accounts outside the current organization" do
+    foreign_account = ClientAccount.create!(organization: other_organization, name: "Foreign creation client", kind: :agent)
+
+    expect {
+      post "/api/v1/conversations", params: {
+        conversation: {
+          kind: "client",
+          subject: "Cross tenant customer room",
+          client_account_ids: [ foreign_account.id ]
+        }
+      }
+    }.not_to change(Conversation, :count)
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.dig("details", "client_account_ids")).to include("contains an unavailable customer account")
+  end
+
   it "does not allow a customer to create an internal conversation with a client member" do
     sign_out manager
     sign_in client_user

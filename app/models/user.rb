@@ -25,6 +25,11 @@ class User < ApplicationRecord
   has_many :created_payroll_items, class_name: "PayrollItem", foreign_key: :created_by_id, dependent: :restrict_with_error
   has_many :payroll_items, class_name: "PayrollItem", foreign_key: :team_member_id, dependent: :nullify
   has_one :listing_view_preference, dependent: :destroy
+  has_many :created_media_reviews, class_name: "MediaReview", foreign_key: :created_by_id, dependent: :restrict_with_error
+  has_many :submitted_media_reviews, class_name: "MediaReview", foreign_key: :submitted_by_id, dependent: :nullify
+  has_many :created_media_review_threads, class_name: "MediaReviewThread", foreign_key: :created_by_id, dependent: :restrict_with_error
+  has_many :resolved_media_review_threads, class_name: "MediaReviewThread", foreign_key: :resolved_by_id, dependent: :nullify
+  has_many :media_review_comments, foreign_key: :author_id, dependent: :restrict_with_error
 
   enum :role, {
     platform_owner: "platform_owner",

@@ -29,6 +29,11 @@ class Organization < ApplicationRecord
   has_many :conversations, dependent: :destroy
   has_many :product_components, dependent: :destroy
   has_many :order_deliverables, dependent: :destroy
+  has_many :media_reviews, dependent: :destroy
+  has_many :media_review_deliverables, through: :media_reviews
+  has_many :media_review_assets, through: :media_reviews
+  has_many :media_review_threads, through: :media_reviews
+  has_many :media_review_comments, through: :media_review_threads
   has_many :board_workflows, dependent: :destroy
   has_many :board_workflow_runs, dependent: :destroy
   has_many :workflow_task_placements, through: :boards

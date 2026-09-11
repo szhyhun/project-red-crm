@@ -7,6 +7,8 @@ class MediaAsset < ApplicationRecord
   belongs_to :media_group, optional: true
   belongs_to :order_deliverable, optional: true
   belongs_to :superseded_by, class_name: "MediaAsset", optional: true
+  has_many :media_review_assets, dependent: :restrict_with_error
+  has_many :media_reviews, through: :media_review_assets
   has_many :superseded_assets, class_name: "MediaAsset", foreign_key: :superseded_by_id, dependent: :nullify
 
   enum :kind, { final: "final", raw: "raw", marketing: "marketing" }, validate: true

@@ -1,4 +1,32 @@
 class Api::V1::PortalController < Api::V1::BaseController
+  PORTAL_ASSET_GROUPS = {
+    "images" => {
+      title: "Property photos",
+      deliverable_type: "photography",
+      description: "Photos ready for this listing."
+    },
+    "videos" => {
+      title: "Videos",
+      deliverable_type: "video",
+      description: "Videos ready for this listing."
+    },
+    "floor_plans" => {
+      title: "Floor plans",
+      deliverable_type: "floor_plan",
+      description: "Floor plans ready for this listing."
+    },
+    "tours" => {
+      title: "Tours",
+      deliverable_type: "tour",
+      description: "Interactive and virtual tours ready for this listing."
+    },
+    "files" => {
+      title: "Files",
+      deliverable_type: "files",
+      description: "Documents and other files ready for this listing."
+    }
+  }.freeze
+
   def dashboard
     authorize :client_portal, :view?
 
@@ -84,11 +112,18 @@ class Api::V1::PortalController < Api::V1::BaseController
     authorize listing, :view?
     deliverables = policy_scope(OrderDeliverable).where(listing_id: listing.id)
       .includes(:service_product, :media_assets).active.ordered
+    current_delivery_version = deliverables.maximum(:delivery_version).to_i
+    current_review = policy_scope(MediaReview)
+      .where(listing: listing, client_account: listing.client_account, delivery_version: current_delivery_version)
+      .where.not(status: :outdated)
+      .ordered.first
     assets = listing.media_assets.current_version.final.ready.where(customer_visible: true, hidden: false)
       .order(cover: :desc, position: :asc, created_at: :asc)
     # Imported listings can have ready media before an order workflow has
     # created deliverables. Keep those assets visible without fabricating a
-    # deliverable that could incorrectly enable customer change requests.
+    # deliverable that could incorrectly enable customer change requests. The
+    # portal renders this compatibility set as category cards rather than one
+    # misleading generic delivery card.
     listing_assets = assets.where(order_deliverable_id: nil)
     render json: {
       listing: {
@@ -106,6 +141,9 @@ class Api::V1::PortalController < Api::V1::BaseController
         asset_count: assets.size
       },
       deliverables: deliverables.map { |deliverable| serialize_portal_deliverable(deliverable) },
+      review: serialize_portal_review_summary(current_review),
+      review_state: current_review&.status || "implicitly_accepted",
+      listing_asset_groups: serialize_portal_asset_groups(listing_assets),
       listing_assets: listing_assets.map { |asset| serialize_portal_asset(asset) }
     }
   end
@@ -167,7 +205,7 @@ class Api::V1::PortalController < Api::V1::BaseController
       listings: portal_listings.map { |listing| serialize_listing(listing) },
       conversations: policy_scope(Conversation).includes(
         :listing,
-        messages: [ :author, :listing, :order_deliverable, :conversation_attachments,
+        messages: [ :author, :listing, :order_deliverable, :media_review, :conversation_attachments,
                     { message_media_references: :media_asset } ]
       )
         .order(last_message_at: :desc, created_at: :desc).limit(20)
@@ -264,11 +302,31 @@ class Api::V1::PortalController < Api::V1::BaseController
     # redirect into private S3, where the final response has no CORS headers.
     # Keep the authorized API paths as a fallback, but let the browser use the
     # CDN directly whenever a ready listing asset has one.
-    asset.slice(:id, :filename, :content_type, :byte_size, :width, :height, :duration_seconds).merge(
+    asset.slice(:id, :filename, :content_type, :category, :byte_size, :width, :height, :duration_seconds).merge(
       cdn_url: asset.ready? ? DeliveryStorage.public_url(asset.storage_key) : nil,
       preview_path: "/api/v1/media_assets/#{asset.id}/preview",
       download_path: "/api/v1/media_assets/#{asset.id}/download"
     )
+  end
+
+  def serialize_portal_asset_groups(assets)
+    grouped_assets = assets.to_a.group_by(&:category)
+    MediaAsset::CATEGORIES.filter_map do |category|
+      category_assets = grouped_assets[category]
+      next if category_assets.blank?
+
+      definition = PORTAL_ASSET_GROUPS.fetch(category)
+      {
+        key: category,
+        title: definition.fetch(:title),
+        description: definition.fetch(:description),
+        deliverable_type: definition.fetch(:deliverable_type),
+        status: "delivered",
+        asset_count: category_assets.size,
+        can_request_changes: false,
+        assets: category_assets.map { |asset| serialize_portal_asset(asset) }
+      }
+    end
   end
 
   def serialize_portal_deliverable(deliverable)
@@ -277,6 +335,15 @@ class Api::V1::PortalController < Api::V1::BaseController
       asset_count: deliverable.customer_visible_assets.count,
       can_request_changes: deliverable.delivered?,
       assets: deliverable.customer_visible_assets.map { |asset| serialize_portal_asset(asset) }
+    )
+  end
+
+  def serialize_portal_review_summary(review)
+    return nil if review.blank?
+
+    review.slice(:id, :number, :delivery_version, :status, :outcome, :created_at, :submitted_at).merge(
+      pending_comment_count: review.open? && current_user.client_account_ids.include?(review.client_account_id) ? review.media_review_comments.where(status: :draft).count : 0,
+      can_submit: review.open? && current_user.client_account_ids.include?(review.client_account_id)
     )
   end
 
@@ -372,6 +439,9 @@ class Api::V1::PortalController < Api::V1::BaseController
 
     selected_asset_count = message.message_media_references.size
     context[:selected_asset_count] = selected_asset_count if selected_asset_count.positive?
+    if message.media_review.present?
+      context[:review] = message.media_review.slice(:id, :number, :status, :outcome).merge(listing_id: message.media_review.listing_id)
+    end
     context.presence
   end
 end

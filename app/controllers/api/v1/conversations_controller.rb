@@ -1,7 +1,15 @@
 class Api::V1::ConversationsController < Api::V1::BaseController
   def index
     conversations = policy_scope(Conversation).includes(:listing, :client_account, conversation_memberships: :user)
-    conversations = conversations.where(listing_id: params[:listing_id]) if params[:listing_id].present?
+    if params[:listing_id].present? && params[:client_account_id].present?
+      # A listing workspace needs both legacy listing-linked rooms and the
+      # account-wide customer room that replaced them.
+      conversations = conversations.where(listing_id: params[:listing_id]).or(conversations.where(client_account_id: params[:client_account_id]))
+    elsif params[:listing_id].present?
+      conversations = conversations.where(listing_id: params[:listing_id])
+    elsif params[:client_account_id].present?
+      conversations = conversations.where(client_account_id: params[:client_account_id])
+    end
     authorize Conversation, :index?
     conversations = conversations.to_a
     conversations.sort_by! do |conversation|
@@ -42,7 +50,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   def show
     conversation = policy_scope(Conversation).includes(
       conversation_memberships: :user,
-      messages: [ :author, :listing, :order_deliverable, :conversation_attachments,
+      messages: [ :author, :listing, :order_deliverable, :media_review, :conversation_attachments,
                   { message_media_references: :media_asset } ]
     ).find(params[:id])
     authorize conversation
@@ -51,42 +59,57 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def create
-    listing = policy_scope(Listing).find(create_params[:listing_id]) if create_params[:listing_id].present?
-    client_account = if create_params[:client_account_id].present?
-      policy_scope(ClientAccount).find(create_params[:client_account_id])
-    else
-      listing&.client_account
-    end
     authorize Conversation, :create?
-    attributes = create_params.except(:listing_id, :client_account_id, :member_ids, :body, :body_html)
-    account_thread = client_account.present? && create_params[:kind].to_s == "client"
-    conversation = account_thread ? Conversation.account_thread_for(organization: Current.organization, client_account:) : Current.organization.conversations.build(attributes.merge(listing: listing))
-    conversation.assign_attributes(attributes.merge(listing: account_thread ? nil : listing)) unless conversation.persisted? && account_thread
-    conversation.client_account = client_account if conversation.client?
+    listing = policy_scope(Listing).find(create_params[:listing_id]) if create_params[:listing_id].present?
+    attributes = create_params.except(:listing_id, :client_account_id, :client_account_ids, :member_ids, :body, :body_html)
+    client_conversation = create_params[:kind].to_s == "client"
+    client_accounts, invalid_client_account_ids = selected_client_accounts(listing)
 
-    Conversation.transaction do
-      conversation.save! unless conversation.persisted?
-      member_ids = [ current_user.id, *Array(create_params[:member_ids]).map(&:to_i) ]
-      member_ids.concat(conversation.client_account.users.active.ids) if conversation.client? && conversation.client_account.present?
-      member_ids.uniq!
-      users = Current.organization.users.active.where(id: member_ids)
-      raise ActiveRecord::RecordInvalid.new(conversation) unless users.size == member_ids.size
-      if conversation.internal? && users.any? { |user| !user.internal? }
-        conversation.errors.add(:base, "Internal conversations can include only organization staff")
-        raise ActiveRecord::RecordInvalid.new(conversation)
-      end
+    if invalid_client_account_ids.any?
+      invalid = Current.organization.conversations.build(attributes)
+      invalid.errors.add(:client_account_ids, "contains an unavailable customer account")
+      return render_validation_errors(invalid)
+    end
 
-      users.each do |member|
-        conversation.conversation_memberships.find_or_create_by!(user: member) do |membership|
-          membership.role = member == current_user ? :manager : :participant
+    if client_conversation && listing.present? && client_accounts.any? { |account| !listing_belongs_to_account?(listing, account) }
+      invalid = Current.organization.conversations.build(attributes.merge(listing:))
+      invalid.errors.add(:listing, "must belong to the selected customer account")
+      return render_validation_errors(invalid)
+    end
+
+    conversations = if client_conversation
+      if client_accounts.empty?
+        [ Current.organization.conversations.build(attributes.merge(listing: nil)) ]
+      else
+        # Client visibility is account-bound, so a multi-select fans out to
+        # one private account thread per customer instead of sharing data
+        # between unrelated customer portals.
+        client_accounts.map do |client_account|
+          Conversation.account_thread_for(
+            organization: Current.organization,
+            client_account:,
+            subject: attributes[:subject].presence || "Client conversation"
+          ).tap do |conversation|
+            conversation.assign_attributes(attributes.merge(listing: nil, client_account:)) unless conversation.persisted?
+          end
         end
       end
-      if create_params[:body].present? || create_params[:body_html].present?
-        create_message!(conversation, create_params[:body], create_params[:body_html], nil, listing:)
+    else
+      [ Current.organization.conversations.build(attributes.merge(listing:)) ]
+    end
+
+    Conversation.transaction do
+      conversations.each do |conversation|
+        conversation.save! unless conversation.persisted?
+        add_conversation_memberships!(conversation)
+        if create_params[:body].present? || create_params[:body_html].present?
+          create_message!(conversation, create_params[:body], create_params[:body_html], nil, listing:)
+        end
       end
     end
 
-    render json: { conversation: serialize(conversation, include_messages: true) }, status: :created
+    serialized = conversations.map { |conversation| serialize(conversation, include_messages: true) }
+    render json: { conversation: serialized.first, conversations: serialized }, status: :created
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
   end
@@ -127,7 +150,47 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   private
 
   def create_params
-    params.require(:conversation).permit(:listing_id, :client_account_id, :kind, :subject, :retention_period, :body, :body_html, member_ids: [])
+    params.require(:conversation).permit(:listing_id, :client_account_id, :kind, :subject, :retention_period, :body, :body_html,
+                                         client_account_ids: [], member_ids: [])
+  end
+
+  def selected_client_accounts(listing)
+    explicit_ids = Array(create_params[:client_account_ids])
+    explicit_ids = [ create_params[:client_account_id] ] if explicit_ids.empty? && create_params[:client_account_id].present?
+    explicit_ids = [ listing.client_account_id ] if explicit_ids.empty? && listing.present?
+    return [ [], [] ] if explicit_ids.empty?
+
+    ids = explicit_ids.map { |id| Integer(id, exception: false) }
+    return [ [], ids ] if ids.any?(&:nil?)
+
+    ids.uniq!
+    accounts = policy_scope(ClientAccount).where(id: ids).index_by(&:id)
+    [ ids.filter_map { |id| accounts[id] }, ids - accounts.keys ]
+  end
+
+  def listing_belongs_to_account?(listing, client_account)
+    listing.client_account_id == client_account.id || listing.listing_customers.exists?(client_account_id: client_account.id)
+  end
+
+  def add_conversation_memberships!(conversation)
+    member_ids = [ current_user.id, *Array(create_params[:member_ids]).map(&:to_i) ]
+    member_ids.concat(conversation.client_account.users.active.ids) if conversation.client? && conversation.client_account.present?
+    member_ids.uniq!
+    users = Current.organization.users.active.where(id: member_ids)
+    unless users.size == member_ids.size
+      conversation.errors.add(:member_ids, "contains an unavailable organization member")
+      raise ActiveRecord::RecordInvalid.new(conversation)
+    end
+    if conversation.internal? && users.any? { |user| !user.internal? }
+      conversation.errors.add(:base, "Internal conversations can include only organization staff")
+      raise ActiveRecord::RecordInvalid.new(conversation)
+    end
+
+    users.each do |member|
+      conversation.conversation_memberships.find_or_create_by!(user: member) do |membership|
+        membership.role = member == current_user ? :manager : :participant
+      end
+    end
   end
 
   def update_params
@@ -266,7 +329,8 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def serialize_message(message)
-    message.slice(:id, :body, :body_html, :visibility, :message_kind, :listing_id, :order_deliverable_id, :created_at).merge(
+    message.slice(:id, :body, :body_html, :visibility, :message_kind, :listing_id, :order_deliverable_id,
+                  :media_review_id, :created_at).merge(
       context: serialize_message_context(message),
       attachments: message.conversation_attachments.order(:created_at, :id).map { |attachment| ConversationAttachment.serialize(attachment) },
       media_references: message.message_media_references.includes(:media_asset).order(:position, :id).filter_map do |reference|
@@ -295,6 +359,9 @@ class Api::V1::ConversationsController < Api::V1::BaseController
 
     selected_asset_count = message.message_media_references.size
     context[:selected_asset_count] = selected_asset_count if selected_asset_count.positive?
+    if message.media_review.present?
+      context[:review] = message.media_review.slice(:id, :number, :status, :outcome).merge(listing_id: message.media_review.listing_id)
+    end
     context.presence
   end
 end

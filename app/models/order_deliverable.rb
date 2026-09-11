@@ -11,7 +11,15 @@ class OrderDeliverable < ApplicationRecord
   has_many :workflow_task_deliverables, dependent: :destroy
   has_many :workflow_tasks, through: :workflow_task_deliverables
   has_many :activity_events, as: :subject, dependent: :destroy
-  has_many :message_media_references, dependent: :restrict_with_error
+  # Message references belong to messages, not directly to the deliverable.
+  # Keeping this as a through association avoids querying the nonexistent
+  # `message_media_references.order_deliverable_id` column when work is removed.
+  has_many :messages, dependent: :nullify
+  has_many :message_media_references, through: :messages
+  has_many :media_review_deliverables, dependent: :destroy
+  has_many :media_reviews, through: :media_review_deliverables
+  has_many :media_review_assets, dependent: :nullify
+  has_many :media_review_threads, dependent: :nullify
 
   enum :status, STATUSES.index_by(&:itself), validate: true
 
@@ -22,6 +30,7 @@ class OrderDeliverable < ApplicationRecord
   validate :related_records_belong_to_organization
   validate :scope_is_valid
   validate :order_item_matches_product_lineage
+  before_update :advance_delivery_version, if: :new_delivery_version?
 
   scope :active, -> { where(cancelled_at: nil) }
   scope :ordered, -> { order(:position, :id) }
@@ -71,5 +80,15 @@ class OrderDeliverable < ApplicationRecord
     elsif order_item.product_id != service_product_id
       errors.add(:order_item, "must reference the standalone service product")
     end
+  end
+
+  def new_delivery_version?
+    status_change = changes_to_save["status"]
+    status_change.present? && status_change.first != "delivered" && status_change.last == "delivered" &&
+      !will_save_change_to_delivery_version?
+  end
+
+  def advance_delivery_version
+    self.delivery_version = delivery_version.to_i + 1
   end
 end

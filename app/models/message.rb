@@ -6,8 +6,13 @@ class Message < ApplicationRecord
   has_many :referenced_media_assets, through: :message_media_references, source: :media_asset
   belongs_to :listing, optional: true
   belongs_to :order_deliverable, optional: true
+  belongs_to :media_review, optional: true
 
-  enum :message_kind, { message: "message", change_request: "change_request" }, validate: true
+  enum :message_kind, {
+    message: "message",
+    change_request: "change_request",
+    review_notification: "review_notification"
+  }, validate: true
 
   enum :visibility, { participants: "participants", staff_only: "staff_only" }, validate: true
 
@@ -34,6 +39,12 @@ class Message < ApplicationRecord
     end
     if order_deliverable.present? && order_deliverable.organization_id != conversation&.organization_id
       errors.add(:order_deliverable, "must belong to the conversation organization")
+    end
+    if media_review.present? && media_review.organization_id != conversation&.organization_id
+      errors.add(:media_review, "must belong to the conversation organization")
+    end
+    if media_review.present? && listing.present? && media_review.listing_id != listing.id
+      errors.add(:media_review, "must match the message listing")
     end
     if listing.present? && conversation&.client_account_id.present? && listing.client_account_id != conversation.client_account_id
       errors.add(:listing, "must belong to the selected customer account")

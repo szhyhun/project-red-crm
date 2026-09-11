@@ -20,6 +20,7 @@ class Listing < ApplicationRecord
   has_many :marketing_materials, dependent: :destroy
   has_many :invoices, dependent: :nullify
   has_many :conversations, dependent: :nullify
+  has_many :media_reviews, dependent: :destroy
 
   enum :status, {
     draft: "draft", quoted: "quoted", booked: "booked", in_production: "in_production",

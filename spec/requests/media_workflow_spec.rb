@@ -76,26 +76,85 @@ RSpec.describe "Media workflow API", type: :request do
 
   it "returns ready listing media when an imported listing has no deliverables yet" do
     imported_listing = Listing.create!(organization:, client_account:, address_line_1: "Imported Media Street")
-    asset = imported_listing.media_assets.create!(organization:, kind: :final, status: :ready,
-                                                  storage_key: "organizations/#{organization.id}/imported/front.jpg",
-                                                  filename: "front.jpg", content_type: "image/jpeg", byte_size: 5,
-                                                  customer_visible: true)
+    assets = [
+      imported_listing.media_assets.create!(organization:, kind: :final, status: :ready,
+                                            storage_key: "organizations/#{organization.id}/imported/front.jpg",
+                                            filename: "front.jpg", content_type: "image/jpeg", category: "images",
+                                            byte_size: 5, customer_visible: true),
+      imported_listing.media_assets.create!(organization:, kind: :final, status: :ready,
+                                            storage_key: "organizations/#{organization.id}/imported/walkthrough.mp4",
+                                            filename: "walkthrough.mp4", content_type: "video/mp4", category: "videos",
+                                            byte_size: 7, customer_visible: true),
+      imported_listing.media_assets.create!(organization:, kind: :final, status: :ready,
+                                            storage_key: "organizations/#{organization.id}/imported/floor-plan.pdf",
+                                            filename: "floor-plan.pdf", content_type: "application/pdf",
+                                            category: "floor_plans", byte_size: 9, customer_visible: true)
+    ]
 
     sign_in client_user
     get "/api/v1/portal/listings/#{imported_listing.id}/media"
 
     expect(response).to have_http_status(:ok)
     payload = response.parsed_body
-    expect(payload.fetch("summary")).to include("deliverable_count" => 0, "delivered_count" => 0, "asset_count" => 1)
+    expect(payload.fetch("summary")).to include("deliverable_count" => 0, "delivered_count" => 0, "asset_count" => 3)
     expect(payload.fetch("deliverables")).to be_empty
-    expect(payload.fetch("listing_assets")).to contain_exactly(
-      hash_including(
-        "id" => asset.id,
-        "preview_path" => "/api/v1/media_assets/#{asset.id}/preview",
-        "download_path" => "/api/v1/media_assets/#{asset.id}/download"
-      )
+    expect(payload.fetch("listing_asset_groups")).to contain_exactly(
+      hash_including("key" => "images", "title" => "Property photos", "deliverable_type" => "photography",
+                     "asset_count" => 1, "can_request_changes" => false),
+      hash_including("key" => "videos", "title" => "Videos", "deliverable_type" => "video",
+                     "asset_count" => 1, "can_request_changes" => false),
+      hash_including("key" => "floor_plans", "title" => "Floor plans", "deliverable_type" => "floor_plan",
+                     "asset_count" => 1, "can_request_changes" => false)
     )
-    expect(payload.fetch("listing_assets").sole).not_to have_key("storage_key")
+    expect(payload.fetch("listing_asset_groups").flat_map { |group| group.fetch("assets") }.map { |asset| asset.fetch("id") })
+      .to contain_exactly(*assets.map(&:id))
+    expect(payload.fetch("listing_assets").map { |asset| asset.fetch("id") }).to contain_exactly(*assets.map(&:id))
+    expect(payload.fetch("listing_assets").map { |asset| asset.fetch("category") }).to contain_exactly("images", "videos", "floor_plans")
+    expect(payload.fetch("listing_assets")).to all(satisfy { |asset| !asset.key?("storage_key") })
+  end
+
+  it "keeps each ordered service in its own portal deliverable card" do
+    photo_asset = deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,
+                                                    storage_key: "organizations/#{organization.id}/deliverables/ordered-photo.jpg",
+                                                    filename: "ordered-photo.jpg", content_type: "image/jpeg",
+                                                    category: "images", byte_size: 5, customer_visible: true)
+    deliverable.update!(status: :delivered, delivered_at: Time.current)
+
+    video = Product.create!(organization:, slug: "workflow-videos", title: "Property video", kind: :service,
+                            deliverable_type: "video", sla_days: 3)
+    video_variant = video.product_variants.create!(title: "Standard", price_cents: 35_000)
+    video_order = Orders::Creator.new(
+      organization:,
+      attributes: {
+        client_account_id: client_account.id,
+        listing_id: listing.id,
+        payment_mode: "pay_later",
+        items: [ { product_variant_id: video_variant.id, quantity: 1 } ]
+      }
+    ).create!
+    video_order.update!(status: :approved, approved_at: Time.current)
+    video_deliverable = Orders::DeliverableMaterializer.new(order: video_order).call.sole
+    video_asset = video_deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,
+                                                         storage_key: "organizations/#{organization.id}/deliverables/ordered-video.mp4",
+                                                         filename: "ordered-video.mp4", content_type: "video/mp4",
+                                                         category: "videos", byte_size: 7, customer_visible: true)
+    video_deliverable.update!(status: :delivered, delivered_at: Time.current)
+
+    sign_in client_user
+    get "/api/v1/portal/listings/#{listing.id}/media"
+
+    expect(response).to have_http_status(:ok)
+    serialized = response.parsed_body.fetch("deliverables")
+    expect(serialized.map { |item| item.fetch("title") }).to contain_exactly("Property photography", "Property video")
+    expect(serialized.find { |item| item.fetch("id") == deliverable.id }).to include(
+      "deliverable_type" => "photography", "asset_count" => 1
+    )
+    expect(serialized.find { |item| item.fetch("id") == video_deliverable.id }).to include(
+      "deliverable_type" => "video", "asset_count" => 1
+    )
+    expect(serialized.flat_map { |item| item.fetch("assets") }.map { |asset| asset.fetch("id") })
+      .to contain_exactly(photo_asset.id, video_asset.id)
+    expect(response.parsed_body.fetch("listing_asset_groups")).to be_empty
   end
 
   it "creates an account conversation change request and returns the deliverable to work" do

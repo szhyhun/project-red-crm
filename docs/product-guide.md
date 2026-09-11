@@ -90,21 +90,42 @@ ProjectRed does not store card details. The payment form is hosted by the
 configured payment provider. If there is no **Pay now** button, the invoice is
 already paid, is not payable yet, or has not been issued by the agency.
 
-### Customer: ask for a change to a listing
+### Customer: review delivered media and ask for a change
 
-1. Open the listing in the customer portal and find its **Updates** thread.
-2. Reply in that existing listing conversation. Describe the exact file or
-   service that needs changing, what is wrong, and what the desired result is.
-   Attach a reference image or other file when it makes the request clearer.
-3. Continue the same thread for follow-up questions and confirmation. Do not
-   create a new general chat for every change request.
+1. Open the listing in the customer portal and choose **View delivered media**.
+2. Choose **Review media**. ProjectRed opens a review window with one section
+   for every published service or media category: photography, video, floor
+   plan, tour, or another file group. The button appears whenever there is
+   customer-visible media; it is never shown disabled.
+3. On the exact file that needs attention, choose the round **+** button. Write
+   the comment and choose **Add to review**. Repeat this for as many files as
+   needed; comments remain together as one draft review instead of becoming a
+   pile of unrelated chat messages.
+4. Choose an outcome at the bottom:
+   - **Comment** sends the review as feedback without reopening production.
+   - **Request changes** sends the selected feedback to the production team and
+     creates production work for the reviewed media. If the files came from an
+     order, the related internal work is also updated; an order deliverable is
+     not required.
+   - **Approve delivery** records that you explicitly accepted the delivered
+     files.
+5. Choose **Submit review**. The production team receives a notification in
+   the account conversation, while the detailed file-by-file discussion stays
+   in the review workspace.
 
-Staff see the request in the listing workspace and in **Messages**. They can
-assign it to the right person, update the linked deliverable, and keep the
-customer updated in the same account conversation. On a delivered service,
-the portal also provides **Request changes** on that service's media card; the
-request keeps the selected files linked by ID instead of copying them into the
-chat.
+If you leave without submitting, the review remains a draft and can be
+continued later. A listing with customer-visible media but no review record is
+treated as accepted by default; the explicit **Approve delivery** outcome is
+available when the customer wants an auditable approval. Uploading and
+successfully processing media makes it available to the customer—staff do not
+need to mark an internal order deliverable as delivered first.
+
+Staff see the submitted review in the listing workspace and in **Messages**.
+They can reply to each file-specific thread, resolve comments, replace the
+affected delivery media, and publish a new delivery revision. The review keeps
+the original files and comments together, so the customer and production team
+can see what changed and why. General questions and new files still belong in
+the account conversation.
 
 After delivery, the customer can also submit the separate **Feedback** form.
 Feedback rates delivery, service, and final media; it is not a replacement for
@@ -113,27 +134,33 @@ an in-progress change request.
 ### Staff: start or continue the correct conversation
 
 Customers do not create chats. A staff member starts a customer-visible thread
-when the listing needs one, and the customer replies to it from the portal.
+for one or more customer accounts, and the customer replies to it from the
+portal.
 
 To start one:
 
 1. Open the listing workspace and use its conversation or updates section.
-2. Choose **New customer conversation**. When starting from a listing, the
-   listing is already attached to the conversation.
-3. Add a subject, confirm that the conversation is **Client-visible**, select
-   the internal team participants, and write the first message.
-4. Send the message. The customer sees the thread under that listing's
-   **Updates** section.
+2. Choose **New customer conversation**. The customer account is preselected
+   when the dialog was opened from a listing, but the conversation itself is
+   account-wide rather than attached to a listing.
+3. Give the conversation a name, confirm that it is **Client-visible**, select
+   one or more customer accounts, and select the internal team participants.
+   Customer portal users for the selected accounts are added automatically.
+4. Start the conversation. It may begin empty; send the first reply whenever
+   there is an update to share. Listing, service, or selected-media context is
+   added to individual messages when relevant.
 
-If a listing already has a customer conversation, open it and choose **Reply**
-instead of creating another thread. A customer conversation is readable by the
-customer account, so internal production notes belong in the task or an
-internal team conversation.
+If the customer account already has a conversation, open it and choose
+**Reply** instead of creating another thread. Listing and service context stays
+on the relevant messages. A customer conversation is readable by the customer
+account, so internal production notes belong in the task or an internal team
+conversation.
 
 For an internal team chat, open **Messages**, choose the **+** action in the
-Team section, select **Internal team**, choose a subject and participants, and
-send the first message. Internal conversations can be organization-wide or
-linked to a listing and are never shown in the customer portal.
+Team section, select **Internal team**, give it a name, and select the team
+participants. You are included automatically. Internal conversations are
+organization-wide and never shown in the customer portal; they may also begin
+empty.
 
 ### Video editor or production staff: process assigned work
 
@@ -147,8 +174,8 @@ linked to a listing and are never shown in the customer portal.
    review them. Keep customer-facing delivery files in the listing's delivery
    area, where the agency can mark them ready and visible.
 5. When a customer requests a change, update the relevant task or create a
-   focused task, assign it, and reply in the listing conversation so the
-   customer can follow the outcome.
+   focused task, assign it, and reply in the account conversation with the
+   listing context so the customer can follow the outcome.
 
 Do not put internal editing notes in a client-visible conversation. If a task
 is linked to a listing, use the listing link in the task to check the customer,
@@ -215,9 +242,20 @@ work, not a current customer setting.
 
 Staff can attach final delivery media to a listing and publish it to the
 customer portal. Customers can view the files that are ready for them, access
-listing details, receive delivery notifications, and submit feedback. A
-property site can expose the published listing and its final ready media as a
-public-facing page.
+listing details, receive delivery notifications, review each delivered service,
+and submit feedback. A property site can expose the published listing and its
+final ready media as a public-facing page.
+
+The portal presents each ordered service as its own expandable delivery card,
+with the service name, type, status, dates, files, downloads, and available
+actions together. **Review media** opens the file-by-file review workspace;
+customers can comment with the `+` marker on individual assets and submit one
+outcome for the review. Photos, videos, floor plans, tours, and files that were
+imported or uploaded before they were linked to an order remain visible in
+separate media-category cards instead of being collapsed into one generic file
+list. Those unlinked files can be downloaded or discussed in the account
+conversation; the structured review workflow is available only on real ordered
+deliverables.
 
 Raw or failed production media remains internal. Customers see only media that
 the agency has marked ready and made customer-visible.

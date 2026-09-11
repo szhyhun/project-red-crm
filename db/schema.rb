@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_10_100000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_10_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -693,6 +693,101 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_10_100000) do
     t.index ["organization_id"], name: "index_media_groups_on_organization_id"
   end
 
+  create_table "media_review_assets", force: :cascade do |t|
+    t.bigint "media_review_id", null: false
+    t.bigint "media_asset_id", null: false
+    t.bigint "order_deliverable_id"
+    t.integer "asset_version", default: 1, null: false
+    t.string "filename", null: false
+    t.string "content_type", null: false
+    t.bigint "byte_size"
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["media_asset_id"], name: "index_media_review_assets_on_media_asset_id"
+    t.index ["media_review_id", "media_asset_id"], name: "index_media_review_assets_on_review_and_asset", unique: true
+    t.index ["media_review_id", "order_deliverable_id", "position"], name: "index_media_review_assets_on_review_deliverable_position"
+    t.index ["media_review_id"], name: "index_media_review_assets_on_media_review_id"
+    t.index ["order_deliverable_id"], name: "index_media_review_assets_on_order_deliverable_id"
+  end
+
+  create_table "media_review_comments", force: :cascade do |t|
+    t.bigint "media_review_thread_id", null: false
+    t.bigint "author_id", null: false
+    t.text "body", null: false
+    t.text "body_html"
+    t.string "status", default: "draft", null: false
+    t.datetime "edited_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["author_id"], name: "index_media_review_comments_on_author_id"
+    t.index ["media_review_thread_id", "created_at"], name: "index_media_review_comments_on_thread_and_created_at"
+    t.index ["media_review_thread_id"], name: "index_media_review_comments_on_media_review_thread_id"
+  end
+
+  create_table "media_review_deliverables", force: :cascade do |t|
+    t.bigint "media_review_id", null: false
+    t.bigint "order_deliverable_id", null: false
+    t.integer "delivery_version", default: 0, null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["media_review_id", "order_deliverable_id"], name: "index_media_review_deliverables_on_review_and_deliverable", unique: true
+    t.index ["media_review_id"], name: "index_media_review_deliverables_on_media_review_id"
+    t.index ["order_deliverable_id"], name: "index_media_review_deliverables_on_order_deliverable_id"
+  end
+
+  create_table "media_review_threads", force: :cascade do |t|
+    t.bigint "media_review_id", null: false
+    t.bigint "media_review_asset_id"
+    t.bigint "order_deliverable_id"
+    t.bigint "created_by_id", null: false
+    t.bigint "resolved_by_id"
+    t.string "status", default: "open", null: false
+    t.string "anchor_type", default: "asset", null: false
+    t.integer "page_number"
+    t.integer "time_start_ms"
+    t.integer "time_end_ms"
+    t.decimal "anchor_x", precision: 8, scale: 4
+    t.decimal "anchor_y", precision: 8, scale: 4
+    t.decimal "anchor_width", precision: 8, scale: 4
+    t.decimal "anchor_height", precision: 8, scale: 4
+    t.datetime "resolved_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_media_review_threads_on_created_by_id"
+    t.index ["media_review_asset_id"], name: "index_media_review_threads_on_media_review_asset_id"
+    t.index ["media_review_id", "status"], name: "index_media_review_threads_on_review_and_status"
+    t.index ["media_review_id"], name: "index_media_review_threads_on_media_review_id"
+    t.index ["order_deliverable_id"], name: "index_media_review_threads_on_order_deliverable_id"
+    t.index ["resolved_by_id"], name: "index_media_review_threads_on_resolved_by_id"
+  end
+
+  create_table "media_reviews", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "listing_id", null: false
+    t.bigint "client_account_id", null: false
+    t.bigint "created_by_id", null: false
+    t.bigint "submitted_by_id"
+    t.integer "number", null: false
+    t.integer "delivery_version", default: 0, null: false
+    t.string "status", default: "open", null: false
+    t.string "outcome"
+    t.text "summary"
+    t.text "summary_html"
+    t.datetime "submitted_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_account_id"], name: "index_media_reviews_on_client_account_id"
+    t.index ["created_by_id"], name: "index_media_reviews_on_created_by_id"
+    t.index ["listing_id", "client_account_id", "delivery_version"], name: "index_media_reviews_on_listing_account_version"
+    t.index ["listing_id", "client_account_id", "number"], name: "index_media_reviews_on_listing_account_number", unique: true
+    t.index ["listing_id"], name: "index_media_reviews_on_listing_id"
+    t.index ["organization_id", "listing_id", "client_account_id"], name: "index_media_reviews_on_organization_listing_account"
+    t.index ["organization_id"], name: "index_media_reviews_on_organization_id"
+    t.index ["submitted_by_id"], name: "index_media_reviews_on_submitted_by_id"
+  end
+
   create_table "message_media_references", force: :cascade do |t|
     t.bigint "message_id", null: false
     t.bigint "media_asset_id", null: false
@@ -715,12 +810,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_10_100000) do
     t.string "message_kind", default: "message", null: false
     t.bigint "listing_id"
     t.bigint "order_deliverable_id"
+    t.bigint "media_review_id"
     t.index ["author_id"], name: "index_messages_on_author_id"
     t.index ["conversation_id", "created_at"], name: "index_messages_on_conversation_id_and_created_at"
     t.index ["conversation_id", "message_kind", "created_at"], name: "index_messages_on_conversation_kind_created_at"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
     t.index ["created_at"], name: "index_messages_on_created_at"
     t.index ["listing_id"], name: "index_messages_on_listing_id"
+    t.index ["media_review_id"], name: "index_messages_on_media_review_id"
     t.index ["order_deliverable_id"], name: "index_messages_on_order_deliverable_id"
   end
 
@@ -1306,10 +1403,28 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_10_100000) do
   add_foreign_key "media_assets", "users", column: "uploaded_by_id"
   add_foreign_key "media_groups", "listings"
   add_foreign_key "media_groups", "organizations"
+  add_foreign_key "media_review_assets", "media_assets"
+  add_foreign_key "media_review_assets", "media_reviews"
+  add_foreign_key "media_review_assets", "order_deliverables"
+  add_foreign_key "media_review_comments", "media_review_threads"
+  add_foreign_key "media_review_comments", "users", column: "author_id"
+  add_foreign_key "media_review_deliverables", "media_reviews"
+  add_foreign_key "media_review_deliverables", "order_deliverables"
+  add_foreign_key "media_review_threads", "media_review_assets"
+  add_foreign_key "media_review_threads", "media_reviews"
+  add_foreign_key "media_review_threads", "order_deliverables"
+  add_foreign_key "media_review_threads", "users", column: "created_by_id"
+  add_foreign_key "media_review_threads", "users", column: "resolved_by_id"
+  add_foreign_key "media_reviews", "client_accounts"
+  add_foreign_key "media_reviews", "listings"
+  add_foreign_key "media_reviews", "organizations"
+  add_foreign_key "media_reviews", "users", column: "created_by_id"
+  add_foreign_key "media_reviews", "users", column: "submitted_by_id"
   add_foreign_key "message_media_references", "media_assets"
   add_foreign_key "message_media_references", "messages"
   add_foreign_key "messages", "conversations"
   add_foreign_key "messages", "listings"
+  add_foreign_key "messages", "media_reviews"
   add_foreign_key "messages", "order_deliverables"
   add_foreign_key "messages", "users", column: "author_id"
   add_foreign_key "notification_deliveries", "organizations"

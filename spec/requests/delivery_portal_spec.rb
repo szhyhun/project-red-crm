@@ -66,6 +66,19 @@ RSpec.describe "Delivery portal", type: :request do
     expect(conversation.users).to contain_exactly(manager, client_user)
   end
 
+  it "returns the account-wide customer room alongside legacy listing rooms" do
+    manager = User.create!(organization: organization, name: "Listing room manager", email: "listing-room-manager@example.test", password: "long-enough-password", role: :manager)
+    legacy_room = Conversation.create!(organization: organization, listing: listing, kind: :internal, subject: "Legacy listing room")
+    account_room = Conversation.account_thread_for(organization:, client_account:, subject: "Account room")
+    [ legacy_room, account_room ].each { |conversation| conversation.conversation_memberships.create!(user: manager, role: :manager) }
+
+    sign_in manager
+    get "/api/v1/conversations", params: { listing_id: listing.id, client_account_id: client_account.id }
+
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch("conversations").map { |conversation| conversation.fetch("id") }).to contain_exactly(legacy_room.id, account_room.id)
+  end
+
   it "rejects a customer room when its listing belongs to another customer" do
     manager = User.create!(organization: organization, name: "Morgan Manager", email: "mismatched-room-manager@example.test", password: "long-enough-password", role: :manager)
     other_account = ClientAccount.create!(organization: organization, name: "Other Client", kind: :agent)
