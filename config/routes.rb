@@ -86,7 +86,12 @@ Rails.application.routes.draw do
       get "dashboard", to: "dashboard#show"
       resources :client_accounts, only: %i[index create update] do
         post :invite, on: :member
+        resources :memberships, only: %i[index create], controller: "client_memberships"
       end
+      resources :client_memberships, only: %i[update destroy] do
+        post :accept, on: :member
+      end
+      get "portal/memberships", to: "client_memberships#mine"
       resources :customer_teams, only: %i[index create update destroy] do
         resources :memberships, only: %i[create destroy], controller: "customer_team_memberships"
       end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_11_100000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_12_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -289,9 +289,15 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_11_100000) do
     t.string "role", default: "member", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "status", default: "active", null: false
+    t.datetime "invitation_accepted_at"
+    t.boolean "is_default", default: false, null: false
+    t.boolean "listing_delivery_notification_enabled", default: true, null: false
     t.index ["client_account_id", "user_id"], name: "index_client_memberships_on_client_and_user", unique: true
     t.index ["client_account_id"], name: "index_client_memberships_on_client_account_id"
+    t.index ["user_id", "status"], name: "index_client_memberships_on_user_and_status"
     t.index ["user_id"], name: "index_client_memberships_on_user_id"
+    t.index ["user_id"], name: "index_one_default_client_membership_per_user", unique: true, where: "is_default"
   end
 
   create_table "conversation_attachments", force: :cascade do |t|

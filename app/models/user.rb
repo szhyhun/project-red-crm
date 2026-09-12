@@ -4,7 +4,11 @@ class User < ApplicationRecord
 
   belongs_to :organization
   has_many :client_memberships, dependent: :destroy
-  has_many :client_accounts, through: :client_memberships
+  has_many :active_client_memberships, -> { where(status: :active) }, class_name: "ClientMembership", inverse_of: :user, dependent: nil
+  # Access follows an accepted membership. An invitation grants nothing until it
+  # is accepted, and a revoked one grants nothing after, so every policy that
+  # asks for `client_account_ids` is answered by the memberships that count.
+  has_many :client_accounts, through: :active_client_memberships
   has_many :assigned_appointments, class_name: "Appointment", foreign_key: :assigned_user_id,
     dependent: :nullify
   has_many :appointment_team_members, dependent: :destroy
@@ -30,6 +34,10 @@ class User < ApplicationRecord
   has_many :created_media_review_threads, class_name: "MediaReviewThread", foreign_key: :created_by_id, dependent: :restrict_with_error
   has_many :resolved_media_review_threads, class_name: "MediaReviewThread", foreign_key: :resolved_by_id, dependent: :nullify
   has_many :media_review_comments, foreign_key: :author_id, dependent: :restrict_with_error
+
+  # Setting a password on an invitation is the acceptance: the memberships that
+  # invitation was sent for become real at the same moment.
+  after_invitation_accepted :activate_invited_memberships
 
   enum :role, {
     platform_owner: "platform_owner",
@@ -57,5 +65,9 @@ class User < ApplicationRecord
   # is not theirs to read.
   def billing_access?
     organization_admin? || platform_owner? || manager?
+  end
+
+  def activate_invited_memberships
+    client_memberships.invited.find_each(&:accept!)
   end
 end

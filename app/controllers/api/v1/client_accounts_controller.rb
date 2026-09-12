@@ -26,22 +26,17 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
     end
   end
 
+  # Kept for older clients. The membership it creates is an invitation like any
+  # other, so access begins when the person accepts rather than when we add them.
   def invite
     account = policy_scope(ClientAccount).find(params[:id])
     authorize account, :invite?
-    user = nil
+    membership = ClientMemberships::Invite.new(
+      account:, actor: current_user, email: invite_params[:email], name: invite_params[:name],
+      role: invite_params[:membership_role]
+    ).call
 
-    ClientAccount.transaction do
-      user = User.invite!(invite_params.merge(organization: Current.organization), current_user)
-      raise ActiveRecord::RecordInvalid.new(user) if user.errors.any?
-
-      account.client_memberships.find_or_create_by!(user: user) { |membership| membership.role = invite_params[:membership_role] }
-      account.conversations.client.find_each do |conversation|
-        conversation.conversation_memberships.find_or_create_by!(user: user) { |membership| membership.role = :participant }
-      end
-    end
-
-    render json: { client_user: user.slice(:id, :name, :email, :role) }, status: :created
+    render json: { client_user: membership.user.slice(:id, :name, :email, :role) }, status: :created
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
   end
