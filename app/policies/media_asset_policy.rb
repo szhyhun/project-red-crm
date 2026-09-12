@@ -7,6 +7,16 @@ class MediaAssetPolicy < OrganizationRecordPolicy
     visible_to_user?
   end
 
+  # Seeing a file and taking it away are different permissions: a team that
+  # locks downloads until payment still shows its customer the preview.
+  def download?
+    return false unless view?
+    return true if user.internal?
+
+    listing = record.listing
+    !listing&.client_account&.downloads_locked_for?(listing)
+  end
+
   def create?
     user.internal?
   end

@@ -186,7 +186,9 @@ class Api::V1::MediaAssetsController < Api::V1::BaseController
 
   def download
     asset = policy_scope(MediaAsset).find(params[:id])
-    authorize asset, :show?
+    # Taking the file away is its own permission: a team may lock downloads
+    # until its listing is paid for, while the preview stays visible.
+    authorize asset, :download?
     return redirect_to asset.source_url, allow_other_host: true if asset.external? && asset.ready?
     return render json: { error: "asset_not_ready" }, status: :unprocessable_entity unless asset.ready?
     return redirect_to DeliveryStorage.temporary_url(asset.storage_key), allow_other_host: true if DeliveryStorage.s3?

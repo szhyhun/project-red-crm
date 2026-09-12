@@ -44,7 +44,11 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
   private
 
   def client_account_params
-    params.require(:client_account).permit(:name, :kind, :email, :phone, :brokerage_name)
+    params.require(:client_account).permit(
+      :name, :kind, :email, :phone, :brokerage_name, :brokerage_website, :website, :logo_url,
+      :description, :internal_note, :affiliate_id, :archived_at,
+      :lock_downloads_before_payment, :display_original_price, :suppress_payment_reminders
+    )
   end
 
   def invite_params
@@ -59,7 +63,11 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
     submitted = feedbacks.select(&:submitted_at?)
     ratings = submitted.flat_map { |feedback| [ feedback.delivery_rating, feedback.service_rating, feedback.media_rating ].compact }
 
-    account.slice(:id, :name, :kind, :email, :phone, :brokerage_name).merge(
+    account.slice(:id, :name, :kind, :email, :phone, :brokerage_name, :brokerage_website, :website,
+                  :logo_url, :description, :internal_note, :affiliate_id, :archived_at,
+                  :lock_downloads_before_payment, :display_original_price, :suppress_payment_reminders).merge(
+      member_count: account.client_memberships.active.count,
+      capabilities: ClientAccountPolicy.new(current_user, account).capabilities,
       feedback_summary: {
         total: feedbacks.length,
         submitted: submitted.length,

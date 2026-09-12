@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_12_100000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_12_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -278,6 +278,18 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_100000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "origin", default: "native", null: false
+    t.text "description"
+    t.text "internal_note"
+    t.string "logo_url"
+    t.string "website"
+    t.string "brokerage_website"
+    t.string "affiliate_id"
+    t.datetime "archived_at"
+    t.boolean "lock_downloads_before_payment", default: false, null: false
+    t.boolean "display_original_price", default: true, null: false
+    t.boolean "suppress_payment_reminders", default: false, null: false
+    t.index ["organization_id", "affiliate_id"], name: "index_client_accounts_on_organization_and_affiliate", unique: true, where: "(affiliate_id IS NOT NULL)"
+    t.index ["organization_id", "archived_at"], name: "index_client_accounts_on_organization_and_archived"
     t.index ["organization_id", "name"], name: "index_client_accounts_on_organization_id_and_name"
     t.index ["organization_id"], name: "index_client_accounts_on_organization_id"
     t.index ["origin"], name: "index_client_accounts_on_origin"
