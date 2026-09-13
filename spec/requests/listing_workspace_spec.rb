@@ -25,6 +25,23 @@ RSpec.describe "Listing workspace", type: :request do
     expect(workspace.fetch("appointments").first.dig("assigned_user", "name")).to eq("Producer")
   end
 
+  it "returns the booked customer user separately from the customer team" do
+    customer = User.create!(organization:, name: "Booked Customer", email: "booked-customer@example.test",
+                            password: "long-enough-password", role: :client_admin)
+    listing.update!(booked_by: customer)
+
+    get "/api/v1/listings"
+
+    expect(response).to have_http_status(:ok)
+    row = response.parsed_body.fetch("listings").find { |entry| entry.fetch("id") == listing.id }
+    expect(row.fetch("booked_by")).to include("id" => customer.id, "name" => "Booked Customer")
+    expect(row.dig("client_account", "name")).to eq("Agent")
+
+    get "/api/v1/listings/#{listing.id}"
+
+    expect(response.parsed_body.dig("listing", "booked_by", "email")).to eq("booked-customer@example.test")
+  end
+
   it "sanitizes rich listing notes before returning them" do
     post "/api/v1/listings/#{listing.id}/listing_notes", params: {
       listing_note: { note_type: "listing", body_html: '<p><strong>Gate code</strong></p><script>alert("x")</script><a href="https://example.test">Map</a>' }

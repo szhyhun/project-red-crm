@@ -6,7 +6,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
     query_params = current_user.billing_access? || !current_user.internal? ? params : params.except(:payment_status)
     listings = Listings::Query.new(scope: base, params: query_params).call
       .includes(
-        :client_account, :assigned_users, :media_assets, :listing_feedbacks,
+        :client_account, :booked_by, :assigned_users, :media_assets, :listing_feedbacks,
         { listing_customers: :client_account },
         { order_deliverables: [ :service_product, :workflow_tasks, :media_assets ] },
         { appointments: [ :assigned_user, :appointment_items, { appointment_team_members: :user }, { appointment_events: :actor } ] },
@@ -18,7 +18,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
 
   def show
     listing = policy_scope(Listing).includes(
-      :client_account,
+      :client_account, :booked_by,
       { workflow_tasks: [ :assignee, { workflow_task_placements: [ :workflow_column, { board: :workflow_columns } ] } ] },
       { appointments: :assigned_user },
       { listing_customers: :client_account },
@@ -131,6 +131,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
       mls_live_date: listing.mls_live_date,
       tags: listing.tags,
       client_account: listing.client_account.slice(:id, :name, :email, :phone, :brokerage_name, :kind),
+      booked_by: listing.booked_by&.slice(:id, :name, :email, :phone, :role),
       listing_customers: listing.listing_customers.map { |customer| serialize_listing_customer(customer) },
       appointment: appointment && serialize_appointment(appointment),
       assigned_team_member: appointment&.assigned_user&.slice(:id, :name, :email, :role) || listing.assigned_users.first&.slice(:id, :name, :email, :role),

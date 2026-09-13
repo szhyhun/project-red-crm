@@ -156,6 +156,7 @@ else
     listing_definitions = [
       {
         public_slug: "111-oak-bay-avenue", client_account: client_accounts.fetch(:oak_bay),
+        booked_by: :avery,
         status: :in_production, property_status: :for_sale,
         address_line_1: "111 Oak Bay Avenue", city: "Victoria", province: "BC", postal_code: "V8R 1C4",
         square_feet: 2450, bedrooms: 3, bathrooms: 2.5, price_cents: 129_500_000,
@@ -164,6 +165,7 @@ else
       },
       {
         public_slug: "42-fernwood-road", client_account: client_accounts.fetch(:coastal),
+        booked_by: :priya,
         status: :booked, property_status: :for_sale,
         address_line_1: "42 Fernwood Road", city: "Victoria", province: "BC", postal_code: "V8T 2A5",
         square_feet: 1820, bedrooms: 3, bathrooms: 2.0, price_cents: 89_900_000,
@@ -172,6 +174,7 @@ else
       },
       {
         public_slug: "780-beach-drive", client_account: client_accounts.fetch(:oak_bay),
+        booked_by: :avery,
         status: :delivered, delivery_status: :delivered, property_status: :sold,
         address_line_1: "780 Beach Drive", city: "Oak Bay", province: "BC", postal_code: "V8S 2M4",
         square_feet: 3150, bedrooms: 4, bathrooms: 3.5, price_cents: 185_000_000,
@@ -181,6 +184,7 @@ else
       },
       {
         public_slug: "15-cedar-lane", client_account: client_accounts.fetch(:west_coast),
+        booked_by: :jamie,
         status: :review, property_status: :pending_sale,
         address_line_1: "15 Cedar Lane", city: "Saanich", province: "BC", postal_code: "V8N 1P7",
         square_feet: 2100, bedrooms: 4, bathrooms: 2.5, price_cents: 107_500_000,
@@ -189,6 +193,7 @@ else
       },
       {
         public_slug: "210-harbour-view", client_account: client_accounts.fetch(:coastal),
+        booked_by: :priya,
         status: :quoted, property_status: :coming_soon,
         address_line_1: "210 Harbour View", city: "Esquimalt", province: "BC", postal_code: "V9A 3S1",
         square_feet: 1400, bedrooms: 2, bathrooms: 2.0, price_cents: 69_900_000,
@@ -201,8 +206,11 @@ else
     listing_definitions.each do |definition|
       slug = definition.fetch(:public_slug)
       listings[slug] = ensure_record.call(organization.listings, public_slug: slug) do |record|
-        record.assign_attributes(definition.except(:public_slug))
+        record.assign_attributes(definition.except(:public_slug, :booked_by).merge(booked_by: client_users.fetch(definition.fetch(:booked_by))))
       end
+      next if listings.fetch(slug).booked_by_id.present?
+
+      listings.fetch(slug).update!(booked_by: client_users.fetch(definition.fetch(:booked_by)))
     end
 
     {
