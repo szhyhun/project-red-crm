@@ -230,333 +230,6 @@ module Aryeo
       result[:record]
     end
 
-    # These narrow methods are the resource-mapper boundary. Resource
-    # Interactors can reuse the import session's organization and parsing
-    # rules without reaching into its mutable state or duplicating them.
-    def catalog_record_for(resource_type, external)
-      record_for(resource_type, external)
-    end
-
-    def catalog_external_id(payload)
-      external_id(payload)
-    end
-
-    def catalog_value(payload, *keys)
-      value(payload, *keys)
-    end
-
-    def catalog_integer_value(payload, *keys)
-      integer_value(payload, *keys)
-    end
-
-    def catalog_active?(payload)
-      active?(payload)
-    end
-
-    def catalog_product_kind(payload)
-      product_kind(payload)
-    end
-
-    def catalog_product_deliverable_type(payload)
-      product_deliverable_type(payload)
-    end
-
-    def catalog_unique_product_slug(title, external)
-      unique_product_slug(title, external)
-    end
-
-    def catalog_sqft_range(payload)
-      sqft_range(payload)
-    end
-
-    def catalog_cents(payload, *keys)
-      cents(payload, *keys)
-    end
-
-    def catalog_stringify(payload)
-      stringify(payload)
-    end
-
-    def customer_record_for(resource_type, external)
-      record_for(resource_type, external)
-    end
-
-    def customer_external_id(payload)
-      external_id(payload)
-    end
-
-    def customer_value(payload, *keys)
-      value(payload, *keys)
-    end
-
-    def customer_person_name(payload, *fallback_keys)
-      person_name(payload, *fallback_keys)
-    end
-
-    def customer_kind(payload)
-      client_kind(payload)
-    end
-
-    def customer_boolean_value(payload, *keys)
-      boolean_value(payload, *keys)
-    end
-
-    def customer_payloads(payload)
-      customer_payloads_for(payload)
-    end
-
-    def customer_payload_has_profile?(payload)
-      customer_payload_has_profile(payload)
-    end
-
-    def customer_import_dependency(resource_type, payload)
-      import_dependency(resource_type, payload)
-    end
-
-    def staff_value(payload, *keys)
-      value(payload, *keys)
-    end
-
-    def staff_person_name(payload)
-      person_name(payload)
-    end
-
-    def appointment_external_id(payload)
-      external_id(payload)
-    end
-
-    def appointment_listing_for(payload)
-      listing_for(payload)
-    end
-
-    def appointment_record_for(external)
-      record_for("appointments", external)&.record || @organization.appointments.find_by("notes LIKE ?", "%[aryeo:#{external}]%")
-    end
-
-    def appointment_time_value(payload, *keys)
-      time_value(payload, *keys)
-    end
-
-    def appointment_order_for(payload)
-      order_for(payload)
-    end
-
-    def appointment_staff_for(payload)
-      staff_for(payload)
-    end
-
-    def appointment_status(payload)
-      appointment_status_for(payload)
-    end
-
-    def appointment_value(payload, *keys)
-      value(payload, *keys)
-    end
-
-    def task_external_id(payload)
-      external_id(payload)
-    end
-
-    def task_listing_for(payload)
-      listing_for(payload)
-    end
-
-    def task_record_for(external)
-      record_for("tasks", external)&.record || @organization.workflow_tasks.find_by("metadata ->> 'aryeo_id' = ?", external)
-    end
-
-    def task_value(payload, *keys)
-      value(payload, *keys)
-    end
-
-    def task_staff_for(payload)
-      staff_for(payload)
-    end
-
-    def task_workflow_status(payload)
-      workflow_status(payload)
-    end
-
-    def task_priority(payload)
-      task_priority_for(payload)
-    end
-
-    def task_time_value(payload, *keys)
-      time_value(payload, *keys)
-    end
-
-    def listing_external_id(payload)
-      external_id(payload)
-    end
-
-    def listing_record_for(external)
-      record_for("listings", external)&.record || @organization.listings.find_by("metadata ->> 'aryeo_id' = ?", external)
-    end
-
-    def listing_clients(payload)
-      import_listing_clients(payload)
-    end
-
-    def listing_client_for(payload)
-      client_for(payload)
-    end
-
-    def listing_imported_client
-      imported_client
-    end
-
-    def listing_stringify(payload)
-      stringify(payload)
-    end
-
-    def listing_value(payload, *keys)
-      value(payload, *keys)
-    end
-
-    def listing_integer_value(payload, *keys)
-      integer_value(payload, *keys)
-    end
-
-    def listing_decimal_value(payload, *keys)
-      decimal_value(payload, *keys)
-    end
-
-    def listing_status(payload)
-      listing_status_for(payload)
-    end
-
-    def listing_delivery_status(payload)
-      delivery_status(payload)
-    end
-
-    def listing_time_value(payload, *keys)
-      time_value(payload, *keys)
-    end
-
-    def listing_import_relations(listing, payload)
-      import_listing_relations(listing, payload)
-    end
-
-    def listing_import_property_site(listing, payload)
-      import_property_site(listing, payload)
-    end
-
-    def order_external_id(payload)
-      external_id(payload)
-    end
-
-    def order_listing_for(payload)
-      listing_for(payload)
-    end
-
-    def order_import_dependency(resource_type, payload)
-      import_dependency(resource_type, payload)
-    end
-
-    def order_client_for(payload)
-      client_for(payload)
-    end
-
-    def order_import_client(payload)
-      import_order_client(payload)
-    end
-
-    def order_imported_client
-      imported_client
-    end
-
-    def order_record_for(external)
-      record_for("orders", external)&.record || @organization.orders.find_by("metadata ->> 'aryeo_id' = ?", external)
-    end
-
-    def order_stringify(payload)
-      stringify(payload)
-    end
-
-    def order_value(payload, *keys)
-      value(payload, *keys)
-    end
-
-    def order_status(payload)
-      order_status_for(payload)
-    end
-
-    def order_currency(payload)
-      currency(payload)
-    end
-
-    def order_cents(payload, *keys)
-      cents(payload, *keys)
-    end
-
-    def order_fulfillment_status(payload)
-      fulfillment_status(payload)
-    end
-
-    def order_records(payload, *keys)
-      records(payload, *keys)
-    end
-
-    def order_import_item(order, payload)
-      import_order_item(order, payload)
-    end
-
-    def order_import_payment(order, payload)
-      import_payment_metadata(order, payload)
-    end
-
-    def order_import_appointments(order, payload)
-      import_order_appointments(order, payload)
-    end
-
-    def order_appointments_selected?
-      @resources.include?(:appointments)
-    end
-
-    def media_record_for(external)
-      record_for("media_assets", external)
-    end
-
-    def media_external_id(payload)
-      external_id(payload)
-    end
-
-    def media_value(payload, *keys)
-      value(payload, *keys)
-    end
-
-    def media_integer_value(payload, *keys)
-      integer_value(payload, *keys)
-    end
-
-    def media_records(payload, key)
-      records(payload, key)
-    end
-
-    def media_filename(payload, external, source_url)
-      media_filename_for(payload, external, source_url)
-    end
-
-    def media_content_type_for(category, payload, source_url)
-      content_type_for(category, payload, source_url)
-    end
-
-    def media_category_for(category, content_type)
-      media_category_for_type(category, content_type)
-    end
-
-    def media_archive(resource_type, payload, **attributes)
-      archive!(resource_type, payload, **attributes)
-    end
-
-    def media_increment(key)
-      @media_counts[key] += 1
-    end
-
-    def media_record_error(message)
-      @errors << message
-    end
-
     def heartbeat!(force: false)
       if force
         @run.heartbeat!
@@ -570,8 +243,6 @@ module Aryeo
       @run.heartbeat!
       @records_since_heartbeat = 0
     end
-
-    private
 
     def parse_date(value)
       return if value.blank?
@@ -810,6 +481,30 @@ module Aryeo
       @connection.external_records.find_by(resource_type: resource_type, external_id: external)
     end
 
+    def appointment_record(external)
+      record_for("appointments", external)&.record || @organization.appointments.find_by("notes LIKE ?", "%[aryeo:#{external}]%")
+    end
+
+    def task_record(external)
+      record_for("tasks", external)&.record || @organization.workflow_tasks.find_by("metadata ->> 'aryeo_id' = ?", external)
+    end
+
+    def listing_record(external)
+      record_for("listings", external)&.record || @organization.listings.find_by("metadata ->> 'aryeo_id' = ?", external)
+    end
+
+    def order_record(external)
+      record_for("orders", external)&.record || @organization.orders.find_by("metadata ->> 'aryeo_id' = ?", external)
+    end
+
+    def increment_media!(key)
+      @media_counts[key] += 1
+    end
+
+    def record_media_error!(message)
+      @errors << message
+    end
+
     def client_for(payload)
       listing_client_payloads(payload).each do |client_payload|
         client = client_for_payload(client_payload)
@@ -858,6 +553,10 @@ module Aryeo
       nested = stringify(payload["order"] || {})
       external = external_id(nested).presence || value(payload, "order_id")
       record_for("orders", external)&.record || @organization.orders.find_by("metadata ->> 'aryeo_id' = ?", external) if external.present?
+    end
+
+    def order_appointments_selected?
+      @resources.include?(:appointments)
     end
 
     def staff_for(payload)
@@ -1006,7 +705,7 @@ module Aryeo
     end
 
     def customer_ids(payload)
-      customer_payloads(payload).filter_map { |customer| external_id(customer) }
+      customer_payloads_for(payload).filter_map { |customer| external_id(customer) }
     end
 
     def customer_payload_has_profile(payload)

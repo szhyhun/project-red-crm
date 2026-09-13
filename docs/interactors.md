@@ -138,6 +138,11 @@ Do not turn an action into an Organizer only to create sub-actions for its
 private helpers. Do not turn every provider endpoint or client method into an
 Interactor. This distinction is a project rule and is part of code review.
 
+Do not add namespace-flavored aliases such as `catalog_value` delegating to
+`value` or `task_time_value` delegating to `time_value`. Call the generic
+helper directly. A session method is justified only when it adds lookup,
+normalization, persistence, state, or another real provider-specific rule.
+
 ## Context, outputs, and failures
 
 The context is a small mutable result carrier, not a global state store.
