@@ -10,7 +10,7 @@ module Conversations
     end
 
     def perform
-      result = Conversations::Retention.call
+      result = Conversations::PurgeExpired.call
       Rails.logger.info(
         "Conversation retention completed: #{result.messages_deleted} messages, " \
         "#{result.attachments_deleted} attachments deleted, #{result.failures} failures"

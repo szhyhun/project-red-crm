@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Conversations::Retention do
+RSpec.describe Conversations::PurgeExpired do
   let!(:organization) { Organization.create!(name: "Retention service agency", slug: "retention-service-agency") }
   let!(:manager) do
     User.create!(organization:, name: "Retention manager", email: "retention-service-manager@example.test",

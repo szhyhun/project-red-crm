@@ -1,7 +1,7 @@
 require "set"
 
 module Conversations
-  class Retention
+  class PurgeExpired
     BATCH_SIZE = 100
 
     Result = Data.define(:messages_deleted, :attachments_deleted, :failures)
