@@ -18,10 +18,10 @@ RSpec.describe "Conversation media context contract", type: :request do
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 18_000) }
   let!(:order) do
-    Orders::Creator.new(organization:, attributes: {
+    Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: variant.id, quantity: 1 } ]
-    }).create!
+    }).fetch(:order)
   end
   let!(:deliverable) do
     Orders::Approve.call(order:, actor: manager)
@@ -88,10 +88,10 @@ RSpec.describe "Conversation media context contract", type: :request do
     other_service = organization.products.create!(slug: "context-video", title: "Context video", kind: :service,
                                                    deliverable_type: "video")
     other_variant = other_service.product_variants.create!(title: "Standard", price_cents: 22_000)
-    other_order = Orders::Creator.new(organization:, attributes: {
+    other_order = Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: other_variant.id, quantity: 1 } ]
-    }).create!
+    }).fetch(:order)
     Orders::Approve.call(order: other_order, actor: manager)
     other_deliverable = other_order.reload.order_deliverables.sole
     foreign_asset = other_deliverable.media_assets.create!(organization:, listing:, order: other_order,

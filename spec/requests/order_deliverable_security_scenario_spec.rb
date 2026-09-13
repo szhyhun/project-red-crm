@@ -104,12 +104,12 @@ RSpec.describe "Order deliverable security API scenario", type: :request do
   private
 
   def create_order(client_account:, listing:)
-    Orders::Creator.new(organization:, attributes: {
+    Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id,
       listing_id: listing.id,
       payment_mode: "pay_later",
       items: [ { product_variant_id: variant.id, quantity: 1 } ]
-    }).create!.tap { |record| record.update!(status: :approved, approved_at: Time.current) }
+    }).fetch(:order).tap { |record| record.update!(status: :approved, approved_at: Time.current) }
   end
 
   def materialize(order)

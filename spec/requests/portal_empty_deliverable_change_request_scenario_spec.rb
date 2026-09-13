@@ -17,10 +17,10 @@ RSpec.describe "Portal empty deliverable change request API scenario", type: :re
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 25_000) }
   let!(:order) do
-    Orders::Creator.new(organization:, attributes: {
+    Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: variant.id, quantity: 1 } ]
-    }).create!.tap do |record|
+    }).fetch(:order).tap do |record|
       record.update!(status: :approved, approved_at: Time.current)
     end
   end

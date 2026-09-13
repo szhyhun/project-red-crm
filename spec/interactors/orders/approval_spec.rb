@@ -18,7 +18,7 @@ RSpec.describe Orders::Approve do
     end
   end
   let!(:order) do
-    Orders::Creator.new(
+    Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -26,7 +26,7 @@ RSpec.describe Orders::Approve do
         payment_mode: "pay_later",
         items: [ { product_variant_id: package.product_variants.first.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
   end
 
   before do

@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Aryeo::ImportedDeliveryMaterializer do
+RSpec.describe Integrations::Aryeo::Actions::ReconcileImportedDelivery, type: :interactor do
   let!(:organization) { Organization.create!(name: "Imported delivery agency", slug: "imported-delivery-agency") }
   let!(:connection) do
     IntegrationConnection.create!(organization:, provider: :aryeo, api_key: "aryeo-key", status: :connected)
@@ -43,6 +43,19 @@ RSpec.describe Aryeo::ImportedDeliveryMaterializer do
                                              "updated_at" => "2026-09-10T12:00:00Z" })
   end
 
+  let(:session) { instance_double(Aryeo::ImportSession) }
+
+  before do
+    allow(session).to receive(:record_linked_media!)
+  end
+
+  def reconcile
+    result = described_class.call(run:, session:)
+    raise result.failure.original_error || result.failure if result.failure?
+
+    result.fetch(:materialization)
+  end
+
   it "materializes imported services and links every media category without duplicating on retry" do
     media = [
       [ "photo-1", "images", "item-1", "front.jpg", "image/jpeg" ],
@@ -60,7 +73,7 @@ RSpec.describe Aryeo::ImportedDeliveryMaterializer do
       asset
     end
 
-    result = described_class.new(run:).call
+    result = reconcile
 
     expect(result.fetch(:deliverables).pluck(:deliverable_type)).to contain_exactly(
       "photography", "video", "floor_plan", "files", "tour"
@@ -76,7 +89,7 @@ RSpec.describe Aryeo::ImportedDeliveryMaterializer do
     )
 
     expect {
-      described_class.new(run:).call
+      reconcile
     }.not_to change(OrderDeliverable, :count)
   end
 
@@ -93,7 +106,7 @@ RSpec.describe Aryeo::ImportedDeliveryMaterializer do
                            external_id: "foreign-photo", record: asset,
                            source_payload: { "id" => "foreign-photo", "order_id" => "order-1" })
 
-    described_class.new(run:).call
+    reconcile
 
     expect(asset.reload.order_deliverable).to be_nil
   end

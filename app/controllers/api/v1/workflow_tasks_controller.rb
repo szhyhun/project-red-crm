@@ -118,7 +118,8 @@ class Api::V1::WorkflowTasksController < Api::V1::BaseController
     raise Pundit::NotAuthorizedError unless policy(task).update_on_board?(board)
     label_values = extract_label_values!(attributes)
     WorkflowTask.transaction do
-      WorkflowTasks::Mover.new(task:, board:, attributes:).move!
+      result = Workflows::MoveTask.call(task:, board:, attributes:)
+      raise result.failure.original_error || result.failure if result.failure?
       assign_labels!(task, label_values)
     end
     record_activity(task.reload, "workflow_task.updated", status: task.status)

@@ -14,10 +14,10 @@ RSpec.describe Orders::Approve do
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 25_000) }
   let!(:order) do
-    Orders::Creator.new(organization:, attributes: {
+    Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: variant.id, quantity: 1 } ]
-    }).create!
+    }).fetch(:order)
   end
 
   it "rolls back approval, deliverables, and activity when materialization fails" do
@@ -35,13 +35,13 @@ RSpec.describe Orders::Approve do
   end
 
   it "enqueues workflow materialization only after approval commits" do
-    trigger = instance_double(Workflows::Trigger, enqueue!: true)
-    allow(Workflows::Trigger).to receive(:new).and_return(trigger)
+    allow(Workflows::Trigger).to receive(:call).and_return(ApplicationInteractor::Context.new(order:))
 
     described_class.call(order:, actor: manager)
 
-    expect(Workflows::Trigger).to have_received(:new).with(order: have_attributes(id: order.id, status: "approved"))
-    expect(trigger).to have_received(:enqueue!)
+    expect(Workflows::Trigger).to have_received(:call).with(
+      context: satisfy { |context| context.fetch(:order).slice(:id, :status) == { "id" => order.id, "status" => "approved" } }
+    )
   end
 
   it "records the approving actor on both order and listing activity" do

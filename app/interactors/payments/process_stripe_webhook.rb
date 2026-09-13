@@ -1,19 +1,31 @@
 module Payments
-  class StripeWebhookProcessor
-    def initialize(event:)
-      @event = event
-    end
-
-    def process!
-      event_record = PaymentWebhookEvent.create_or_find_by!(provider: "stripe", event_id: @event.id, event_type: @event.type)
+  # Applies a verified Stripe event to ProjectRed's payment and invoice state.
+  # Stripe parsing/signature verification stays in the controller; this action
+  # owns idempotency and the durable payment transition.
+  class ProcessStripeWebhook < ApplicationInteractor
+    def call
+      @event = context.fetch(:event)
+      event_record = PaymentWebhookEvent.create_or_find_by!(
+        provider: "stripe", event_id: @event.id, event_type: @event.type
+      )
       event_record.with_lock do
-        return if event_record.processed_at.present?
-
-        payment_intent = @event.data.object
-        payment = Payment.find_by(provider: "stripe", provider_payment_id: payment_intent.id)
-        process_payment(payment, payment_intent)
-        event_record.update!(payment:, processed_at: Time.current)
+        unless event_record.processed_at.present?
+          payment_intent = @event.data.object
+          payment = Payment.find_by(provider: "stripe", provider_payment_id: payment_intent.id)
+          process_payment(payment, payment_intent)
+          event_record.update!(payment:, processed_at: Time.current)
+        end
       end
+
+      context.set(:event_record, event_record)
+    rescue StandardError => error
+      context.fail!(
+        code: "stripe_webhook_failed",
+        message: error.message,
+        original_error: error,
+        event_id: @event&.id,
+        event_type: @event&.type
+      )
     end
 
     private

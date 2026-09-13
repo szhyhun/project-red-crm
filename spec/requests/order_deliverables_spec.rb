@@ -21,7 +21,7 @@ RSpec.describe "Order deliverable API", type: :request do
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 30_000) }
   let!(:order) do
-    Orders::Creator.new(
+    Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -29,7 +29,7 @@ RSpec.describe "Order deliverable API", type: :request do
         payment_mode: "pay_later",
         items: [ { product_variant_id: variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
   end
   let!(:deliverable) do
     order.update!(status: :approved, approved_at: Time.current)
@@ -98,7 +98,7 @@ RSpec.describe "Order deliverable API", type: :request do
     other_product = other_organization.products.create!(slug: "other-deliverable-service", title: "Other service",
                                                          kind: :service, deliverable_type: "video")
     other_variant = other_product.product_variants.create!(title: "Standard", price_cents: 10_000)
-    other_order = Orders::Creator.new(
+    other_order = Orders::Create.call(
       organization: other_organization,
       attributes: {
         client_account_id: other_client.id,
@@ -106,7 +106,7 @@ RSpec.describe "Order deliverable API", type: :request do
         payment_mode: "pay_later",
         items: [ { product_variant_id: other_variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
     other_order.update!(status: :approved, approved_at: Time.current)
     other_deliverable = Orders::DeliverableMaterializer.new(order: other_order).call.sole
 

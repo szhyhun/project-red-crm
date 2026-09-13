@@ -69,71 +69,7 @@ class MediaReview < ApplicationRecord
     end
   end
 
-  def submit!(outcome:, submitted_by:, summary: nil, summary_html: nil)
-    outcome = outcome.to_s
-    raise ArgumentError, "unsupported review outcome" unless OUTCOMES.include?(outcome)
-
-    # The row lock makes a double click or a second tab wait for the first
-    # submit and then find the review closed, instead of moving the same work
-    # back twice and posting two notifications.
-    with_lock do
-      reject!("This review has already been submitted") unless open?
-
-      sanitized_summary_html = RichTextSanitizer.sanitize(summary_html.to_s).presence
-      summary_text = summary.presence || RichTextSanitizer.plain_text(sanitized_summary_html).presence
-      # Sending work back to production with nothing to act on leaves the
-      # team guessing what to change.
-      if outcome == "request_changes" && summary_text.blank? && media_review_comments.none?
-        reject!("Add a comment or a summary that says what should change")
-      end
-
-      update!(
-        outcome:,
-        status: outcome == "approve" ? :approved : outcome == "request_changes" ? :changes_requested : :submitted,
-        submitted_by:,
-        submitted_at: Time.current,
-        summary: summary_text,
-        summary_html: sanitized_summary_html
-      )
-      media_review_comments.where(status: :draft).update_all(status: "published", updated_at: Time.current)
-
-      if request_changes?
-        order_deliverables.each do |deliverable|
-          next unless deliverable.delivered?
-
-          deliverable.update!(status: :in_progress, delivered_at: nil)
-        end
-      end
-
-      ActivityEvent.create!(
-        organization: organization,
-        actor: submitted_by,
-        subject: self,
-        event_type: "media_review.#{outcome}",
-        payload: { listing_id: listing_id, order_deliverable_ids: order_deliverables.ids }
-      )
-      if request_changes?
-        order_deliverables.each do |deliverable|
-          ActivityEvent.create!(
-            organization: organization,
-            actor: submitted_by,
-            subject: deliverable,
-            event_type: "order_deliverable.change_requested",
-            payload: { media_review_id: id }
-          )
-        end
-      end
-    end
-
-    self
-  end
-
   private
-
-  def reject!(message)
-    errors.add(:base, message)
-    raise ActiveRecord::RecordInvalid, self
-  end
 
   def records_belong_to_same_organization
     errors.add(:listing, "must belong to the same organization") if listing.present? && listing.organization_id != organization_id

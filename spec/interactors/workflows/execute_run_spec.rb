@@ -17,7 +17,7 @@ RSpec.describe Workflows::ExecuteRun do
     service.product_variants.create!(title: "Up to 1,000 sqft", price_cents: 29_900, sqft_min: 0, sqft_max: 1_000)
   end
   let!(:order) do
-    Orders::Creator.new(
+    Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -25,7 +25,7 @@ RSpec.describe Workflows::ExecuteRun do
         payment_mode: "pay_later",
         items: [ { product_variant_id: variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
   end
   let!(:workflow) do
     board.board_workflows.create!(organization:, name: "Runner workflow", trigger_key: "order_approved",

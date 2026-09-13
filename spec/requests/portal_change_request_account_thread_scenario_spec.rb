@@ -21,10 +21,10 @@ RSpec.describe "Portal change request account thread scenario", type: :request d
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 30_000) }
   let!(:order) do
-    Orders::Creator.new(organization:, attributes: {
+    Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: variant.id, quantity: 1 } ]
-    }).create!.tap { |record| record.update!(status: :approved, approved_at: Time.current) }
+    }).fetch(:order).tap { |record| record.update!(status: :approved, approved_at: Time.current) }
   end
   let!(:deliverable) do
     Orders::DeliverableMaterializer.new(order:).call.sole.tap do |record|

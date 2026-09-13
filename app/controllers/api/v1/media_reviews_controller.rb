@@ -140,9 +140,13 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
     outcome = attributes[:outcome].to_s
     return render json: { error: "invalid_review_outcome" }, status: :unprocessable_entity unless MediaReview::OUTCOMES.include?(outcome)
 
-    review.submit!(outcome:, submitted_by: current_user, summary: attributes[:summary], summary_html: attributes[:summary_html])
-    notify_review_submission(review)
-    render json: { media_review: serialize_review(review.reload) }
+    result = MediaReviews::Submit.call(
+      review:, outcome:, submitted_by: current_user,
+      summary: attributes[:summary], summary_html: attributes[:summary_html]
+    )
+    raise result.failure.original_error || result.failure if result.failure?
+
+    render json: { media_review: serialize_review(result.fetch(:review)) }
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
   end
@@ -334,28 +338,5 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
       comments.concat(review.media_review_comments.to_a.select(&:draft?))
     end
     comments.uniq
-  end
-
-  def notify_review_submission(review)
-    conversation = Conversation.account_thread_for(
-      organization: Current.organization,
-      client_account: review.client_account,
-      subject: "Media review ##{review.number}"
-    )
-    conversation.conversation_memberships.find_or_create_by!(user: current_user) { |membership| membership.role = :participant }
-    review.client_account.users.active.find_each do |member|
-      conversation.conversation_memberships.find_or_create_by!(user: member) { |membership| membership.role = :participant }
-    end
-    message = conversation.messages.create!(
-      author: current_user,
-      body: "Media review ##{review.number} was submitted: #{review.outcome.humanize}.",
-      message_kind: :review_notification,
-      listing: review.listing,
-      media_review: review
-    )
-    conversation.update!(last_message_at: message.created_at)
-    Conversations::NotifyJob.perform_later(message.id)
-  rescue StandardError => error
-    Rails.logger.error("Could not queue media review notification for review #{review.id}: #{error.class}: #{error.message}")
   end
 end

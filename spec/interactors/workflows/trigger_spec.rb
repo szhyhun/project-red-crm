@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Workflows::Trigger do
+RSpec.describe Workflows::Trigger, type: :interactor do
   include ActiveJob::TestHelper
 
   let!(:organization) { Organization.create!(name: "Trigger Agency", slug: "trigger-agency") }
@@ -24,7 +24,7 @@ RSpec.describe Workflows::Trigger do
 
   it "creates a pending run and queues the workflow job for an enabled workflow" do
     expect {
-      described_class.new(order:).enqueue!
+      described_class.call(order:)
     }.to change(BoardWorkflowRun, :count).by(1)
 
     run = BoardWorkflowRun.order(:id).last
@@ -36,16 +36,16 @@ RSpec.describe Workflows::Trigger do
     workflow.update!(enabled: false)
 
     expect {
-      described_class.new(order:).enqueue!
+      described_class.call(order:)
     }.not_to change(BoardWorkflowRun, :count)
     expect(enqueued_jobs).to be_empty
   end
 
   it "reuses the same run when approval is retried at the same workflow version" do
-    trigger = described_class.new(order:)
+    trigger = described_class
 
-    trigger.enqueue!
-    trigger.enqueue!
+    trigger.call(order:)
+    trigger.call(order:)
 
     expect(BoardWorkflowRun.where(board_workflow: workflow, order:).count).to eq(1)
     expect(BoardWorkflowRun.order(:id).last.idempotency_key).to eq(
@@ -54,11 +54,11 @@ RSpec.describe Workflows::Trigger do
   end
 
   it "creates a new run when the workflow version changes" do
-    trigger = described_class.new(order:)
-    trigger.enqueue!
+    trigger = described_class
+    trigger.call(order:)
     workflow.update!(workflow_version: workflow.workflow_version + 1)
 
-    trigger.enqueue!
+    trigger.call(order:)
 
     expect(BoardWorkflowRun.where(board_workflow: workflow, order:).count).to eq(2)
     expect(BoardWorkflowRun.pluck(:idempotency_key)).to include(
@@ -71,7 +71,7 @@ RSpec.describe Workflows::Trigger do
     workflow.update!(enabled: false)
 
     expect {
-      described_class.new(order:).enqueue!
+      described_class.call(order:)
     }.not_to change(BoardWorkflowRun, :count)
     expect(enqueued_jobs).to be_empty
   end
@@ -81,7 +81,7 @@ RSpec.describe Workflows::Trigger do
                                 idempotency_key: "completed-trigger-#{SecureRandom.uuid}", triggered_at: Time.current)
     allow(BoardWorkflowRun).to receive(:find_or_create_by!).and_return(run)
 
-    described_class.new(order:).enqueue!
+    described_class.call(order:)
 
     expect(enqueued_jobs).to be_empty
   end

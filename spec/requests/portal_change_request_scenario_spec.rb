@@ -20,10 +20,10 @@ RSpec.describe "Portal change request API scenario", type: :request do
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 30_000) }
   let!(:order) do
-    Orders::Creator.new(organization:, attributes: {
+    Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: variant.id, quantity: 1 } ]
-    }).create!
+    }).fetch(:order)
   end
   let!(:deliverable) do
     order.update!(status: :approved, approved_at: Time.current)
@@ -121,10 +121,10 @@ RSpec.describe "Portal change request API scenario", type: :request do
     other_service = organization.products.create!(slug: "change-request-video", title: "Property video",
                                                    kind: :service, deliverable_type: "video")
     other_variant = other_service.product_variants.create!(title: "Standard", price_cents: 20_000)
-    other_order = Orders::Creator.new(organization:, attributes: {
+    other_order = Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: other_variant.id, quantity: 1 } ]
-    }).create!
+    }).fetch(:order)
     other_order.update!(status: :approved, approved_at: Time.current)
     other_deliverable = Orders::DeliverableMaterializer.new(order:).call.find do |record|
       record.service_product_id == other_service.id
@@ -167,10 +167,10 @@ RSpec.describe "Portal change request API scenario", type: :request do
                                                      description: "A short property video.", kind: :service,
                                                      deliverable_type: "video", sla_days: 3)
     waiting_variant = waiting_service.product_variants.create!(title: "Standard", price_cents: 20_000)
-    waiting_order = Orders::Creator.new(organization:, attributes: {
+    waiting_order = Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: waiting_variant.id, quantity: 1 } ]
-    }).create!
+    }).fetch(:order)
     waiting_order.update!(status: :approved, approved_at: Time.current)
     waiting_deliverable = Orders::DeliverableMaterializer.new(order: waiting_order).call.sole
 

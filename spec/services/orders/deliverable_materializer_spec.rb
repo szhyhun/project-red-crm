@@ -68,7 +68,7 @@ RSpec.describe Orders::DeliverableMaterializer do
   it "uses the sold variant scope when the catalog changes before approval" do
     variant = photo_service.product_variants.create!(title: "Up to 1,000 sqft", price_cents: 30_000,
                                                       sqft_min: 0, sqft_max: 1_000)
-    order = Orders::Creator.new(
+    order = Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -76,7 +76,7 @@ RSpec.describe Orders::DeliverableMaterializer do
         payment_mode: "pay_later",
         items: [ { product_variant_id: variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
     variant.update!(title: "Up to 3,000 sqft", sqft_min: 1_001, sqft_max: 3_000)
     order.update!(status: :approved, approved_at: Time.zone.parse("2026-09-07 09:00:00"))
 

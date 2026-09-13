@@ -7,7 +7,8 @@ class Api::V1::Webhooks::StripeController < ApplicationController
       request.headers["Stripe-Signature"],
       ENV.fetch("STRIPE_WEBHOOK_SECRET")
     )
-    Payments::StripeWebhookProcessor.new(event:).process!
+    result = Payments::ProcessStripeWebhook.call(event:)
+    raise result.failure.original_error || result.failure if result.failure?
     head :ok
   rescue JSON::ParserError, Stripe::SignatureVerificationError
     head :bad_request

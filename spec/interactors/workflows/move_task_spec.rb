@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe WorkflowTasks::Mover do
+RSpec.describe Workflows::MoveTask do
   let!(:organization) { Organization.create!(name: "Mover Agency", slug: "mover-agency") }
   let!(:manager) do
     User.create!(organization:, name: "Mover Manager", email: "mover-manager@example.test",
@@ -21,7 +21,7 @@ RSpec.describe WorkflowTasks::Mover do
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 10_000) }
   let!(:order) do
-    Orders::Creator.new(
+    Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -29,7 +29,7 @@ RSpec.describe WorkflowTasks::Mover do
         payment_mode: "pay_later",
         items: [ { product_variant_id: variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
   end
   let!(:deliverable) do
     order.update!(status: :approved, approved_at: Time.current)
@@ -40,12 +40,21 @@ RSpec.describe WorkflowTasks::Mover do
     board.workflow_tasks.create!(organization:, listing:, title:, status:, position:)
   end
 
+  def move(task, attributes:, board: nil)
+    inputs = { task:, attributes: }
+    inputs[:board] = board if board
+    result = described_class.call(**inputs)
+    raise result.failure.original_error || result.failure if result.failure?
+
+    result.fetch(:task)
+  end
+
   it "maps a completed board column to delivered and records the transition" do
     work = task(title: "Deliver the photos")
     work.workflow_task_deliverables.create!(order_deliverable: deliverable, position: 0)
 
     expect {
-      described_class.new(task: work, attributes: { status: "done", position: 0 }).move!
+      move(work, attributes: { status: "done", position: 0 })
     }.to change { deliverable.reload.status }.from("not_started").to("delivered")
 
     expect(work.reload).to have_attributes(status: "done")
@@ -63,7 +72,7 @@ RSpec.describe WorkflowTasks::Mover do
     work.workflow_task_placements.create!(board: second_board, workflow_column: second_todo,
                                           position: 0, is_home: false)
 
-    described_class.new(task: work, attributes: { status: "in_progress", position: 0 }).move!
+    move(work, attributes: { status: "in_progress", position: 0 })
 
     expect(work.reload.home_placement).to have_attributes(board_id: board.id, workflow_column_id: board.workflow_columns.find_by!(key: "in_progress").id)
     expect(work.workflow_task_placements.find_by!(board: second_board)).to have_attributes(
@@ -80,8 +89,7 @@ RSpec.describe WorkflowTasks::Mover do
                                           workflow_column: second_board.workflow_columns.find_by!(key: "todo"),
                                           position: 0, is_home: false)
 
-    described_class.new(task: work, board: second_board,
-                        attributes: { status: review.key, position: 0 }).move!
+    move(work, board: second_board, attributes: { status: review.key, position: 0 })
 
     expect(work.reload.status).to eq("in_progress")
     expect(work.workflow_task_placements.find_by!(board: second_board).workflow_column).to eq(review)
@@ -92,7 +100,7 @@ RSpec.describe WorkflowTasks::Mover do
     first = task(title: "First", position: 0)
     second = task(title: "Second", position: 1)
 
-    described_class.new(task: second, attributes: { status: "todo", position: 0 }).move!
+    move(second, attributes: { status: "todo", position: 0 })
 
     expect(first.reload.position).to eq(1)
     expect(second.reload.position).to eq(0)
@@ -102,7 +110,7 @@ RSpec.describe WorkflowTasks::Mover do
     work = task(title: "Reopened", status: "done")
     work.update!(completed_at: 1.day.ago)
 
-    described_class.new(task: work, attributes: { status: "in_progress", position: 0 }).move!
+    move(work, attributes: { status: "in_progress", position: 0 })
 
     expect(work.reload).to have_attributes(status: "in_progress", completed_at: nil)
   end
@@ -111,7 +119,7 @@ RSpec.describe WorkflowTasks::Mover do
     work = task(title: "Keep valid")
 
     expect {
-      described_class.new(task: work, attributes: { status: "missing" }).move!
+      move(work, attributes: { status: "missing" })
     }.to raise_error(ActiveRecord::RecordInvalid, /must match a column on this board/)
 
     expect(work.reload.status).to eq("todo")
@@ -121,7 +129,7 @@ RSpec.describe WorkflowTasks::Mover do
     work = task(title: "Keep position")
 
     expect {
-      described_class.new(task: work, attributes: { status: "in_progress", position: "middle" }).move!
+      move(work, attributes: { status: "in_progress", position: "middle" })
     }.to raise_error(ActiveRecord::RecordInvalid, /must be an integer/)
 
     expect(work.reload).to have_attributes(status: "todo", position: 0)

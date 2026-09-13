@@ -19,10 +19,10 @@ RSpec.describe "Portal media authorization", type: :request do
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 20_000) }
   let!(:order) do
-    Orders::Creator.new(organization:, attributes: {
+    Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: variant.id, quantity: 1 } ]
-    }).create!.tap do |record|
+    }).fetch(:order).tap do |record|
       record.update!(status: :approved, approved_at: Time.current)
     end
   end
@@ -66,10 +66,10 @@ RSpec.describe "Portal media authorization", type: :request do
     foreign_service = organization.products.create!(slug: "foreign-portal-service", title: "Foreign portal service",
                                                      kind: :service, deliverable_type: "video")
     foreign_variant = foreign_service.product_variants.create!(title: "Standard", price_cents: 10_000)
-    foreign_order = Orders::Creator.new(organization:, attributes: {
+    foreign_order = Orders::Create.call(organization:, attributes: {
       client_account_id: other_client_account.id, listing_id: other_listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: foreign_variant.id, quantity: 1 } ]
-    }).create!
+    }).fetch(:order)
     foreign_order.update!(status: :approved, approved_at: Time.current)
     foreign_deliverable = Orders::DeliverableMaterializer.new(order: foreign_order).call.sole
 

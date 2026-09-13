@@ -204,36 +204,24 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     params.require(:message).permit(:body, :body_html, :visibility, :listing_id, :order_deliverable_id, media_asset_ids: [])
   end
 
-  # Nothing about telling other people may stop a message being sent. The
-  # enqueue itself needs Redis too, so even that is contained: a message that
-  # saved is sent, and a notification that could not be queued is logged rather
-  # than raised at the person who wrote it.
-  def notify_later(message)
-    Conversations::NotifyJob.perform_later(message.id)
-  rescue StandardError => error
-    Rails.logger.error("Could not queue conversation notification for message #{message.id}: #{error.class}: #{error.message}")
-  end
-
   def create_message!(conversation, body, body_html = nil, visibility = nil, listing: nil, order_deliverable: nil, media_asset_ids: [])
-    message_visibility = current_user.internal? ? (visibility || :participants) : :participants
-    message = nil
-    Conversation.transaction do
-      message = conversation.messages.create!(author: current_user, body: body, body_html: body_html,
-                                              visibility: message_visibility, listing:, order_deliverable:)
-      asset_ids = Array(media_asset_ids).map(&:to_i).uniq
-      assets = policy_scope(MediaAsset).where(id: asset_ids).to_a
-      raise ActiveRecord::RecordNotFound if assets.size != asset_ids.size
-      if order_deliverable.present? && assets.any? { |asset| asset.order_deliverable_id != order_deliverable.id }
-        raise ActiveRecord::RecordNotFound
-      end
-      if listing.present? && assets.any? { |asset| asset.listing_id != listing.id }
-        raise ActiveRecord::RecordNotFound
-      end
-      assets.each_with_index { |asset, position| message.message_media_references.create!(media_asset: asset, position:) }
+    asset_ids = Array(media_asset_ids).map(&:to_i).uniq
+    assets = policy_scope(MediaAsset).where(id: asset_ids).to_a
+    raise ActiveRecord::RecordNotFound if assets.size != asset_ids.size
+    if order_deliverable.present? && assets.any? { |asset| asset.order_deliverable_id != order_deliverable.id }
+      raise ActiveRecord::RecordNotFound
     end
-    conversation.update!(last_message_at: message.created_at)
-    notify_later(message)
-    message
+    if listing.present? && assets.any? { |asset| asset.listing_id != listing.id }
+      raise ActiveRecord::RecordNotFound
+    end
+
+    result = Conversations::PublishMessage.call(
+      conversation:, author: current_user, body:, body_html:, visibility:, listing:, order_deliverable:,
+      media_assets: assets
+    )
+    raise result.failure.original_error || result.failure if result.failure?
+
+    result.fetch(:message)
   end
 
   def resolve_message_listing(id)

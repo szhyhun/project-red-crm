@@ -42,10 +42,12 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
   def invite
     account = policy_scope(ClientAccount).find(params[:id])
     authorize account, :invite?
-    membership = ClientMemberships::Invite.new(
+    result = ClientMemberships::Invite.call(
       account:, actor: current_user, email: invite_params[:email], name: invite_params[:name],
       role: invite_params[:membership_role]
-    ).call
+    )
+    raise result.failure.original_error || result.failure if result.failure?
+    membership = result.fetch(:membership)
 
     render json: { client_user: membership.user.slice(:id, :name, :email, :role) }, status: :created
   rescue ActiveRecord::RecordInvalid => error

@@ -85,7 +85,31 @@ small service called inside the approval transaction until it has an
 independent caller or a real multi-step failure boundary; wrapping it only to
 rename the class would add complexity without removing a competing path.
 Order approval itself now uses `Orders::ApproveOrder` plus
-`Orders::EnqueueWorkflow`.
+`Workflows::Trigger`.
+
+The next application boundaries are also implemented:
+
+- `Workflows::MoveTask` owns canonical task movement, shared placements,
+  deliverable state, completion timestamps, and transition activity.
+- `Conversations::PublishMessage` owns message persistence, media references,
+  `last_message_at`, and post-commit notification enqueueing.
+- `MediaReviews::Submit` owns review closure, draft-comment publication,
+  request-changes transitions, and the account conversation notification.
+- `ClientMemberships::Invite` owns invited-user creation, membership state, and
+  the invitation audit event.
+- `Payments::ProcessStripeWebhook` owns Stripe event idempotency and the
+  payment/invoice transition; signature verification remains in the webhook
+  controller.
+- `ClientPortal::CreateListing` owns customer booking creation and its audit
+  event.
+- `ClientPortal::RequestReschedule` owns appointment request, event, and
+  listing activity persistence.
+- `Orders::Create` owns catalog price resolution, order-item snapshots, order
+  totals, and order-created activity.
+
+The old service implementations and the `Orders::EnqueueWorkflow` wrapper were
+deleted after the focused specs passed. No controller retains a second path for
+these transitions.
 
 | Current entry point | Proposed business action | Durable result |
 | --- | --- | --- |
@@ -94,14 +118,26 @@ Order approval itself now uses `Orders::ApproveOrder` plus
 | `Aryeo::ImportWatchdogJob` | `Integrations::Aryeo::Actions::FailStaleImports` | Abandoned imports are failed and their connections are released |
 | `BoardWorkflowJob` | `Workflows::ExecuteRun` organizer | Workflow steps and task placements are synchronized |
 | approval controller boundary | `Orders::Approve` organizer | Order approval and deliverable/task materialization are idempotent |
+| workflow task mutation controllers | `Workflows::MoveTask` | Canonical task state and every authorized placement stay synchronized |
+| order approval workflow step | `Workflows::Trigger` | One idempotent run per order/workflow/version |
 | `MediaAssets::VerifyUploadJob` | `MediaAssets::VerifyUpload` | Asset becomes ready or records a safe processing failure |
+| conversation message controller | `Conversations::PublishMessage` | Message and references commit before notification enqueue |
+| media review submit controller | `MediaReviews::Submit` | Review outcome and request-changes state commit before notification |
+| client membership invite controllers | `ClientMemberships::Invite` | User/membership/audit transition is atomic |
+| Stripe webhook controller | `Payments::ProcessStripeWebhook` | Payment event is idempotent and invoice state is reconciled |
+| portal listing creation | `ClientPortal::CreateListing` | Draft booking request and activity are created together |
+| portal appointment mutation | `ClientPortal::RequestReschedule` | Appointment request, event, and activity are atomic |
+| order creation controller and callers | `Orders::Create` | Catalog pricing, item snapshots, totals, and activity are one action |
 | `Notifications::DeliverJob` | `Notifications::Deliver` | Delivery becomes delivered or failed with retry metadata |
 | `Conversations::NotifyJob` | `Conversations::Notifier` | Participants, unread state, and Action Cable notification are consistent |
 | `Conversations::RetentionJob` | `Conversations::PurgeExpired` | Expired messages and private attachments are removed by policy |
 
 The terminal-state, media, notification, workflow, approval, import, and
 retention boundaries are implemented. Workflow execution and notification/media
-actions are decomposed into reusable steps. Aryeo import orchestration is kept
+actions are decomposed into reusable steps. Task movement, message publication,
+review submission, membership invitation, and payment webhook reconciliation are
+now application actions. Portal booking and reschedule mutations are also
+application actions. Aryeo import orchestration is kept
 as a visible Organizer chain while provider-specific mapping remains grouped in
 `app/services/aryeo/resource_importer.rb`; each extraction removes a competing
 path rather than adding a wrapper around unchanged code.
@@ -150,6 +186,26 @@ mutate the same records. The acceptance checklist for every phase includes a
 repository search proving that removed names and obsolete branches have no
 live callers, plus a focused test proving the replacement path owns the
 behavior.
+
+### Current audit decisions
+
+Keep these as services unless their boundary changes:
+
+- `Aryeo::Client`, `Aryeo::RemoteMediaCopy`, storage adapters, and payment
+  provider clients are protocol adapters.
+- `Aryeo::ImportSession` and `Aryeo::ResourceImporter` are grouped provider
+  parsing/mapping services. Splitting each endpoint or field into an action
+  would recreate the stale import structure that was just removed.
+- `Orders::DeliverableMaterializer` is a transactional persistence helper,
+  not an Organizer step by itself. It becomes an action only if its failure or
+  retry boundary becomes independently observable.
+- `Invoices::Creator`, `MediaReviews::Workspace`, pricing resolvers, and
+  presenters are a small idempotent helper or read-side code; wrapping them
+  would add indirection without a business transition.
+
+The portal change-request mutation still needs an explicit
+transactional notification/outbox boundary before extraction. Do not create
+micro-actions for individual order items, fields, or validation helpers.
 
 ## Import organizer shape
 
@@ -265,3 +321,16 @@ paths, fewer obsolete branches, and a smaller workflow surface to understand,
 not merely more wrapper classes. No controller, job, or model should contain a
 second competing implementation of an interactor's business action, and every
 deleted path must be backed by evidence that it has no remaining callers.
+
+## Current implementation status
+
+The planned extraction pass is implemented. The application now has explicit
+Interactor/Organizer boundaries for import lifecycle and delivery
+reconciliation, order creation and approval, workflow execution and movement,
+conversation publication and retention, media review submission, membership
+invitation, payment webhooks, and portal booking/reschedule mutations.
+
+The remaining service objects are intentional boundaries: provider/storage
+adapters, read-side presenters and resolvers, invoice record creation, and the
+portal change-request mutation pending a transactional notification/outbox
+contract. Those are not hidden duplicate workflow paths.

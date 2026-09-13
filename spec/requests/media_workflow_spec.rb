@@ -21,7 +21,7 @@ RSpec.describe "Media workflow API", type: :request do
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 29_900) }
   let!(:order) do
-    Orders::Creator.new(
+    Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -29,7 +29,7 @@ RSpec.describe "Media workflow API", type: :request do
         payment_mode: "pay_later",
         items: [ { product_variant_id: variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
   end
   let!(:deliverable) do
     Orders::Approve.call(order:, actor: manager)
@@ -123,7 +123,7 @@ RSpec.describe "Media workflow API", type: :request do
     video = Product.create!(organization:, slug: "workflow-videos", title: "Property video", kind: :service,
                             deliverable_type: "video", sla_days: 3)
     video_variant = video.product_variants.create!(title: "Standard", price_cents: 35_000)
-    video_order = Orders::Creator.new(
+    video_order = Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -131,7 +131,7 @@ RSpec.describe "Media workflow API", type: :request do
         payment_mode: "pay_later",
         items: [ { product_variant_id: video_variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
     video_order.update!(status: :approved, approved_at: Time.current)
     video_deliverable = Orders::DeliverableMaterializer.new(order: video_order).call.sole
     video_asset = video_deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,
@@ -211,7 +211,7 @@ RSpec.describe "Media workflow API", type: :request do
     another_service = Product.create!(organization:, slug: "workflow-video", title: "Video", kind: :service,
                                       deliverable_type: "video")
     another_variant = another_service.product_variants.create!(title: "Standard", price_cents: 10_000)
-    another_order = Orders::Creator.new(
+    another_order = Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -219,7 +219,7 @@ RSpec.describe "Media workflow API", type: :request do
         payment_mode: "pay_later",
         items: [ { product_variant_id: another_variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
     Orders::Approve.call(order: another_order, actor: manager)
     another_deliverable = another_order.reload.order_deliverables.sole
     asset = another_deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,

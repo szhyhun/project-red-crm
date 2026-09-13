@@ -22,7 +22,7 @@ RSpec.describe "Deliverable media API", type: :request do
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 20_000) }
   let!(:order) do
-    Orders::Creator.new(
+    Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -30,7 +30,7 @@ RSpec.describe "Deliverable media API", type: :request do
         payment_mode: "pay_later",
         items: [ { product_variant_id: variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
   end
   let!(:deliverable) do
     order.update!(status: :approved, approved_at: Time.current)
@@ -87,7 +87,7 @@ RSpec.describe "Deliverable media API", type: :request do
     other_product = organization.products.create!(slug: "second-media-service", title: "Second service", kind: :service,
                                                    deliverable_type: "video")
     other_variant = other_product.product_variants.create!(title: "Standard", price_cents: 10_000)
-    other_order = Orders::Creator.new(
+    other_order = Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: other_client.id,
@@ -95,7 +95,7 @@ RSpec.describe "Deliverable media API", type: :request do
         payment_mode: "pay_later",
         items: [ { product_variant_id: other_variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
     other_order.update!(status: :approved, approved_at: Time.current)
     other_deliverable = Orders::DeliverableMaterializer.new(order: other_order).call.sole
     sign_in manager
@@ -116,7 +116,7 @@ RSpec.describe "Deliverable media API", type: :request do
     second_service = organization.products.create!(slug: "second-deliverable-service", title: "Second deliverable",
                                                     kind: :service, deliverable_type: "video")
     second_variant = second_service.product_variants.create!(title: "Standard", price_cents: 10_000)
-    second_order = Orders::Creator.new(
+    second_order = Orders::Create.call(
       organization:,
       attributes: {
         client_account_id: client_account.id,
@@ -124,7 +124,7 @@ RSpec.describe "Deliverable media API", type: :request do
         payment_mode: "pay_later",
         items: [ { product_variant_id: second_variant.id, quantity: 1 } ]
       }
-    ).create!
+    ).fetch(:order)
     second_order.update!(status: :approved, approved_at: Time.current)
     second_deliverable = Orders::DeliverableMaterializer.new(order: second_order).call.sole
     asset = deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,

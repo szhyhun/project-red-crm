@@ -46,6 +46,17 @@ RSpec.describe MediaReview, type: :model do
                                        position: 0)
   end
 
+  before do
+    allow(Conversations::NotifyJob).to receive(:perform_later)
+  end
+
+  def submit_review(**attributes)
+    result = MediaReviews::Submit.call(review:, submitted_by: customer, **attributes)
+    raise result.failure.original_error || result.failure if result.failure?
+
+    result.fetch(:review)
+  end
+
   it "allows a draft review to have no outcome until it is submitted" do
     expect(review).to be_valid
     expect(review).to be_open
@@ -78,8 +89,7 @@ RSpec.describe MediaReview, type: :model do
     thread = review.media_review_threads.create!(created_by: customer, media_review_asset: review_asset)
     comment = thread.media_review_comments.create!(author: customer, body_html: "<p>Looks good</p><script>bad()</script>")
 
-    review.submit!(outcome: "comment", submitted_by: customer,
-                   summary_html: "<p>Approved note</p><script>bad()</script>")
+    submit_review(outcome: "comment", summary_html: "<p>Approved note</p><script>bad()</script>")
 
     expect(review.reload).to have_attributes(status: "submitted", outcome: "comment", submitted_by_id: customer.id)
     expect(comment.reload).to be_published
@@ -90,7 +100,7 @@ RSpec.describe MediaReview, type: :model do
   end
 
   it "reopens the included deliverable only for a request-changes outcome" do
-    review.submit!(outcome: "request_changes", submitted_by: customer, summary: "Replace the front photo.")
+    submit_review(outcome: "request_changes", summary: "Replace the front photo.")
 
     expect(review.reload).to be_changes_requested
     expect(deliverable.reload).to have_attributes(status: "in_progress", delivered_at: nil)

@@ -19,9 +19,11 @@ class Api::V1::ClientMembershipsController < Api::V1::BaseController
   def create
     account = policy_scope(ClientAccount).find(params[:client_account_id])
     authorize account.client_memberships.build(user: current_user), :create?
-    membership = ClientMemberships::Invite.new(
+    result = ClientMemberships::Invite.call(
       account:, actor: current_user, email: invite_params[:email], name: invite_params[:name], role: invite_params[:role]
-    ).call
+    )
+    raise result.failure.original_error || result.failure if result.failure?
+    membership = result.fetch(:membership)
 
     render json: { client_membership: serialize(membership) }, status: :created
   rescue ActiveRecord::RecordInvalid => error

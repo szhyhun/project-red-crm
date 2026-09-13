@@ -21,10 +21,10 @@ RSpec.describe Workflows::ExecuteRun do
   end
   let!(:variant) { service.product_variants.create!(title: "Standard", price_cents: 12_000) }
   let!(:order) do
-    Orders::Creator.new(organization:, attributes: {
+    Orders::Create.call(organization:, attributes: {
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: variant.id, quantity: 1 } ]
-    }).create!
+    }).fetch(:order)
   end
   let!(:deliverable) do
     order.update!(status: :approved, approved_at: Time.current)

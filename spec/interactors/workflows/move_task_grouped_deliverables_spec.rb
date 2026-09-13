@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe WorkflowTasks::Mover do
+RSpec.describe Workflows::MoveTask do
   let!(:organization) { Organization.create!(name: "Grouped mover agency", slug: "grouped-mover-agency") }
   let!(:client_account) { ClientAccount.create!(organization:, name: "Grouped mover client", kind: :agent) }
   let!(:listing) { Listing.create!(organization:, client_account:, address_line_1: "18 Grouped Mover Street") }
@@ -35,9 +35,16 @@ RSpec.describe WorkflowTasks::Mover do
     end
   end
 
+  def move(attributes:)
+    result = described_class.call(task:, attributes:)
+    raise result.failure.original_error || result.failure if result.failure?
+
+    result.fetch(:task)
+  end
+
   it "moves every deliverable linked to a grouped task to delivered" do
     expect {
-      described_class.new(task:, attributes: { status: "done", position: 0 }).move!
+      move(attributes: { status: "done", position: 0 })
     }.to change { deliverables.map { |deliverable| deliverable.reload.status } }
       .from(%w[not_started not_started]).to(%w[delivered delivered])
 
@@ -52,7 +59,7 @@ RSpec.describe WorkflowTasks::Mover do
     task.update!(status: "done", completed_at: 1.hour.ago)
     deliverables.each { |deliverable| deliverable.update!(status: :delivered, delivered_at: 1.hour.ago) }
 
-    described_class.new(task:, attributes: { status: "in_progress", position: 0 }).move!
+    move(attributes: { status: "in_progress", position: 0 })
 
     expect(task.reload).to have_attributes(status: "in_progress", completed_at: nil)
     expect(deliverables.map { |deliverable| deliverable.reload.status }).to all(eq("in_progress"))
@@ -61,7 +68,7 @@ RSpec.describe WorkflowTasks::Mover do
 
   it "does not partially move a grouped task when its target column is invalid" do
     expect {
-      described_class.new(task:, attributes: { status: "missing_column", position: 0 }).move!
+      move(attributes: { status: "missing_column", position: 0 })
     }.to raise_error(ActiveRecord::RecordInvalid, /must match a column on this board/)
 
     expect(task.reload).to have_attributes(status: "todo", completed_at: nil)

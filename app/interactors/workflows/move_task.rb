@@ -1,58 +1,67 @@
-module WorkflowTasks
-  class Mover
-    def initialize(task:, attributes:, board: nil)
-      @task = task
-      @board = board || task.board
-      # ActionController::Parameters no longer subclasses Hash, so it does not
-      # respond to symbolize_keys. Normalising through to_h keeps this callable
-      # with permitted params or a plain hash.
-      @attributes = attributes.to_h.symbolize_keys
-    end
+module Workflows
+  # Moves one canonical task through a board placement and synchronizes every
+  # related placement and deliverable. This is an application action rather
+  # than a model callback because a drag changes several records that must stay
+  # in the same state.
+  class MoveTask < ApplicationInteractor
+    def call
+      @task = context.fetch(:task)
+      @board = context[:board] || @task.board
+      # ActionController::Parameters no longer subclasses Hash, so normalising
+      # through to_h keeps this callable with permitted params or a plain hash.
+      @attributes = context.fetch(:attributes).to_h.symbolize_keys
 
-    def move!
-      WorkflowTask.transaction do
-        selected_placement = placement_for(@board)
-        if @board.id != @task.board_id && selected_placement.blank?
-          raise ActiveRecord::RecordNotFound, "task is not placed on this board"
-        end
-
-        source_status = selected_placement&.workflow_column&.key || @task.status
-        target_status = @attributes.fetch(:status, source_status).to_s
-        target_column = @board.workflow_columns.find_by(key: target_status)
-        unless target_column
-          @task.errors.add(:status, "must match a column on this board")
-          raise ActiveRecord::RecordInvalid, @task
-        end
-        target_position = normalized_position
-        target_position = [ target_position, 0 ].max
-
-        @task.assign_attributes(@attributes.except(:position, :status, :board_id))
-        @task.save!
-
-        reorder_selected_placement!(selected_placement, target_column, target_position) if selected_placement.present? && @board.id != @task.board_id
-
-        # The home board remains the canonical task state. A move made through a
-        # shared placement resolves its column by the selected column's
-        # customer-facing status, then updates the home card accordingly.
-        home_column = @board.id == @task.board_id ? target_column : home_column_for(target_column.canonical_status)
-        home_position = if @board.id == @task.board_id
-          target_position
-        elsif @task.status == home_column.key
-          @task.position
-        else
-          @task.board.workflow_tasks.where(status: home_column.key).count
-        end
-        reorder_home_task!(home_column, home_position)
-
-        synchronize_shared_placements!(target_column.canonical_status,
-                                       skipped_board_ids: [ @task.board_id, @board.id ].uniq)
-        synchronize_deliverables!(target_column)
-      end
-
-      @task
+      WorkflowTask.transaction { move! }
+      context.set(:task, @task)
+    rescue ActiveRecord::RecordInvalid => error
+      context.fail!(
+        code: "workflow_task_move_invalid",
+        message: error.record.errors.full_messages.to_sentence,
+        original_error: error,
+        task_id: @task&.id
+      )
     end
 
     private
+
+    def move!
+      selected_placement = placement_for(@board)
+      if @board.id != @task.board_id && selected_placement.blank?
+        raise ActiveRecord::RecordNotFound, "task is not placed on this board"
+      end
+
+      source_status = selected_placement&.workflow_column&.key || @task.status
+      target_status = @attributes.fetch(:status, source_status).to_s
+      target_column = @board.workflow_columns.find_by(key: target_status)
+      unless target_column
+        @task.errors.add(:status, "must match a column on this board")
+        raise ActiveRecord::RecordInvalid, @task
+      end
+      target_position = normalized_position
+      target_position = [ target_position, 0 ].max
+
+      @task.assign_attributes(@attributes.except(:position, :status, :board_id))
+      @task.save!
+
+      reorder_selected_placement!(selected_placement, target_column, target_position) if selected_placement.present? && @board.id != @task.board_id
+
+      # The home board remains the canonical task state. A move made through a
+      # shared placement resolves its column by the selected column's
+      # customer-facing status, then updates the home card accordingly.
+      home_column = @board.id == @task.board_id ? target_column : home_column_for(target_column.canonical_status)
+      home_position = if @board.id == @task.board_id
+        target_position
+      elsif @task.status == home_column.key
+        @task.position
+      else
+        @task.board.workflow_tasks.where(status: home_column.key).count
+      end
+      reorder_home_task!(home_column, home_position)
+
+      synchronize_shared_placements!(target_column.canonical_status,
+                                     skipped_board_ids: [ @task.board_id, @board.id ].uniq)
+      synchronize_deliverables!(target_column)
+    end
 
     def normalized_position
       Integer(@attributes.fetch(:position, @task.position))
@@ -119,8 +128,6 @@ module WorkflowTasks
     end
 
     def synchronize_shared_placements!(canonical_status, skipped_board_ids: [])
-      return unless @task.respond_to?(:workflow_task_placements)
-
       placements = @task.workflow_task_placements.includes(board: :workflow_columns).to_a
       placements.each do |placement|
         next if skipped_board_ids.include?(placement.board_id)
@@ -133,8 +140,6 @@ module WorkflowTasks
     end
 
     def synchronize_deliverables!(target_column)
-      return unless @task.respond_to?(:order_deliverables)
-
       status = target_column.canonical_status
       @task.order_deliverables.each do |deliverable|
         attributes = { status: status }
@@ -144,12 +149,8 @@ module WorkflowTasks
                               event_type: "order_deliverable.status_changed", payload: {
                                 status:,
                                 workflow_task_id: @task.id
-                              }) if source_status_changed?(deliverable, status)
+                              }) if deliverable.saved_change_to_status? && deliverable.status == status
       end
-    end
-
-    def source_status_changed?(deliverable, status)
-      deliverable.saved_change_to_status? && deliverable.status == status
     end
 
     def next_position(board, column)

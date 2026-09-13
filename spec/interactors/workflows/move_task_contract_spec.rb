@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe WorkflowTasks::Mover, type: :service do
+RSpec.describe Workflows::MoveTask, type: :interactor do
   let!(:organization) { Organization.create!(name: "Mover contract agency", slug: "mover-contract-agency") }
   let!(:client_account) { ClientAccount.create!(organization:, name: "Mover client", kind: :agent) }
   let!(:listing) { Listing.create!(organization:, client_account:, address_line_1: "2 Mover Street") }
@@ -61,7 +61,10 @@ RSpec.describe WorkflowTasks::Mover, type: :service do
   end
 
   def move(board:, attributes:)
-    WorkflowTasks::Mover.new(task:, board:, attributes:).move!
+    result = described_class.call(task:, board:, attributes:)
+    raise result.failure.original_error || result.failure if result.failure?
+
+    result.fetch(:task)
   end
 
   it "rejects a move through a board where the task has no placement" do

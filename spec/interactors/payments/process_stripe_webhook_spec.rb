@@ -1,25 +1,32 @@
 require "rails_helper"
 
-RSpec.describe Payments::StripeWebhookProcessor do
+RSpec.describe Payments::ProcessStripeWebhook, type: :interactor do
+  def process(event)
+    result = described_class.call(event:)
+    raise result.failure.original_error || result.failure if result.failure?
+
+    result
+  end
+
   it "marks the invoice paid once and queues a receipt" do
     payment = create_payment
     event = stripe_event("payment_intent.succeeded", amount_received: payment.amount_cents, currency: payment.currency)
 
-    expect { described_class.new(event:).process! }
+    expect { process(event) }
       .to change(NotificationDelivery, :count).by(1)
       .and have_enqueued_job(Notifications::DeliverJob).on_queue("mailers")
     expect(payment.reload).to be_succeeded
     expect(payment.invoice.reload).to have_attributes(status: "paid", balance_due_cents: 0)
     expect(PaymentWebhookEvent.where(provider: "stripe", event_id: "evt_test_4242")).to exist
-    expect { described_class.new(event:).process! }.not_to change(NotificationDelivery, :count)
+    expect { process(event) }.not_to change(NotificationDelivery, :count)
   end
 
 
   it "does not regress a succeeded payment when a delayed failure arrives" do
     payment = create_payment
-    described_class.new(event: stripe_event("payment_intent.succeeded", amount_received: payment.amount_cents, currency: payment.currency, id: "evt_success_4242")).process!
+    process(stripe_event("payment_intent.succeeded", amount_received: payment.amount_cents, currency: payment.currency, id: "evt_success_4242"))
 
-    described_class.new(event: stripe_event("payment_intent.payment_failed", amount_received: 0, currency: payment.currency, id: "evt_failure_4242")).process!
+    process(stripe_event("payment_intent.payment_failed", amount_received: 0, currency: payment.currency, id: "evt_failure_4242"))
 
     expect(payment.reload).to be_succeeded
     expect(payment.invoice.reload).to be_paid
@@ -27,7 +34,7 @@ RSpec.describe Payments::StripeWebhookProcessor do
 
   it "does not credit a mismatched provider amount" do
     payment = create_payment
-    described_class.new(event: stripe_event("payment_intent.succeeded", amount_received: 42, currency: payment.currency, id: "evt_mismatch_4242")).process!
+    process(stripe_event("payment_intent.succeeded", amount_received: 42, currency: payment.currency, id: "evt_mismatch_4242"))
     expect(payment.reload).to be_failed
     expect(payment.invoice.reload).to have_attributes(status: "sent", balance_due_cents: 47_250)
   end

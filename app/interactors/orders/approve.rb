@@ -1,5 +1,5 @@
 module Orders
   class Approve < ApplicationOrganizer
-    organize ApproveOrder, EnqueueWorkflow
+    organize ApproveOrder, Workflows::Trigger
   end
 end

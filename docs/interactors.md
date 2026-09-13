@@ -20,9 +20,13 @@ app/interactors/
 │   └── aryeo/
 │       ├── actions/
 │       └── organizers/
+├── client_memberships/
+├── client_portal/
 ├── media_assets/
+├── media_reviews/
 ├── notifications/
 ├── orders/
+├── payments/
 └── workflows/
 ```
 
@@ -101,6 +105,39 @@ The resource service may have private helpers such as `import_product` or
 `import_media_asset`; those helpers do not need separate files because they
 are provider mapping details. The Interactor boundary wraps the meaningful
 workflow around that service and remains independently observable.
+
+Other live action boundaries follow the same rule:
+
+```text
+Workflows::MoveTask
+  canonical task + selected placement + shared placements + deliverables
+
+Conversations::PublishMessage
+  message + media references + last_message_at → notification enqueue
+
+MediaReviews::Submit
+  review state + draft comments + request-changes transition → notification
+
+ClientMemberships::Invite
+  invited user + account membership + audit event
+
+Payments::ProcessStripeWebhook
+  webhook idempotency + payment/invoice transition + receipt scheduling
+
+ClientPortal::CreateListing
+  customer booking request + listing activity
+
+ClientPortal::RequestReschedule
+  appointment request + appointment event + listing activity
+
+Orders::Create
+  catalog pricing + order items + totals + order activity
+```
+
+These are actions because each one owns a durable business transition and has
+more than one record or side effect that must be reasoned about together. Their
+private parsing, validation, and notification helpers stay inside the action;
+they are not split into files merely because a method has a name.
 
 ## Action or Organizer?
 
@@ -186,12 +223,12 @@ Live example: `Orders::Approve` in `app/interactors/orders/approve.rb`:
 
 ```ruby
 class Approve < ApplicationOrganizer
-  organize ApproveOrder, EnqueueWorkflow
+  organize ApproveOrder, Workflows::Trigger
 end
 ```
 
 `ApproveOrder` owns the transaction and idempotent deliverable materialization.
-`EnqueueWorkflow` runs only after approval succeeds. Neither job nor controller
+`Workflows::Trigger` runs only after approval succeeds. Neither job nor controller
 duplicates those steps.
 
 The Aryeo boundary is organized under
@@ -270,8 +307,12 @@ For example:
 
 - `Orders::ApproveOrder` commits the approved order, deliverables, and activity
   together.
-- `Orders::EnqueueWorkflow` runs after that commit and uses the workflow run's
+- `Workflows::Trigger` runs after that commit and uses the workflow run's
   idempotency key.
+- `Conversations::PublishMessage` commits the message and media references
+  before it attempts to enqueue Action Cable notification work.
+- `MediaReviews::Submit` commits the review outcome and any request-changes
+  transition before it publishes the account conversation notification.
 - `Notifications::PrepareDelivery` leases a delivery row;
   `Notifications::SendDelivery` performs email outside the lease transaction
   and records success/failure.
@@ -307,6 +348,20 @@ def perform(import_run_id)
 end
 ```
 
+Controller actions use the same shape after Pundit has resolved the records:
+
+```ruby
+result = Conversations::PublishMessage.call(
+  conversation:, author: current_user, body:, media_assets: authorized_assets
+)
+raise result.failure.original_error || result.failure if result.failure?
+message = result.fetch(:message)
+```
+
+Authorization remains outside the action because HTTP policy scope decides what
+the current user may reference. The action still validates organization and
+relationship invariants through the models before committing.
+
 Authorization stays in the controller/policy boundary. An Interactor still
 checks organization ownership and record relationships when it receives a
 record from another internal caller; it must never use an Interactor as a way
@@ -329,6 +384,35 @@ risk:
 Do not test Rails' own `belongs_to` behavior. Do test silent failure modes such
 as duplicate deliverables, duplicate workflow runs, cross-organization media,
 terminal jobs left in `running`, and warnings incorrectly reported as success.
+
+## Current extraction audit
+
+The current audit intentionally leaves these as services:
+
+- `Aryeo::Client`, `Aryeo::RemoteMediaCopy`, storage classes, and payment
+  provider clients are protocol adapters; they do not decide CRM state.
+- `Aryeo::ImportSession` and `Aryeo::ResourceImporter` keep provider parsing
+  and grouped mapping together. Creating an action for every endpoint or
+  payload field would recreate the duplication the import refactor removed.
+- `Orders::DeliverableMaterializer` is a small transactional persistence helper
+  called by approval and imported-delivery reconciliation. It should become an
+  action only if it gains an independent retry/failure boundary, not merely to
+  rename it.
+- `Invoices::Creator`, `MediaReviews::Workspace`, pricing resolvers, and
+  presenters are respectively an idempotent record helper, a read-side query,
+  and read/formatting code. Wrapping them would add indirection without an
+  observable workflow step.
+- The portal change-request mutation remains in the controller boundary for
+  now because its message, media references, deliverable transition, activity,
+  and notification need one explicit transaction/outbox design. Do not split
+  it into an action that calls `PublishMessage` and then queues before the
+  surrounding transaction commits.
+
+The next candidates, after these extractions, are order creation and the
+portal's reschedule/change-request mutations. They should be extracted only as
+one action per complete business intent, with the existing authorization and
+request specs moved to the new boundary; no `CreateOrderItem`,
+`ValidateRescheduleField`, or similar micro-actions should be introduced.
 
 ## Simplification rule
 

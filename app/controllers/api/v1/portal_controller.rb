@@ -59,20 +59,18 @@ class Api::V1::PortalController < Api::V1::BaseController
     account ||= current_user.client_accounts.where(organization: Current.organization).order(:id).first
     return render json: { error: "client_account_required" }, status: :unprocessable_entity if account.blank?
 
-    listing = Current.organization.listings.build(
-      portal_listing_params.except(:client_account_id).merge(
-        client_account: account,
-        status: :draft,
-        delivery_status: :undelivered
-      )
+    result = ClientPortal::CreateListing.call(
+      organization: Current.organization,
+      client_account: account,
+      actor: current_user,
+      attributes: portal_listing_params.except(:client_account_id)
     )
+    raise result.failure.original_error || result.failure if result.failure?
+    listing = result.fetch(:listing)
 
-    if listing.save
-      ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: listing, event_type: "listing.booking_requested")
-      render json: { listing: serialize_listing(listing) }, status: :created
-    else
-      render_validation_errors(listing)
-    end
+    render json: { listing: serialize_listing(listing) }, status: :created
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_errors(error.record)
   end
 
   def request_reschedule
@@ -86,25 +84,14 @@ class Api::V1::PortalController < Api::V1::BaseController
     ends_at = parse_reschedule_time(reschedule_params[:ends_at])
     return render json: { error: "invalid_reschedule_window" }, status: :unprocessable_entity if starts_at.blank? || ends_at.blank? || ends_at <= starts_at || starts_at <= Time.current
 
-    appointment.update!(request_status: :requested)
-    appointment.appointment_events.create!(
-      actor: current_user,
-      event_type: "customer_reschedule_requested",
-      changeset: {
-        "starts_at" => starts_at.iso8601,
-        "ends_at" => ends_at.iso8601,
-        "notes" => reschedule_params[:notes].to_s.presence
-      }.compact
+    result = ClientPortal::RequestReschedule.call(
+      appointment:, actor: current_user, starts_at:, ends_at:, notes: reschedule_params[:notes]
     )
-    ActivityEvent.create!(
-      organization: Current.organization,
-      actor: current_user,
-      subject: appointment.listing,
-      event_type: "appointment.customer_reschedule_requested",
-      payload: { appointment_id: appointment.id, starts_at: starts_at.iso8601, ends_at: ends_at.iso8601 }
-    )
+    raise result.failure.original_error || result.failure if result.failure?
 
-    render json: { appointment: serialize_client_appointment(appointment.reload) }
+    render json: { appointment: serialize_client_appointment(result.fetch(:appointment)) }
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_errors(error.record)
   end
 
   def listing_media

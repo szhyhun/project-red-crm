@@ -110,11 +110,12 @@ class Api::V1::WorkflowColumnsController < Api::V1::BaseController
     offset = replacement.board.workflow_task_placements.where(workflow_column: replacement).maximum(:position).to_i + 1
 
     tasks.each_with_index do |task, index|
-      WorkflowTasks::Mover.new(
+      result = Workflows::MoveTask.call(
         task:,
         board: column.board,
         attributes: { status: replacement.key, position: offset + index }
-      ).move!
+      )
+      raise result.failure.original_error || result.failure if result.failure?
     end
   end
 
