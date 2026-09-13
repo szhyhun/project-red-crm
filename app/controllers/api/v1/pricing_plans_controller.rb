@@ -1,7 +1,7 @@
 class Api::V1::PricingPlansController < Api::V1::BaseController
   def index
     authorize PricingPlan, :index?
-    plans = policy_scope(PricingPlan).includes(:client_account, :customer_team, :coupon, pricing_plan_prices: :product_variant).order(:name)
+    plans = policy_scope(PricingPlan).includes(:client_account, :customer_team, :user, :coupon, pricing_plan_prices: :product_variant).order(:name)
     render json: { pricing_plans: plans.map { |plan| serialize(plan) } }
   end
 
@@ -33,12 +33,12 @@ class Api::V1::PricingPlansController < Api::V1::BaseController
   private
 
   def pricing_plan_params
-    params.require(:pricing_plan).permit(:name, :client_account_id, :customer_team_id, :coupon_id, :priority, :active,
+    params.require(:pricing_plan).permit(:name, :client_account_id, :customer_team_id, :user_id, :coupon_id, :priority, :active,
                                          pricing_plan_prices_attributes: %i[id product_variant_id price_cents _destroy])
   end
 
   def serialize(plan)
-    plan.slice(:id, :name, :client_account_id, :customer_team_id, :coupon_id, :priority, :active).merge(
+    plan.slice(:id, :name, :client_account_id, :customer_team_id, :user_id, :coupon_id, :priority, :active).merge(
       pricing_plan_prices: plan.pricing_plan_prices.map { |price| price.slice(:id, :product_variant_id, :price_cents) }
     )
   end

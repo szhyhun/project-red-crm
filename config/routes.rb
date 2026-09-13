@@ -97,6 +97,7 @@ Rails.application.routes.draw do
       end
       resource :profile, only: %i[show update], controller: "profile"
       resources :staff, only: %i[index create update], controller: "staff"
+      resources :customer_users, only: %i[index show update]
       resources :listings, only: %i[index show create update] do
         get :download_media, on: :member
         resources :workflow_tasks, only: %i[index create]

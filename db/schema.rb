@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_12_140000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_12_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -364,7 +364,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_140000) do
     t.index ["organization_id", "kind", "last_message_at"], name: "idx_on_organization_id_kind_last_message_at_fcb0d57e64"
     t.index ["organization_id"], name: "index_conversations_on_organization_id"
     t.index ["retention_period"], name: "index_conversations_on_retention_period"
-    t.check_constraint "retention_period::text = ANY (ARRAY['two_months'::character varying::text, 'six_months'::character varying::text, 'one_year'::character varying::text, 'forever'::character varying::text])", name: "conversations_retention_period_values"
+    t.check_constraint "retention_period::text = ANY (ARRAY['two_months'::character varying, 'six_months'::character varying, 'one_year'::character varying, 'forever'::character varying]::text[])", name: "conversations_retention_period_values"
   end
 
   create_table "coupons", force: :cascade do |t|
@@ -1049,7 +1049,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_140000) do
     t.index ["organization_id", "active"], name: "index_pricing_plans_on_organization_id_and_active"
     t.index ["organization_id"], name: "index_pricing_plans_on_organization_id"
     t.index ["user_id", "active"], name: "index_pricing_plans_on_user_and_active"
-    t.check_constraint "client_account_id IS NOT NULL AND customer_team_id IS NULL OR client_account_id IS NULL AND customer_team_id IS NOT NULL", name: "pricing_plans_exactly_one_owner"
+    t.check_constraint "((client_account_id IS NOT NULL)::integer + (customer_team_id IS NOT NULL)::integer + (user_id IS NOT NULL)::integer) = 1", name: "pricing_plans_exactly_one_owner"
   end
 
   create_table "product_components", force: :cascade do |t|
