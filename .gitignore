@@ -14,3 +14,6 @@
 !/log/.keep
 !/tmp/.keep
 !/storage/.keep
+
+# Local Redis snapshots, written by a redis-server started in this folder.
+/dump.rdb
