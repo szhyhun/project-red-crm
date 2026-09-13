@@ -33,24 +33,28 @@ item shape includes a `product_variant_id`, `unit_price_amount`, and nested
 product/variant data; those fields are the source of truth for the local
 relationships and prices.
 
-Aryeo product payloads can describe a main product or an add-on. A product is
-treated as a package when Aryeo explicitly identifies it as a package/bundle
-or supplies component/included-service data. Only explicit component
-relationships create `ProductComponent` rows; a title that happens to contain
-the word “package” never invents included services. A package component always
-references the reusable service `Product`, never a price tier. Standalone
-services and package services therefore use the same `OrderItem` and
-`OrderDeliverable` path after import.
+Aryeo product payloads are imported only as a ProjectRed service or add-on.
+Aryeo's [Products API](https://docs.aryeo.com/api/aryeo/products/get-products)
+defines the source types as `MAIN` and `ADDON`: `MAIN` maps to
+`Product.kind = service`, and `ADDON` maps to `Product.kind = addon`. Aryeo
+does not define ProjectRed packages, so the
+importer never creates a `package` product or `ProductComponent` from a title,
+category, description, or arbitrary component-looking field. ProjectRed
+packages are created and maintained in the ProjectRed catalog, where their
+components reference reusable service products. If an older development
+catalog contains incorrectly classified Aryeo products, remove the Aryeo-owned
+catalog records through the scoped clean-import procedure below and import the
+products again; the importer does not silently rewrite existing catalog data.
 
 ### Imported delivery reconciliation
 
 Aryeo can return a listing, its media, and its order before ProjectRed has
 finished importing the catalog. The importer therefore materializes
-`OrderDeliverable` rows only after products, package components, orders, and
-media have been processed. Every non-cancelled imported order item that points
-to a local service or package creates the same deliverable records used by a
-newly approved ProjectRed order. This does not change the imported order total
-and does not add invoice lines.
+`OrderDeliverable` rows only after products, orders, and media have been
+processed. Every non-cancelled imported order item that points to a local
+service creates the same deliverable records used by a newly approved
+ProjectRed order. This does not change the imported order total and does not
+add invoice lines.
 
 Imported media is then attached to those deliverables. An explicit Aryeo order
 or order-item relationship wins; when the provider omits that relationship,
@@ -63,8 +67,8 @@ are shown as delivered; open deliverables without media keep the not-started
 state. This prevents the
 portal from collapsing real imported files into an untyped fallback card.
 
-If a selected order or listing contains an expanded customer, listing,
-product, or package service that was not selected as a top-level resource, the
+If a selected order or listing contains an expanded customer, listing, or
+product that was not selected as a top-level resource, the
 importer brings that record in as a dependency. This prevents orders from
 silently landing under the placeholder imported client or losing their
 catalog links merely because the user selected a narrower resource group.
@@ -89,22 +93,24 @@ Every run also records one of two policies for records already imported from the
 
 Neither policy touches native ProjectRed records. The importer does not delete ProjectRed records.
 
-After a catalog/import schema change, use **Overwrite the existing imported
-copy** for the affected resource groups. **Skip existing imported data** is a
-deliberate no-op for an existing external ID; it is useful for incremental
-imports but cannot repair an earlier legacy mapping. A successful overwrite is
-safe to repeat because external IDs and order-item IDs are upserted, package
-components are synchronized only when the source supplies component data, and
-the same source payload remains attached to its `ExternalRecord`.
+After a catalog/import schema change, use the clean re-import procedure below.
+**Skip existing imported data** is a deliberate no-op for an existing external
+ID; it is useful for incremental imports but cannot repair an earlier legacy
+mapping. A successful overwrite is safe to repeat for normal field changes
+because external IDs and order-item IDs are upserted and the same source
+payload remains attached to its `ExternalRecord`. Overwrite refreshes
+Aryeo-owned service/add-on records; it does not create ProjectRed packages.
 
-Do not use `db:reset` or a broad production delete to repair an import. First
-run a scoped import with overwrite, review the run's endpoint coverage and
-counts, and verify products, variants, customer teams, listings, orders, and
-media in the CRM. If a clean re-import is still required for the development
-preview environment, take a database snapshot and delete only records owned by
-the Aryeo integration for the intended organization through an approved,
-scoped maintenance procedure. Native ProjectRed records and unrelated
-organizations must remain untouched.
+Do not use `db:reset` or a broad production delete to repair an import. When a
+catalog shape changes, take a database snapshot, stop new imports, and delete
+only Aryeo-owned catalog records (`products`, their variants, and dependent
+Aryeo order-item references for the intended organization) through an approved
+scoped maintenance procedure. Native ProjectRed products/packages and
+unrelated organizations must remain untouched. Then run a fresh products
+import, review the terminal run status and endpoint coverage, and only then
+import dependent orders/listings if needed. The clean re-import is deliberate:
+it makes the old title-derived package rows disappear instead of hiding a data
+repair inside a normal incremental import.
 
 ## Media
 
@@ -141,10 +147,22 @@ When the bucket is configured, copied media is written to S3 under the ProjectRe
 
 ## Operations
 
-There is no schedule. Starting an import creates an `IntegrationImportRun` and queues `AryeoImportJob` on the `integrations` Resque queue. A Resque worker must be running for the job to begin:
+There is no schedule for starting imports. Starting an import creates an
+`IntegrationImportRun` and queues `AryeoImportJob` on the `integrations` Resque
+queue. A Resque worker must be running for the job to begin:
 
 ```sh
 OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES QUEUE='*' bundle exec rake resque:work
 ```
 
-The Integration screen refreshes active run status every five seconds and retains the latest ten runs, selected resources, date range, conflict policy, endpoint coverage, counts, partial errors, and terminal failures. The stored connection remains available for a later explicit re-import.
+The Integration screen refreshes active run status every five seconds and
+retains the latest ten runs, selected resources, date range, conflict policy,
+endpoint coverage, counts, partial errors, heartbeat, and terminal failures.
+`running` is an intermediate state only. The importer updates a heartbeat while
+processing records; `Aryeo::ImportWatchdogJob` runs every five minutes through
+Resque Scheduler and marks a run `failed` when its heartbeat has expired. A
+failed run records its completion time and releases an idle importing
+connection, so a dead Resque worker cannot leave history permanently stuck in
+`running`. Record-level validation errors are intentionally accumulated as
+`completed_with_errors` and are also written to Rails logs with the run ID.
+The stored connection remains available for a later explicit re-import.

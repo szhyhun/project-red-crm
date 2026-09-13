@@ -63,6 +63,7 @@ module Aryeo
       "pdf" => "application/pdf",
       "zip" => "application/zip"
     }.freeze
+    HEARTBEAT_EVERY = 25
 
     def initialize(run:, client: nil, resources: nil, import_start_date: nil, import_end_date: nil, conflict_resolution: nil, listing_limit: nil, skip_resources: [])
       @run = run
@@ -84,13 +85,13 @@ module Aryeo
       @dependency_conflict_counts = Hash.new(0)
       @media_counts = Hash.new(0)
       @deferred_skipped_resources = []
-      @pending_package_components = []
       @coverage = {}
       @errors = []
+      @records_since_heartbeat = 0
     end
 
     def call
-      @run.update!(status: :running, phase: "starting", started_at: Time.current)
+      @run.update!(status: :running, phase: "starting", started_at: Time.current, heartbeat_at: Time.current)
       @connection.update!(status: :importing)
 
       ENDPOINTS.each do |name, endpoint|
@@ -100,27 +101,44 @@ module Aryeo
         end
 
         import_collection(name, endpoint, limit: name == :listings ? @listing_limit : nil)
-        sync_pending_package_components! if name == :products
       end
 
-      sync_pending_package_components!
+      heartbeat!(force: true)
       reconcile_imported_delivery_graph!
+      heartbeat!(force: true)
       finish!
     rescue StandardError => error
-      @run.update!(status: :failed, phase: "failed", completed_at: Time.current,
-                   counts: @counts, coverage: @coverage, error_details: @errors + [ error.message ])
+      @run.mark_failed!(error.message, counts: @counts, coverage: @coverage, error_details: @errors)
       @connection.update!(status: :invalid) if error.is_a?(Client::Error)
       raise
     end
 
     private
 
+    def heartbeat!(force: false)
+      if force
+        @run.heartbeat!
+        @records_since_heartbeat = 0
+        return
+      end
+
+      @records_since_heartbeat += 1
+      return if @records_since_heartbeat < HEARTBEAT_EVERY
+
+      @run.heartbeat!
+      @records_since_heartbeat = 0
+    end
+
     def import_collection(name, endpoint, limit: nil)
       @run.update!(phase: name.to_s)
+      heartbeat!(force: true)
       count_before = @counts[name]
       if limit
         payloads = []
-        paginate_collection(name, endpoint) { |payload| payloads << stringify(payload) }
+        paginate_collection(name, endpoint) do |payload|
+          payloads << stringify(payload)
+          heartbeat!
+        end
         payloads = payloads.filter_map do |payload|
           filter_reason = date_filter_reason(name, payload)
           if filter_reason == :unavailable
@@ -135,6 +153,7 @@ module Aryeo
         end
         payloads.sort_by { |payload| [ source_timestamp(payload), external_id(payload) ] }.reverse.first(limit).each do |payload|
           import_resource(name, payload)
+          heartbeat!
         end
       else
         paginate_collection(name, endpoint) do |payload|
@@ -144,9 +163,11 @@ module Aryeo
             @date_unavailable_counts[name] += 1
           elsif filter_reason
             increment_filtered_count(name, filter_reason)
+            heartbeat!
             next
           end
           import_resource(name, payload)
+          heartbeat!
         end
       end
       @coverage[name] = {
@@ -160,11 +181,13 @@ module Aryeo
       }.compact
     rescue Client::EndpointUnavailable => error
       @coverage[name] = { status: "unavailable", detail: error.message }
+      Rails.logger.warn("Aryeo import #{@run.id} endpoint unavailable: #{name}: #{error.message}")
     rescue Client::Error => error
       @coverage[name] = { status: "failed", detail: error.message }
       @errors << "#{name}: #{error.message}"
+      Rails.logger.warn("Aryeo import #{@run.id} endpoint failed: #{name}: #{error.message}")
     ensure
-      @run.update!(counts: @counts, coverage: @coverage, error_details: @errors)
+      @run.update!(counts: @counts, coverage: @coverage, error_details: @errors, heartbeat_at: Time.current)
     end
 
     def import_resource(name, payload, dependency: false)
@@ -191,7 +214,9 @@ module Aryeo
       @dependency_counts[name] += 1 if dependency
       record
     rescue ActiveRecord::RecordInvalid => error
-      @errors << "#{name} #{external_id(payload) || "unknown"}: #{error.record.errors.full_messages.to_sentence}"
+      message = "#{name} #{external_id(payload) || "unknown"}: #{error.record.errors.full_messages.to_sentence}"
+      @errors << message
+      Rails.logger.warn("Aryeo import #{@run.id} record skipped: #{message}")
     end
 
     def import_staff(payload)
@@ -298,7 +323,6 @@ module Aryeo
       Array(payload["variants"] || payload["product_variants"] || payload["prices"]).each do |variant_payload|
         import_variant(product, stringify(variant_payload))
       end
-      queue_package_components(product, payload)
       product
     end
 
@@ -319,83 +343,6 @@ module Aryeo
         source_payload: PayloadSanitizer.call(payload)
       )
       variant.save!
-    end
-
-    def queue_package_components(product, payload)
-      return unless product.package?
-
-      component_keys = %w[components product_components package_components included_products included_services]
-      return unless component_keys.any? { |key| payload.key?(key) }
-
-      component_payloads = component_keys.flat_map { |key| raw_records(payload, key) }.uniq
-      @pending_package_components << [ product, component_payloads ]
-    end
-
-    def sync_pending_package_components!
-      @pending_package_components.each do |package_product, component_payloads|
-        resolved_components = component_payloads.each_with_index.filter_map do |component_payload, position|
-          service_product = resolve_package_component(component_payload)
-          if service_product.blank?
-            @errors << "products #{package_product.external_id}: could not resolve package component #{component_payload.inspect}"
-            next
-          end
-          if service_product.package?
-            @errors << "products #{package_product.external_id}: package components cannot contain package #{service_product.external_id}"
-            next
-          end
-
-          [ service_product, component_quantity(component_payload), position ]
-        end
-        next unless resolved_components.length == component_payloads.length
-
-        ProductComponent.transaction do
-          package_product.package_components.delete_all
-          resolved_components.each do |service_product, quantity, position|
-            package_product.package_components.create!(organization: @organization, service_product:, quantity:, position:)
-          end
-        end
-      rescue ActiveRecord::RecordInvalid => error
-        @errors << "products #{package_product.external_id}: package components were not saved: #{error.message}"
-      end
-    ensure
-      @pending_package_components.clear
-    end
-
-    def resolve_package_component(payload)
-      payload = payload.is_a?(Hash) ? stringify(payload) : { "product_id" => payload }
-      product_payload = package_component_product_payload(payload)
-      return if product_payload.blank?
-
-      external = external_id(product_payload)
-      return if external.blank?
-
-      product = record_for("products", external)&.record || @organization.products.find_by(external_source: "aryeo", external_id: external)
-      return product if product.present?
-      return if product_payload.keys == [ "id" ]
-
-      import_resource(:products, product_payload, dependency: true)
-    end
-
-    def package_component_product_payload(payload)
-      nested = %w[product service_product included_product service].filter_map do |key|
-        value = payload[key]
-        stringify(value) if value.is_a?(Hash)
-      end.find { |candidate| external_id(candidate).present? }
-      return nested if nested.present?
-
-      variant = stringify(payload["product_variant"] || payload["variant"] || {})
-      nested_variant_product = stringify(variant["product"] || variant["service_product"] || {})
-      return nested_variant_product if external_id(nested_variant_product).present?
-
-      external = value(payload, "service_product_id", "product_id", "included_product_id", "service_id")
-      return { "id" => external.to_s } if external.present?
-
-      payload if external_id(payload).present? && value(payload, "title", "name").present?
-    end
-
-    def component_quantity(payload)
-      quantity = integer_value(stringify(payload), "quantity", "count")
-      quantity&.positive? ? quantity : 1
     end
 
     def import_listing(payload)
@@ -523,7 +470,6 @@ module Aryeo
       item ||= order.order_items.build(options: external.present? ? { "aryeo_id" => external } : {})
       quantity = integer_value(payload, "quantity") || 1
       product, variant = order_item_catalog_reference(payload)
-      sync_pending_package_components!
       title = value(payload, "title", "name", "product_name").presence || product&.title || "Aryeo order item"
       unit_price_cents = cents(payload, "unit_price_cents", "unit_price_amount", "unit_price", "price_amount", "price")
       total_cents = cents(payload, "total_cents", "total_amount", "gross_total_amount", "total", "amount")
@@ -739,15 +685,17 @@ module Aryeo
         }.compact
       end
       status = @errors.empty? ? :completed : :completed_with_errors
-      @run.update!(status:, phase: "completed", completed_at: Time.current, counts: @counts, coverage: @coverage, error_details: @errors)
+      Rails.logger.warn("Aryeo import #{@run.id} completed with errors: #{@errors.join("; ")}") if @errors.present?
+      @run.update!(status:, phase: "completed", completed_at: Time.current, heartbeat_at: Time.current,
+                   counts: @counts, coverage: @coverage, error_details: @errors)
       @connection.update!(status: :connected, last_imported_at: Time.current, endpoint_coverage: @coverage)
     end
 
     def reconcile_imported_delivery_graph!
       # Listings and media are imported before the complete order/catalog graph
-      # is known. Reconcile only after all endpoints and package components have
-      # been processed, so media is linked to real deliverables by category and
-      # provider relationship instead of being left as an orphan listing file.
+      # is known. Reconcile only after all endpoints have been processed, so
+      # media is linked to real services by category and provider relationship
+      # instead of being left as an orphan listing file.
       result = Aryeo::ImportedDeliveryMaterializer.new(run: @run).call
       linked_count = result.fetch(:linked_media_assets).size
       @media_counts["linked"] += linked_count if linked_count.positive?
@@ -873,16 +821,12 @@ module Aryeo
     end
 
     def product_kind(payload)
-      source_kind = value(payload, "kind", "product_kind", "type").to_s.downcase
-      return "addon" if source_kind.match?(/add[ _-]?on/)
-      return "package" if source_kind.match?(/package|bundle/)
-      return "package" if boolean_value(payload, "is_package")
-      return "package" if %w[components product_components package_components included_products included_services].any? { |key| payload.key?(key) }
+      source_kind = value(payload, "kind", "product_kind", "type").to_s.upcase.gsub(/[^A-Z]/, "")
+      return "addon" if source_kind == "ADDON"
 
-      values = [ value(payload, "title", "name"), *text_values(payload["categories"]), *text_values(payload["category"]) ].compact.join(" ").downcase
-      return "package" if values.match?(/package|budget friendly/)
-      return "addon" if values.match?(/add[ -]?on/)
-
+      # Aryeo exposes MAIN and ADDON products, not ProjectRed packages. A
+      # display title, category, or free-form component-looking field cannot
+      # create a package relationship; packages are configured in ProjectRed.
       "service"
     end
 

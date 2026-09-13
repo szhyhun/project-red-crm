@@ -306,9 +306,17 @@ were not selected. An import can either skip records already imported from
 Aryeo or overwrite the existing imported copy. It never overwrites native
 ProjectRed records.
 
+Aryeo `MAIN` products become reusable ProjectRed services and `ADDON` products
+become add-ons. Aryeo does not provide ProjectRed package definitions, so
+titles such as “Photo + Video Package” are not treated as packages and do not
+create included-service relationships. Packages are configured separately in
+the ProjectRed catalog.
+
 Aryeo imports are started manually; they do not run on a recurring schedule.
 The import history shows what was selected, which date range was used, how many
-records were imported or skipped, and any media or endpoint errors.
+records were imported or skipped, heartbeat progress, and any media or endpoint
+errors. `running` is temporary: a live worker heartbeats while processing, and
+the scheduled watchdog changes abandoned runs to `failed`.
 
 ## Configuration at a glance
 

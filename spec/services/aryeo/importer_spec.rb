@@ -304,7 +304,7 @@ RSpec.describe Aryeo::Importer do
     expect(item.order.client_account.name).to eq("Avery Agent")
   end
 
-  it "creates relational package components and preserves them in imported order snapshots" do
+  it "imports Aryeo MAIN and ADDON products without inventing ProjectRed packages" do
     client = instance_double(Aryeo::Client)
     photo_product = {
       "id" => "photo-product-1", "type" => "MAIN", "title" => "Standard Property Photography",
@@ -314,24 +314,29 @@ RSpec.describe Aryeo::Importer do
       "id" => "video-product-1", "type" => "MAIN", "title" => "Standard Video", "categories" => [ "Video" ],
       "variants" => [ { "id" => "video-variant-1", "title" => "Standard", "price_amount" => 19_900 } ]
     }
-    package_variant = { "id" => "package-variant-1", "title" => "Photo + Video — Up to 1,000 sqft", "price_amount" => 44_900 }
-    package_product = {
+    package_titled_product = {
       "id" => "package-product-1", "type" => "MAIN", "title" => "Photo + Video Package",
-      "variants" => [ package_variant ],
+      "variants" => [ { "id" => "package-variant-1", "title" => "Photo + Video — Up to 1,000 sqft", "price_amount" => 44_900 } ],
       "components" => [
         { "product" => photo_product, "quantity" => 1 },
         { "product" => video_product, "quantity" => 1 }
       ]
     }
+    addon_product = {
+      "id" => "addon-product-1", "type" => "ADDON", "title" => "Rush delivery add-on",
+      "variants" => [ { "id" => "addon-variant-1", "title" => "Rush", "price_amount" => 9_900 } ]
+    }
     allow(client).to receive(:paginate) do |endpoint, params: {}, &block|
       case endpoint
       when "products"
-        block.call(package_product)
+        block.call(package_titled_product)
+        block.call(addon_product)
       when "orders"
         block.call({
           "id" => "package-order-1", "status" => "submitted", "total" => 44_900,
           "items" => [ { "id" => "package-item-1", "product_variant_id" => "package-variant-1",
-                         "product" => package_product, "product_variant" => package_variant,
+                         "product" => package_titled_product,
+                         "product_variant" => package_titled_product.fetch("variants").first,
                          "unit_price_amount" => 44_900, "total_amount" => 44_900 } ]
         })
       end
@@ -340,15 +345,14 @@ RSpec.describe Aryeo::Importer do
     run = import_run(resources: %w[products orders])
     described_class.new(run:, client:, resources: run.requested_resources).call
 
-    package = organization.products.find_by!(external_id: "package-product-1")
-    expect(package).to be_package
-    expect(package.package_components.includes(:service_product).ordered.map(&:service_product).map(&:external_id))
-      .to contain_exactly("photo-product-1", "video-product-1")
+    package_titled_product = organization.products.find_by!(external_id: "package-product-1")
+    expect(package_titled_product).to be_service
+    expect(package_titled_product.package_components).to be_empty
+    expect(organization.products.find_by!(external_id: "addon-product-1")).to be_addon
 
     item = organization.orders.find_by!("metadata ->> 'aryeo_id' = ?", "package-order-1").order_items.sole
-    expect(item.product).to eq(package)
-    expect(item.snapshot.fetch("components").map { |component| component["title"] })
-      .to contain_exactly("Standard Property Photography", "Standard Video")
+    expect(item.product).to eq(package_titled_product)
+    expect(item.snapshot).not_to have_key("components")
   end
 
   it "imports a nested customer as an order dependency when only orders are selected" do
