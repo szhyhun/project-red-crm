@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_13_150000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_13_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -895,10 +895,12 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_150000) do
     t.datetime "delivered_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "channel", default: "email", null: false
     t.index ["deduplication_key"], name: "index_notification_deliveries_on_deduplication_key", unique: true
     t.index ["notifiable_type", "notifiable_id"], name: "index_notification_deliveries_on_notifiable"
     t.index ["organization_id"], name: "index_notification_deliveries_on_organization_id"
     t.index ["status", "created_at"], name: "index_notification_deliveries_on_status_and_created_at"
+    t.check_constraint "channel::text = ANY (ARRAY['email'::character varying::text, 'sms'::character varying::text, 'push'::character varying::text])", name: "notification_deliveries_channel_values"
   end
 
   create_table "order_deliverables", force: :cascade do |t|
@@ -1189,6 +1191,19 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_150000) do
     t.index ["organization_id", "slug"], name: "index_property_sites_on_organization_id_and_slug", unique: true
     t.index ["organization_id"], name: "index_property_sites_on_organization_id"
     t.index ["origin"], name: "index_property_sites_on_origin"
+  end
+
+  create_table "push_subscriptions", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "endpoint", null: false
+    t.string "p256dh", null: false
+    t.string "auth", null: false
+    t.string "user_agent"
+    t.datetime "last_delivered_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["endpoint"], name: "index_push_subscriptions_on_endpoint", unique: true
+    t.index ["user_id"], name: "index_push_subscriptions_on_user_id"
   end
 
   create_table "saved_listing_views", force: :cascade do |t|
@@ -1583,6 +1598,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_150000) do
   add_foreign_key "products", "organizations"
   add_foreign_key "property_sites", "listings"
   add_foreign_key "property_sites", "organizations"
+  add_foreign_key "push_subscriptions", "users", on_delete: :cascade
   add_foreign_key "saved_listing_views", "organizations"
   add_foreign_key "saved_listing_views", "users"
   add_foreign_key "tags", "organizations"

@@ -110,6 +110,9 @@ Rails.application.routes.draw do
       post "portal/team_joins", to: "portal_team_joins#create"
       get "portal/order_form", to: "portal#order_form"
       get "portal/team_settings", to: "portal#team_settings"
+      get "push_subscriptions/settings", to: "push_subscriptions#settings"
+      post "push_subscriptions", to: "push_subscriptions#create"
+      delete "push_subscriptions", to: "push_subscriptions#destroy"
       resource :profile, only: %i[show update], controller: "profile"
       resources :staff, only: %i[index create update], controller: "staff"
       resources :customer_users, only: %i[index show update] do

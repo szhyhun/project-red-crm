@@ -25,6 +25,9 @@ class CustomerNotifications
     end
 
     def deliver_now(delivery)
+      return deliver_sms(delivery) if delivery.by_sms?
+      return deliver_push(delivery) if delivery.by_push?
+
       mailer = case delivery.kind
       when "workspace_welcome" then CustomerMailer.workspace_welcome(delivery.notifiable)
       when "invoice_ready" then CustomerMailer.invoice_ready(delivery.notifiable, recipient: delivery.recipient)
@@ -34,6 +37,17 @@ class CustomerNotifications
       else raise ArgumentError, "Unknown notification kind: #{delivery.kind}"
       end
       mailer.deliver_now
+    end
+
+    # The short form of a notification, for a text message or a push.
+    def summary(kind, notifiable)
+      case kind
+      when "invoice_ready" then [ "Invoice ready", "Invoice #{notifiable.number} from #{notifiable.organization.name} is ready to view." ]
+      when "listing_ready" then [ "Media delivered", "#{notifiable.address} is delivered and ready to view." ]
+      when "feedback_requested" then [ "How did we do?", "Tell #{notifiable.organization.name} how #{notifiable.listing.address} went." ]
+      when "payment_received" then [ "Payment received", "Thank you: payment for invoice #{notifiable.invoice.number} was received." ]
+      else raise ArgumentError, "No summary for notification kind: #{kind}"
+      end
     end
 
     private
@@ -47,30 +61,48 @@ class CustomerNotifications
 
     # Money goes to the team's billing member when it has one: the rest of the
     # team is not the one being asked to pay. A team that switched an event off
-    # is not emailed about it, and a person who switched deliveries off is left
-    # out of those alone.
+    # on a channel is not told about it there, and a person who switched
+    # deliveries off is left out of those alone. SMS and push go out only where
+    # they are configured, to people with a phone or a subscribed browser.
     def schedule_for_client_account(kind:, notifiable:, client_account:, required: false, billing: false, delivery: false)
-      return [] unless client_account.notify?(TEAM_EVENTS.fetch(kind), "email")
+      event = TEAM_EVENTS.fetch(kind)
+      people = recipients_for(client_account, billing:, delivery:)
 
-      recipients = if billing && client_account.billing_user.present?
-        [ client_account.billing_user.email ]
-      else
-        memberships = client_account.client_memberships.active.joins(:user).merge(User.active)
-        memberships = memberships.where(listing_delivery_notification_enabled: true) if delivery
-        [ client_account.email, *memberships.pluck("users.email") ]
-      end.compact_blank.map(&:downcase).uniq
-      raise MissingRecipient, "Add a client email address before sending this notification." if recipients.empty? && required
+      if client_account.notify?(event, "email")
+        emails = (billing && client_account.billing_user.present? ? [] : [ client_account.email ])
+        emails = (emails + people.map(&:email)).compact_blank.map(&:downcase).uniq
+        raise MissingRecipient, "Add a client email address before sending this notification." if emails.empty? && required
 
-      schedule(kind:, notifiable:, recipients:)
+        schedule(kind:, notifiable:, recipients: emails)
+      end
+      if NotificationChannels::Sms.configured? && client_account.notify?(event, "sms")
+        phones = people.filter_map { |person| NotificationChannels::Sms.normalize(person.phone) }.uniq
+        schedule(kind:, notifiable:, recipients: phones, channel: "sms")
+      end
+      if NotificationChannels::Push.configured? && client_account.notify?(event, "push")
+        subscribed = people.select { |person| person.push_subscriptions.exists? }
+        schedule(kind:, notifiable:, recipients: subscribed.map { |person| "user:#{person.id}" }, channel: "push")
+      end
     end
 
-    def schedule(kind:, notifiable:, recipients:)
+    def recipients_for(client_account, billing:, delivery:)
+      return [ client_account.billing_user ] if billing && client_account.billing_user.present?
+
+      memberships = client_account.client_memberships.active.joins(:user).merge(User.active)
+      memberships = memberships.where(listing_delivery_notification_enabled: true) if delivery
+      User.where(id: memberships.select(:user_id)).to_a
+    end
+
+    def schedule(kind:, notifiable:, recipients:, channel: "email")
       recipients.each do |recipient|
-        key = [ kind, notifiable.class.base_class.name, notifiable.id, recipient.downcase ].join(":")
+        parts = [ kind, notifiable.class.base_class.name, notifiable.id, recipient.downcase ]
+        parts.unshift(channel) unless channel == "email"
+        key = parts.join(":")
         delivery = NotificationDelivery.create_or_find_by!(deduplication_key: key) do |record|
           record.organization = notifiable.organization
           record.notifiable = notifiable
           record.kind = kind
+          record.channel = channel
           record.recipient = recipient.downcase
         end
         next if delivery.delivered?
@@ -81,6 +113,21 @@ class CustomerNotifications
           Rails.logger.error("Unable to enqueue notification #{key}: #{error.class}: #{error.message}")
         end
       end
+    end
+
+    def deliver_sms(delivery)
+      _title, body = summary(delivery.kind, delivery.notifiable)
+      NotificationChannels::Sms.new.deliver(to: delivery.recipient, body: "#{body} #{portal_link}")
+    end
+
+    def deliver_push(delivery)
+      user = User.find(delivery.recipient.delete_prefix("user:"))
+      title, body = summary(delivery.kind, delivery.notifiable)
+      NotificationChannels::Push.new.deliver(user:, title:, body:, url: portal_link)
+    end
+
+    def portal_link
+      ENV.fetch("PORTAL_URL", "http://localhost:3011")
     end
   end
 end

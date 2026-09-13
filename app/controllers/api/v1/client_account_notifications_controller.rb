@@ -31,13 +31,15 @@ class Api::V1::ClientAccountNotificationsController < Api::V1::BaseController
   end
 
   def serialize(account)
+    delivered_channels = [ "email" ]
+    delivered_channels << "sms" if NotificationChannels::Sms.configured?
+    delivered_channels << "push" if NotificationChannels::Push.configured?
+
     {
       notifications: {
         events: ClientAccount::NOTIFICATION_EVENTS,
         channels: ClientAccount::NOTIFICATION_CHANNELS,
-        # Only email is sent today; the other channels keep the team's choice
-        # for when they are connected.
-        delivered_channels: %w[email],
+        delivered_channels: delivered_channels,
         matrix: ClientAccount::NOTIFICATION_EVENTS.index_with do |event|
           ClientAccount::NOTIFICATION_CHANNELS.index_with { |channel| account.notify?(event, channel) }
         end,

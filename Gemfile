@@ -37,6 +37,8 @@ gem "aws-sdk-s3", require: false
 gem "rack-attack"
 gem "rack-cors"
 gem "stripe"
+# Browser push notifications to the customer portal.
+gem "web-push", "~> 3.1"
 
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false

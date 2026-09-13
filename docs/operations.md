@@ -68,6 +68,40 @@ sent. After a Redis outage, enqueue pending and failed records with:
 bundle exec rake notifications:dispatch_pending
 ```
 
+### SMS and browser push
+
+The same `notification_deliveries` outbox can use `email`, `sms`, or `push`.
+SMS is sent through Twilio and browser push is sent through Web Push/VAPID.
+Neither channel is scheduled until its complete server-side configuration is
+present, so local development and deployments without these secrets continue
+to use email only.
+
+Set these secrets in the API and worker environments, never in the repository:
+
+```sh
+TWILIO_ACCOUNT_SID='AC...'
+TWILIO_AUTH_TOKEN='...'
+TWILIO_FROM_NUMBER='+12505550100'
+VAPID_PUBLIC_KEY='...'
+VAPID_PRIVATE_KEY='...'
+VAPID_SUBJECT='mailto:notifications@your-domain'
+```
+
+The portal obtains the public VAPID key from
+`GET /api/v1/push_subscriptions/settings`, registers a service worker with the
+browser, and sends the resulting subscription to
+`POST /api/v1/push_subscriptions`. A signed-in user can remove one of their
+own browser endpoints with `DELETE /api/v1/push_subscriptions`; the API never
+allows one user to claim or remove another user's endpoint. The separate UI
+project owns the service-worker registration and permission prompt.
+
+Notification preferences are stored on the customer team per event and
+channel. A configured channel is still skipped when the team turns that event
+off, and SMS requires a valid member phone number while push requires an
+active browser subscription. Expired push endpoints are removed when the push
+provider rejects them. Delivery failures remain in the outbox with their
+error so `notifications:dispatch_pending` can retry them.
+
 ## Live chat delivery
 
 Chat messages are persisted first, then `Conversations::NotifyJob` broadcasts a
