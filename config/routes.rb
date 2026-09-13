@@ -102,6 +102,7 @@ Rails.application.routes.draw do
       resource :profile, only: %i[show update], controller: "profile"
       resources :staff, only: %i[index create update], controller: "staff"
       resources :customer_users, only: %i[index show update] do
+        get :work, on: :member
         resources :credit_transactions, only: %i[index create]
       end
       resources :listings, only: %i[index show create update] do

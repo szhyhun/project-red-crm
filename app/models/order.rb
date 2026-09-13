@@ -2,6 +2,7 @@ class Order < ApplicationRecord
   belongs_to :organization
   belongs_to :client_account
   belongs_to :listing, optional: true
+  belongs_to :ordered_by, class_name: "User", optional: true
   has_many :order_items, dependent: :destroy
   has_many :order_deliverables, dependent: :destroy
   has_many :media_assets, dependent: :nullify

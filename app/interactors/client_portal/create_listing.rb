@@ -10,7 +10,7 @@ module ClientPortal
       attributes = context.fetch(:attributes).to_h.symbolize_keys
 
       listing = organization.listings.build(
-        attributes.merge(client_account:, status: :draft, delivery_status: :undelivered)
+        attributes.merge(client_account:, booked_by: actor, status: :draft, delivery_status: :undelivered)
       )
       listing.save!
       ActivityEvent.create!(organization:, actor:, subject: listing, event_type: "listing.booking_requested")

@@ -55,8 +55,7 @@ class Api::V1::PortalController < Api::V1::BaseController
   def create_listing
     authorize :client_portal, :update?
 
-    account = current_user.client_accounts.where(organization: Current.organization).find_by(id: portal_listing_params[:client_account_id])
-    account ||= current_user.client_accounts.where(organization: Current.organization).order(:id).first
+    account = portal_booking_account(portal_listing_params[:client_account_id])
     return render json: { error: "client_account_required" }, status: :unprocessable_entity if account.blank?
 
     result = ClientPortal::CreateListing.call(
@@ -210,6 +209,15 @@ class Api::V1::PortalController < Api::V1::BaseController
         appointments: :appointment_events
       )
       .order(created_at: :desc)
+  end
+
+  # A booking lands in the team the customer chose, or else the team they land
+  # in, or else their oldest team. An archived team takes no new work.
+  def portal_booking_account(requested_id)
+    teams = current_user.client_accounts.active.where(organization: Current.organization)
+    return teams.find_by(id: requested_id) if requested_id.present?
+
+    teams.merge(ClientMembership.where(is_default: true)).first || teams.order(:id).first
   end
 
   def portal_listing_params

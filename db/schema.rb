@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_12_200000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_13_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -625,6 +625,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_200000) do
     t.string "parking"
     t.integer "year_built"
     t.date "mls_live_date"
+    t.bigint "booked_by_id"
+    t.index ["booked_by_id"], name: "index_listings_on_booked_by_id"
     t.index ["client_account_id"], name: "index_listings_on_client_account_id"
     t.index ["customer_first_viewed_at"], name: "index_listings_on_customer_first_viewed_at"
     t.index ["organization_id", "delivery_status"], name: "index_listings_on_organization_id_and_delivery_status"
@@ -945,9 +947,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_200000) do
     t.string "origin", default: "native", null: false
     t.datetime "approved_at"
     t.integer "credit_applied_cents", default: 0, null: false
+    t.bigint "ordered_by_id"
     t.index ["approved_at"], name: "index_orders_on_approved_at"
     t.index ["client_account_id"], name: "index_orders_on_client_account_id"
     t.index ["listing_id"], name: "index_orders_on_listing_id"
+    t.index ["ordered_by_id"], name: "index_orders_on_ordered_by_id"
     t.index ["organization_id", "fulfillment_status"], name: "index_orders_on_organization_id_and_fulfillment_status"
     t.index ["organization_id", "status"], name: "index_orders_on_organization_id_and_status"
     t.index ["organization_id"], name: "index_orders_on_organization_id"
@@ -1427,6 +1431,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_200000) do
   add_foreign_key "listing_view_preferences", "users"
   add_foreign_key "listings", "client_accounts"
   add_foreign_key "listings", "organizations"
+  add_foreign_key "listings", "users", column: "booked_by_id", on_delete: :nullify
   add_foreign_key "marketing_materials", "listings"
   add_foreign_key "marketing_materials", "organizations"
   add_foreign_key "marketing_materials", "users", column: "created_by_id"
@@ -1477,6 +1482,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_200000) do
   add_foreign_key "orders", "client_accounts"
   add_foreign_key "orders", "listings"
   add_foreign_key "orders", "organizations"
+  add_foreign_key "orders", "users", column: "ordered_by_id", on_delete: :nullify
   add_foreign_key "payment_webhook_events", "payments"
   add_foreign_key "payments", "invoices"
   add_foreign_key "payments", "organizations"

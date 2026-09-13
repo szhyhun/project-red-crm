@@ -48,6 +48,7 @@ module Orders
       @organization.orders.build(
         client_account:,
         listing:,
+        ordered_by: @ordered_by,
         payment_mode: @attributes.fetch(:payment_mode, "pay_later"),
         currency: @attributes.fetch(:currency, "cad"),
         discount_type: @attributes.fetch(:discount_type, "fixed"),
