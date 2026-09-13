@@ -1,10 +1,10 @@
 class Api::V1::CustomerUsersController < Api::V1::BaseController
   SOCIAL_PROFILE_KEYS = %i[website facebook instagram linkedin twitter zillow].freeze
-  BILLING_ADDRESS_KEYS = %i[line_1 line_2 city province postal_code country].freeze
+  BILLING_ADDRESS_KEYS = %i[line_1 line_2 city province postal_code country language].freeze
 
   def index
     authorize User, :index?, policy_class: CustomerUserPolicy
-    people = customer_scope.includes(client_memberships: :client_account).order(:name)
+    people = customer_scope.includes(:blocked_staff, client_memberships: :client_account).order(:name)
     people = people.where(id: ClientMembership.where(client_account_id: params[:client_account_id]).select(:user_id)) if params[:client_account_id].present?
     if params[:tag_id].present?
       tagged_teams = ClientAccountTag.where(tag_id: params[:tag_id]).select(:client_account_id)
@@ -14,11 +14,11 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
     overrides = PricingPlan.where(user_id: people.map(&:id)).pluck(:user_id, :id).to_h
     @work_counts = WorkCounts.new(people)
 
-    render json: { customer_users: people.map { |person| serialize(person, overrides[person.id]) } }
+    render json: { customer_users: people.map { |person| serialize(person, overrides[person.id], include_blocked_staff: false) } }
   end
 
   def show
-    person = customer_scope.includes(client_memberships: :client_account).find(params[:id])
+    person = customer_scope.includes(:blocked_staff, client_memberships: :client_account).find(params[:id])
     authorize person, :view?, policy_class: CustomerUserPolicy
 
     @work_counts = WorkCounts.new([ person ])
@@ -91,6 +91,13 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
     end
   end
 
+  def destroy
+    person = customer_scope.find(params[:id])
+    authorize person, :destroy?, policy_class: CustomerUserPolicy
+    person.destroy!
+    head :no_content
+  end
+
   private
 
   # Verified once they have set a password through an invitation, or were
@@ -114,12 +121,18 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
     )
   end
 
-  def serialize(person, pricing_plan_id)
+  def serialize(person, pricing_plan_id, include_blocked_staff: true)
     memberships = person.client_memberships.sort_by { |membership| [ membership.created_at, membership.id ] }
+    billing_address = person.billing_address.to_h
     person.slice(:id, :name, :email, :phone, :license_number, :avatar_url, :timezone, :internal_note,
                  :social_profiles, :billing_address, :blocked_from_ordering, :credit_balance_cents, :created_at).merge(
+      country: billing_address["country"].presence,
+      language: billing_address["language"].presence,
+      listing_count: @work_counts.listing_count(person.id),
+      order_count: @work_counts.order_count(person.id),
+      account_balance_cents: @work_counts.account_balance_cents(person.id),
       verification_status: verification_status(person),
-      blocked_staff: person.blocked_staff.map { |staff| staff.slice(:id, :name) },
+      blocked_staff: include_blocked_staff ? person.blocked_staff.map { |staff| staff.slice(:id, :name) } : [],
       invitation_pending: person.invitation_sent_at.present? && person.invitation_accepted_at.blank?,
       team_count: memberships.count(&:active?),
       pricing_plan_id:,
@@ -150,6 +163,11 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
       @listings = Listing.where(client_account_id: account_ids, booked_by_id: user_ids).group(:booked_by_id, :client_account_id).count
       @orders = Order.where(client_account_id: account_ids, ordered_by_id: user_ids).group(:ordered_by_id, :client_account_id).count
       @members = ClientMembership.active.where(client_account_id: account_ids).group(:client_account_id).count
+      @person_listings = Listing.where(organization: Current.organization, booked_by_id: user_ids).group(:booked_by_id).count
+      @person_orders = Order.where(organization: Current.organization, ordered_by_id: user_ids).group(:ordered_by_id).count
+      @person_balances = Invoice.where(organization: Current.organization).where.not(status: :void)
+                                .joins(:order).where(orders: { ordered_by_id: user_ids })
+                                .group("orders.ordered_by_id").sum(:balance_due_cents)
     end
 
     def team_listings(account_id) = @team_listings.fetch(account_id, 0)
@@ -157,5 +175,8 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
     def listings(user_id, account_id) = @listings.fetch([ user_id, account_id ], 0)
     def orders(user_id, account_id) = @orders.fetch([ user_id, account_id ], 0)
     def members(account_id) = @members.fetch(account_id, 0)
+    def listing_count(user_id) = @person_listings.fetch(user_id, 0)
+    def order_count(user_id) = @person_orders.fetch(user_id, 0)
+    def account_balance_cents(user_id) = @person_balances.fetch(user_id, 0)
   end
 end

@@ -58,6 +58,9 @@ RSpec.describe "Who placed a team's work", type: :request do
 
     sign_in manager
     get "/api/v1/customer_users/#{agent.id}"
+    expect(response.parsed_body.dig("customer_user")).to include(
+      "listing_count" => 1, "order_count" => 1, "account_balance_cents" => 0
+    )
     brokerage_row = response.parsed_body.dig("customer_user", "teams").find { |team| team.dig("client_account", "id") == brokerage.id }
     expect(brokerage_row).to include("listings_count" => 1, "team_listings_count" => 2, "orders_count" => 1, "team_orders_count" => 1)
     expect(brokerage_row.dig("client_account", "member_count")).to eq(2)

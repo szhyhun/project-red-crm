@@ -21,6 +21,10 @@ class CustomerUserPolicy < ApplicationPolicy
     update?
   end
 
+  def destroy?
+    update?
+  end
+
   class Scope < Scope
     def resolve
       return scope.none unless user.internal?

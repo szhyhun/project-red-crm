@@ -55,7 +55,10 @@ RSpec.describe "Customer users", type: :request do
 
     get "/api/v1/customer_users"
     listed = response.parsed_body.fetch("customer_users").sole
-    expect(listed).to include("email" => "aaron@example.test", "team_count" => 1)
+    expect(listed).to include(
+      "email" => "aaron@example.test", "team_count" => 1,
+      "listing_count" => 0, "order_count" => 0, "account_balance_cents" => 0
+    )
     expect(listed.fetch("capabilities")).to include("update")
     expect(listed.dig("teams", 0, "client_account", "name")).to eq("People Team")
 
@@ -72,5 +75,20 @@ RSpec.describe "Customer users", type: :request do
     )
     expect(customer.social_profiles).to eq("instagram" => "@hambley")
     expect(ActivityEvent.where(subject: customer, event_type: "customer_user.updated")).to exist
+  end
+
+  it "lets an organization admin delete a customer but keeps specialists out" do
+    sign_in specialist
+
+    delete "/api/v1/customer_users/#{customer.id}"
+
+    expect(response).to have_http_status(:forbidden)
+    expect(User.exists?(customer.id)).to be(true)
+
+    sign_in manager
+    delete "/api/v1/customer_users/#{customer.id}"
+
+    expect(response).to have_http_status(:no_content)
+    expect(User.exists?(customer.id)).to be(false)
   end
 end

@@ -115,7 +115,7 @@ Rails.application.routes.draw do
       delete "push_subscriptions", to: "push_subscriptions#destroy"
       resource :profile, only: %i[show update], controller: "profile"
       resources :staff, only: %i[index create update], controller: "staff"
-      resources :customer_users, only: %i[index show update] do
+      resources :customer_users, only: %i[index show update destroy] do
         get :work, on: :member
         post :password_reset, on: :member
         put :blocked_staff, on: :member
