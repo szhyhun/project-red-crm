@@ -1,4 +1,6 @@
 class IntegrationImportRun < ApplicationRecord
+  STALE_AFTER = 15.minutes
+
   belongs_to :integration_connection
   belongs_to :organization
   has_many :external_records, dependent: :nullify
@@ -8,6 +10,44 @@ class IntegrationImportRun < ApplicationRecord
 
   validates :provider, presence: true
   validate :import_end_date_on_or_after_start_date
+
+  def terminal?
+    completed? || completed_with_errors? || failed?
+  end
+
+  def heartbeat!
+    return self unless running?
+
+    update_columns(heartbeat_at: Time.current, updated_at: Time.current)
+    self
+  end
+
+  def stale?(at: Time.current)
+    return false unless running?
+
+    last_activity_at = heartbeat_at || started_at || updated_at
+    last_activity_at.blank? || last_activity_at < at - STALE_AFTER
+  end
+
+  def mark_failed!(message, counts: nil, coverage: nil, error_details: nil, at: Time.current)
+    with_lock do
+      return self if terminal?
+
+      existing_errors = Array(self.error_details)
+      failure_message = message.to_s
+      attributes = {
+        status: :failed,
+        phase: "failed",
+        completed_at: at,
+        heartbeat_at: at,
+        error_details: [ *existing_errors, *Array(error_details), failure_message ].uniq
+      }
+      attributes[:counts] = counts if counts
+      attributes[:coverage] = coverage if coverage
+      update!(attributes)
+    end
+    self
+  end
 
   def increment_count!(key, by = 1)
     update!(counts: counts.merge(key.to_s => counts.fetch(key.to_s, 0).to_i + by))

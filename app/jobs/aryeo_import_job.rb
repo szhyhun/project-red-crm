@@ -10,5 +10,9 @@ class AryeoImportJob < ApplicationJob
       import_end_date: run.import_end_date,
       conflict_resolution: run.conflict_resolution
     ).call
+  rescue StandardError => error
+    run&.mark_failed!("#{error.class}: #{error.message}")
+    Rails.logger.error("Aryeo import #{import_run_id} failed: #{error.class}: #{error.message}")
+    raise
   end
 end

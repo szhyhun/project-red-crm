@@ -104,6 +104,14 @@ retention entry runs once per day and evaluates each conversation's
 `forever`). The cleanup deletes private chat storage before deleting the
 matching message and attachment rows, and keeps the conversation itself.
 
+The same schedule runs `Aryeo::ImportWatchdogJob` every five minutes. Aryeo
+imports update `IntegrationImportRun#heartbeat_at` while a worker is active.
+If the heartbeat is older than the fifteen-minute stale threshold, the
+watchdog marks the run `failed`, records the timeout, and releases the
+connection when no newer import is active. A run may be `running` only while
+the worker is making progress; inspect `heartbeat_at`, the run's `phase`, and
+the worker journal before treating a live run as stuck.
+
 ## Private chat media permissions
 
 Chat attachments use the private bucket configured by

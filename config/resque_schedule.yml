@@ -5,3 +5,8 @@ conversation_retention:
   class: "Conversations::RetentionJob"
   queue: maintenance
   description: "Delete chat messages and private chat attachments past each conversation's retention period."
+aryeo_import_watchdog:
+  cron: "*/5 * * * *"
+  class: "Aryeo::ImportWatchdogJob"
+  queue: maintenance
+  description: "Fail Aryeo imports whose worker heartbeat has expired and release the connection."

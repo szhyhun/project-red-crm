@@ -64,7 +64,8 @@ RAILS_ENV=development bundle exec rake environment resque:scheduler
 ```
 
 The scheduler is a long-running process, like the worker. It is not started by
-the Rails server. Use `Ctrl-C` to stop it.
+the Rails server. It runs chat retention and the Aryeo import watchdog from the
+same schedule file. Use `Ctrl-C` to stop it.
 
 ## Production email settings
 

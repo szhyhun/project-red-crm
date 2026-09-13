@@ -57,4 +57,7 @@ an uploaded file into the local delivery store, then queues a verification job
 that marks it ready or failed. Resque Scheduler loads recurring jobs from
 `config/resque_schedule.yml` in a separate process, while normal Resque workers
 execute the queued jobs. Resque will later also run media transcoding,
-catalog imports, notification delivery, and external integrations.
+catalog imports, notification delivery, and external integrations. The
+scheduled Aryeo import watchdog is the recovery boundary for a worker that
+dies after dequeuing an import: it turns an abandoned intermediate `running`
+record into a terminal `failed` record instead of leaving misleading history.

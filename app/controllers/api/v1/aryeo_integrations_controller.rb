@@ -102,6 +102,7 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
 
   def serialize_run(run)
     run.slice(:id, :status, :phase, :counts, :coverage, :requested_resources, :import_start_date,
-              :import_end_date, :conflict_resolution, :started_at, :completed_at, :created_at).merge(errors: run.error_details)
+              :import_end_date, :conflict_resolution, :started_at, :heartbeat_at, :completed_at,
+              :created_at).merge(errors: run.error_details)
   end
 end
