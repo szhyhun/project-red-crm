@@ -5,6 +5,12 @@ The safety baseline and first extraction slices are now in the repository. The
 remaining phases continue from that working baseline rather than introducing a
 parallel compatibility path.
 
+The implementation convention is documented in [`docs/interactors.md`](../interactors.md):
+all action and Organizer classes live under `app/interactors`, integration
+actions are grouped below `app/interactors/integrations/<provider>/actions`,
+and future cross-domain automation composition belongs below
+`app/interactors/automations/organizers`.
+
 The plan has four equal outcomes:
 
 1. Make business workflows easier to read, debug, and reason about by giving
@@ -72,8 +78,8 @@ The first implementation slice is now in place:
 - Queue jobs are adapters: they load the durable record, call the Interactor,
   and preserve retry/error semantics.
 
-The remaining candidates are the large Aryeo resource mapping internals and
-any future multi-step deliverable reconciliation. `Conversations::PurgeExpired`
+Aryeo resource mapping now lives in the focused `Aryeo::ResourceImporter`
+service instead of one file per provider method. `Conversations::PurgeExpired`
 is already the single retention action. Deliverable materialization remains a
 small service called inside the approval transaction until it has an
 independent caller or a real multi-step failure boundary; wrapping it only to
@@ -83,9 +89,9 @@ Order approval itself now uses `Orders::ApproveOrder` plus
 
 | Current entry point | Proposed business action | Durable result |
 | --- | --- | --- |
-| `AryeoImportJob` | `Aryeo::RunImport` | `IntegrationImportRun` is completed, completed with errors, or failed |
-| `AryeoMediaCopyJob` | `Aryeo::CopyMedia` | `MediaAsset` and `ExternalRecord` are copied or failed idempotently |
-| `Aryeo::ImportWatchdogJob` | `Aryeo::FailStaleImports` | Abandoned imports are failed and their connections are released |
+| `AryeoImportJob` | `Integrations::Aryeo::Organizers::ImportOrganizer` | `IntegrationImportRun` is completed, completed with errors, or failed |
+| `AryeoMediaCopyJob` | `Integrations::Aryeo::Actions::CopyMedia` | `MediaAsset` and `ExternalRecord` are copied or failed idempotently |
+| `Aryeo::ImportWatchdogJob` | `Integrations::Aryeo::Actions::FailStaleImports` | Abandoned imports are failed and their connections are released |
 | `BoardWorkflowJob` | `Workflows::ExecuteRun` organizer | Workflow steps and task placements are synchronized |
 | approval controller boundary | `Orders::Approve` organizer | Order approval and deliverable/task materialization are idempotent |
 | `MediaAssets::VerifyUploadJob` | `MediaAssets::VerifyUpload` | Asset becomes ready or records a safe processing failure |
@@ -95,9 +101,10 @@ Order approval itself now uses `Orders::ApproveOrder` plus
 
 The terminal-state, media, notification, workflow, approval, import, and
 retention boundaries are implemented. Workflow execution and notification/media
-actions are decomposed into reusable steps. The next target is the large Aryeo
-resource mapping internals; each extraction must remove a competing path rather
-than add a wrapper around unchanged code.
+actions are decomposed into reusable steps. Aryeo import orchestration is kept
+as a visible Organizer chain while provider-specific mapping remains grouped in
+`app/services/aryeo/resource_importer.rb`; each extraction removes a competing
+path rather than adding a wrapper around unchanged code.
 
 ## Observability and composition contract
 
@@ -149,7 +156,7 @@ behavior.
 The eventual Aryeo organizer should have a context similar to:
 
 ```ruby
-Aryeo::RunImport.call(
+Integrations::Aryeo::Organizers::ImportOrganizer.call(
   run: integration_import_run,
   client: client,
   resources: resources,
@@ -159,21 +166,23 @@ Aryeo::RunImport.call(
 
 Its steps should be explicit:
 
-1. `Aryeo::StartImport` locks the run, sets `running`, records `started_at`,
+1. `Integrations::Aryeo::Actions::StartImport` locks the run, sets `running`, records `started_at`,
    and starts the heartbeat.
-2. `Aryeo::ImportResources` imports the selected collections and records
+2. `Integrations::Aryeo::Actions::ImportSelectedCollections` imports the selected collections and records
    endpoint coverage, source IDs, partial errors, and progress.
 3. `Aryeo::ReconcileImportedDelivery` links imported orders, services, media,
    and deliverables without inventing Aryeo package relationships.
-4. `Aryeo::CompleteImport` chooses `completed` versus
+4. `Integrations::Aryeo::Actions::CompleteImport` chooses `completed` versus
    `completed_with_errors`, stores final counts, and reconnects the integration.
-5. `Aryeo::FailImport` is the single failure transition used by exceptions,
+5. `Integrations::Aryeo::Actions::FailImport` is the single failure transition used by exceptions,
    retry exhaustion, and the watchdog. It records the error and completion time
    exactly once.
 
-The current importer can be split along these seams without changing its
-external API. First preserve the existing payload and media contracts with
-characterization specs; then move one step at a time behind the same job.
+`Aryeo::ImportSession` and `Aryeo::ResourceImporter` keep provider mechanics
+outside the Organizer. The Organizer is only the chain; provider helpers stay
+grouped in services and are tested there. First preserve the existing payload
+and media contracts with characterization specs, then move one business step
+at a time behind the same job.
 
 ## Implementation sequence
 
@@ -197,9 +206,10 @@ characterization specs; then move one step at a time behind the same job.
   goal.
 - Extract start/fail/complete first; these are small and remove duplicate state
   transitions before moving import mapping logic.
-- Extract catalog, customer/team, listing/media, order, appointment, and task
-  import steps. Each step receives the organization and run explicitly and
-  writes only its own coverage keys.
+- Keep catalog, customer/team, listing/media, order, appointment, and task
+  mapping together in `Aryeo::ResourceImporter` unless one of them becomes a
+  separately reused business workflow. Do not create one action file per Aryeo
+  endpoint or private mapping helper.
 - Keep local date filtering and `MAIN`/`ADDON` classification in the catalog
   and resource interactors. Never infer packages from names or descriptions.
 - Keep remote media copy as a separate retryable job/interactor because it has a

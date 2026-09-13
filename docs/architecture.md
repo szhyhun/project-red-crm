@@ -61,3 +61,16 @@ catalog imports, notification delivery, and external integrations. The
 scheduled Aryeo import watchdog is the recovery boundary for a worker that
 dies after dequeuing an import: it turns an abandoned intermediate `running`
 record into a terminal `failed` record instead of leaving misleading history.
+
+## Business logic and Interactors
+
+Multi-step business workflows use the Interactor boundary documented in
+[`docs/interactors.md`](interactors.md). Controllers authorize and call one
+action or Organizer; jobs load durable records and call one action or
+Organizer; models retain validations, associations, and database invariants.
+Actions return a named context with typed failure codes, while Organizers make
+the ordered workflow visible and reusable. New automation composition belongs
+under `app/interactors/automations/organizers`, and integration-specific actions
+belong under `app/interactors/integrations/<provider>/actions`. Provider
+transport and grouped payload mapping belong under `app/services/<provider>`;
+only meaningful business workflow boundaries are Interactors.
