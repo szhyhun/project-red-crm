@@ -4,6 +4,7 @@ class ClientMembership < ApplicationRecord
   belongs_to :client_account
   belongs_to :user
   has_many :activity_events, as: :subject, dependent: :destroy
+  has_many :listing_memberships, dependent: :destroy
 
   enum :role, { admin: "admin", member: "member" }, validate: true
   enum :status, STATUSES.index_by(&:itself), validate: true

@@ -27,6 +27,8 @@ Rails.application.routes.draw do
       resources :coupons, only: %i[index create update destroy]
       resources :travel_fees, only: %i[index create update destroy]
       resources :pricing_plans, only: %i[index create update destroy]
+      get "listings/:listing_id/customer_access", to: "listing_customer_access#show"
+      put "listings/:listing_id/customer_access", to: "listing_customer_access#update"
       resources :order_forms, only: %i[index create update destroy]
       resource :aryeo_integration, only: %i[show create destroy] do
         post :validate

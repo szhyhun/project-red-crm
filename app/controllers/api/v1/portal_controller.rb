@@ -407,8 +407,7 @@ class Api::V1::PortalController < Api::V1::BaseController
   end
 
   def client_can_access?(listing)
-    current_user.client_account_ids.include?(listing.client_account_id) ||
-      listing.listing_customers.where(client_account_id: current_user.client_account_ids).exists?
+    CustomerListingAccess.new(current_user).allows?(listing)
   end
 
   def reschedule_params

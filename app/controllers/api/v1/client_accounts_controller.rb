@@ -60,7 +60,8 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
     params.require(:client_account).permit(
       :name, :kind, :email, :phone, :brokerage_name, :brokerage_website, :website, :logo_url,
       :description, :internal_note, :affiliate_id, :archived_at,
-      :lock_downloads_before_payment, :display_original_price, :suppress_payment_reminders, :order_form_id
+      :lock_downloads_before_payment, :display_original_price, :suppress_payment_reminders, :order_form_id,
+      :member_listing_access
     )
   end
 
@@ -83,7 +84,7 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
     account.slice(:id, :name, :kind, :email, :phone, :brokerage_name, :brokerage_website, :website,
                   :logo_url, :description, :internal_note, :affiliate_id, :archived_at,
                   :lock_downloads_before_payment, :display_original_price, :suppress_payment_reminders,
-                  :order_form_id, :billing_user_id, :billing_pays_externally, :billing_visibility, :pricing_visibility,
+                  :order_form_id, :member_listing_access, :billing_user_id, :billing_pays_externally, :billing_visibility, :pricing_visibility,
                   :downloads_visibility, :marketing_templates_visibility).merge(
       billing_user: account.billing_user&.slice(:id, :name, :email),
       member_count: account.client_memberships.active.count,

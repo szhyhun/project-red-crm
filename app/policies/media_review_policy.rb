@@ -39,7 +39,8 @@ class MediaReviewPolicy < OrganizationRecordPolicy
     return false unless record.listing.present? && record.client_account.present?
     return false unless user.client_account_ids.include?(record.client_account_id)
 
-    record.listing.client_account_id == record.client_account_id ||
-      record.listing.listing_customers.exists?(client_account_id: record.client_account_id)
+    (record.listing.client_account_id == record.client_account_id ||
+      record.listing.listing_customers.exists?(client_account_id: record.client_account_id)) &&
+      CustomerListingAccess.new(user).allows?(record.listing)
   end
 end

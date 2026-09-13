@@ -3,6 +3,7 @@ class Listing < ApplicationRecord
   belongs_to :client_account
   belongs_to :booked_by, class_name: "User", optional: true
   has_many :listing_customers, dependent: :destroy
+  has_many :listing_memberships, dependent: :destroy
   has_many :customer_accounts, through: :listing_customers, source: :client_account
   has_many :listing_custom_fields, -> { order(:position, :id) }, dependent: :destroy
   has_many :orders, dependent: :nullify

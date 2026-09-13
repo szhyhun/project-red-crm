@@ -20,16 +20,13 @@ class ListingPolicy < OrganizationRecordPolicy
       listings = scope.where(organization_id: user.organization_id)
       return listings if user.internal?
 
-      listings.left_joins(:listing_customers)
-        .where("listings.client_account_id IN (:ids) OR listing_customers.client_account_id IN (:ids)", ids: user.client_account_ids)
-        .distinct
+      CustomerListingAccess.new(user).listings(listings)
     end
   end
 
   private
 
   def customer_can_access?
-    user.client_account_ids.include?(record.client_account_id) ||
-      record.listing_customers.where(client_account_id: user.client_account_ids).exists?
+    CustomerListingAccess.new(user).allows?(record)
   end
 end

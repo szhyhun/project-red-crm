@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_13_120000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_13_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -296,6 +296,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_120000) do
     t.string "marketing_templates_visibility", default: "hidden", null: false
     t.jsonb "notification_preferences", default: {}, null: false
     t.bigint "order_form_id"
+    t.string "member_listing_access", default: "all_team_listings", null: false
     t.index "organization_id, lower((affiliate_id)::text)", name: "index_client_accounts_on_organization_and_affiliate", unique: true, where: "(affiliate_id IS NOT NULL)"
     t.index ["billing_user_id"], name: "index_client_accounts_on_billing_user_id"
     t.index ["order_form_id"], name: "index_client_accounts_on_order_form_id"
@@ -306,6 +307,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_120000) do
     t.check_constraint "billing_visibility::text = ANY (ARRAY['hidden'::character varying, 'admins'::character varying, 'everyone'::character varying]::text[])", name: "client_accounts_billing_visibility_values"
     t.check_constraint "downloads_visibility::text = ANY (ARRAY['hidden'::character varying, 'admins'::character varying, 'everyone'::character varying]::text[])", name: "client_accounts_downloads_visibility_values"
     t.check_constraint "marketing_templates_visibility::text = ANY (ARRAY['hidden'::character varying, 'admins'::character varying, 'everyone'::character varying]::text[])", name: "client_accounts_marketing_templates_visibility_values"
+    t.check_constraint "member_listing_access::text = ANY (ARRAY['all_team_listings'::character varying, 'attached_listings'::character varying]::text[])", name: "client_accounts_member_listing_access_values"
     t.check_constraint "pricing_visibility::text = ANY (ARRAY['hidden'::character varying, 'admins'::character varying, 'everyone'::character varying]::text[])", name: "client_accounts_pricing_visibility_values"
   end
 
@@ -569,6 +571,16 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_120000) do
     t.index ["order_id"], name: "index_listing_feedbacks_on_order_id"
     t.index ["organization_id", "follow_up_status"], name: "idx_on_organization_id_follow_up_status_a201545642"
     t.index ["organization_id"], name: "index_listing_feedbacks_on_organization_id"
+  end
+
+  create_table "listing_memberships", force: :cascade do |t|
+    t.bigint "listing_id", null: false
+    t.bigint "client_membership_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_membership_id"], name: "index_listing_memberships_on_client_membership_id"
+    t.index ["listing_id", "client_membership_id"], name: "idx_on_listing_id_client_membership_id_f240efd580", unique: true
+    t.index ["listing_id"], name: "index_listing_memberships_on_listing_id"
   end
 
   create_table "listing_notes", force: :cascade do |t|
@@ -1450,6 +1462,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_120000) do
   add_foreign_key "listing_feedbacks", "listings"
   add_foreign_key "listing_feedbacks", "orders"
   add_foreign_key "listing_feedbacks", "organizations"
+  add_foreign_key "listing_memberships", "client_memberships", on_delete: :cascade
+  add_foreign_key "listing_memberships", "listings", on_delete: :cascade
   add_foreign_key "listing_notes", "listings"
   add_foreign_key "listing_notes", "organizations"
   add_foreign_key "listing_notes", "users", column: "author_id"

@@ -19,12 +19,14 @@ class ClientAccount < ApplicationRecord
   NOTIFICATION_EVENTS = %w[team_invitation order_confirmation listing_delivered payment_required payment_overdue
                            payment_received feedback_requested appointment_scheduled appointment_reminder].freeze
   NOTIFICATION_CHANNELS = %w[email sms push].freeze
+  MEMBER_LISTING_ACCESS = %w[all_team_listings attached_listings].freeze
 
   enum :kind, { agent: "agent", team: "team", brokerage: "brokerage" }, validate: true
 
   validates :name, presence: true
   validates :affiliate_id, uniqueness: { scope: :organization_id, case_sensitive: false }, allow_blank: true
   VISIBILITY_BLOCKS.each { |block| validates :"#{block}_visibility", inclusion: { in: VISIBILITIES } }
+  validates :member_listing_access, inclusion: { in: MEMBER_LISTING_ACCESS }
   validate :notification_preferences_are_known
   validate :order_form_belongs_to_organization
   validate :billing_user_is_an_active_admin, if: -> { billing_user_id.present? && will_save_change_to_billing_user_id? }
