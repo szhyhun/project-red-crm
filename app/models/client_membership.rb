@@ -16,6 +16,7 @@ class ClientMembership < ApplicationRecord
   # others first is what keeps a switch from colliding with it.
   before_save :clear_other_defaults, if: -> { is_default? && will_save_change_to_is_default? }
   after_update :hand_default_on, if: :saved_change_to_status?
+  after_save :join_account_chat, if: :became_an_active_admin?
 
   def accept!(at: Time.current)
     transaction do
@@ -64,6 +65,18 @@ class ClientMembership < ApplicationRecord
     return unless client_account.billing_user_id == user_id
 
     errors.add(:base, "Choose another billing member before changing this person's access")
+  end
+
+  def became_an_active_admin?
+    active? && admin? && (saved_change_to_status? || saved_change_to_role?)
+  end
+
+  # A team's chat is between its admins and our staff. Someone who becomes an
+  # admin joins it; members are added by hand, and a chat is never created here.
+  def join_account_chat
+    Conversation.client.where(organization_id: client_account.organization_id, client_account:, listing_id: nil)
+                .order(:created_at, :id).first
+                &.conversation_memberships&.find_or_create_by!(user:) { |membership| membership.role = :participant }
   end
 
   def clear_other_defaults
