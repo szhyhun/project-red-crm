@@ -13,7 +13,11 @@ class Api::V1::OrdersController < Api::V1::BaseController
 
   def create
     authorize Order, :create?
-    order = ::Orders::Creator.new(organization: Current.organization, attributes: create_params.to_h.deep_symbolize_keys).create!
+    order = ::Orders::Creator.new(
+      organization: Current.organization,
+      attributes: create_params.to_h.deep_symbolize_keys,
+      ordered_by: current_user
+    ).create!
     render json: { order: serialize(order, include_details: true) }, status: :created
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)

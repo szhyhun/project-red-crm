@@ -1038,6 +1038,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_130000) do
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "user_id"
     t.index ["client_account_id", "active"], name: "index_pricing_plans_on_client_account_id_and_active"
     t.index ["client_account_id"], name: "index_pricing_plans_on_client_account_id"
     t.index ["coupon_id"], name: "index_pricing_plans_on_coupon_id"
@@ -1045,6 +1046,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_130000) do
     t.index ["customer_team_id"], name: "index_pricing_plans_on_customer_team_id"
     t.index ["organization_id", "active"], name: "index_pricing_plans_on_organization_id_and_active"
     t.index ["organization_id"], name: "index_pricing_plans_on_organization_id"
+    t.index ["user_id", "active"], name: "index_pricing_plans_on_user_and_active"
     t.check_constraint "client_account_id IS NOT NULL AND customer_team_id IS NULL OR client_account_id IS NULL AND customer_team_id IS NOT NULL", name: "pricing_plans_exactly_one_owner"
   end
 
@@ -1239,6 +1241,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_130000) do
     t.string "role", default: "manager", null: false
     t.string "status", default: "active", null: false
     t.string "origin", default: "native", null: false
+    t.string "phone"
+    t.string "license_number"
+    t.string "avatar_url"
+    t.string "timezone"
+    t.text "internal_note"
+    t.jsonb "social_profiles", default: {}, null: false
+    t.boolean "blocked_from_ordering", default: false, null: false
+    t.integer "credit_balance_cents", default: 0, null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["invitation_token"], name: "index_users_on_invitation_token", unique: true
     t.index ["invited_by_id"], name: "index_users_on_invited_by_id"
@@ -1476,6 +1486,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_130000) do
   add_foreign_key "pricing_plans", "coupons"
   add_foreign_key "pricing_plans", "customer_teams"
   add_foreign_key "pricing_plans", "organizations"
+  add_foreign_key "pricing_plans", "users"
   add_foreign_key "product_components", "organizations"
   add_foreign_key "product_components", "products", column: "package_product_id"
   add_foreign_key "product_components", "products", column: "service_product_id"

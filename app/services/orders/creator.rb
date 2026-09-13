@@ -1,13 +1,15 @@
 module Orders
   class Creator
-    def initialize(organization:, attributes:)
+    def initialize(organization:, attributes:, ordered_by: nil)
       @organization = organization
       @attributes = attributes
+      @ordered_by = ordered_by
     end
 
     def create!
       Order.transaction do
         client_account = @organization.client_accounts.find(@attributes.fetch(:client_account_id))
+        refuse_blocked_customer!(client_account)
         listing = @attributes[:listing_id].present? ? @organization.listings.find(@attributes[:listing_id]) : nil
         order = @organization.orders.build(
           client_account: client_account,
@@ -26,7 +28,7 @@ module Orders
           item_input = item_input.symbolize_keys
           variant = find_variant(item_input.fetch(:product_variant_id))
           quantity = Integer(item_input.fetch(:quantity, 1))
-          price_cents = PricingPlans::Resolver.new(client_account:, product_variant: variant).price_cents
+          price_cents = PricingPlans::Resolver.new(client_account:, product_variant: variant, user: @ordered_by).price_cents
 
           order.order_items.build(
             product: variant.product,
@@ -47,6 +49,16 @@ module Orders
     end
 
     private
+
+    # Blocking someone from ordering has to refuse the order, not colour a row.
+    def refuse_blocked_customer!(client_account)
+      return if @ordered_by.blank? || @ordered_by.internal?
+      return unless @ordered_by.blocked_from_ordering?
+
+      order = @organization.orders.build(client_account:)
+      order.errors.add(:base, "This customer cannot place orders")
+      raise ActiveRecord::RecordInvalid, order
+    end
 
     def find_variant(id)
       ProductVariant.joins(:product)
