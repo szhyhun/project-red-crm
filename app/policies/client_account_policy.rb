@@ -1,5 +1,5 @@
 class ClientAccountPolicy < OrganizationRecordPolicy
-  CAPABILITIES = [ *ApplicationPolicy::CAPABILITIES, :configure_billing ].freeze
+  CAPABILITIES = [ *ApplicationPolicy::CAPABILITIES, :configure_billing, :archive, :split ].freeze
 
   def index?
     true
@@ -22,6 +22,11 @@ class ClientAccountPolicy < OrganizationRecordPolicy
   def configure_billing?
     belongs_to_current_organization? && user.internal? && user.billing_access?
   end
+
+  # Archiving or splitting a team changes where every member's work lands, so
+  # it is a staff decision too.
+  alias_method :archive?, :configure_billing?
+  alias_method :split?, :configure_billing?
 
   class Scope < Scope
     def resolve

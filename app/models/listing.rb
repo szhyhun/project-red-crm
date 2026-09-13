@@ -38,6 +38,7 @@ class Listing < ApplicationRecord
   validates :lot_acres, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
   validates :year_built, numericality: { only_integer: true, greater_than: 1_700, less_than_or_equal_to: ->(_listing) { Time.current.year + 2 } }, allow_nil: true
   validate :client_account_belongs_to_organization
+  validate :client_account_is_not_archived, on: :create
   after_save :sync_primary_listing_customer
 
   def address
@@ -58,5 +59,10 @@ class Listing < ApplicationRecord
       customer.primary = true
       customer.marketing_visible = true
     end.update!(primary: true)
+  end
+
+  # An archived team keeps its history but takes no new work.
+  def client_account_is_not_archived
+    errors.add(:client_account, "is archived") if client_account&.archived?
   end
 end

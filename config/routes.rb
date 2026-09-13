@@ -86,6 +86,9 @@ Rails.application.routes.draw do
       get "dashboard", to: "dashboard#show"
       resources :client_accounts, only: %i[index create update] do
         patch :billing, on: :member
+        resource :archive, only: %i[create destroy], controller: "client_account_archives"
+        resource :split, only: :create, controller: "client_account_splits"
+        resource :summary, only: :show, controller: "client_account_summaries"
         post :invite, on: :member
         resources :memberships, only: %i[index create], controller: "client_memberships"
       end

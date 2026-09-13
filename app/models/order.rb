@@ -20,6 +20,7 @@ class Order < ApplicationRecord
             numericality: { greater_than_or_equal_to: 0 }
   validates :discount_rate_basis_points, numericality: { less_than_or_equal_to: 10_000 }, if: :percentage?
   validate :related_records_belong_to_organization
+  validate :client_account_is_not_archived, on: :create
 
   def approved?
     status == "approved"
@@ -53,5 +54,10 @@ class Order < ApplicationRecord
     if listing.present? && client_account.present? && listing.client_account_id != client_account_id
       errors.add(:listing, "must belong to the selected customer account")
     end
+  end
+
+  # An archived team keeps its history but takes no new work.
+  def client_account_is_not_archived
+    errors.add(:client_account, "is archived") if client_account&.archived?
   end
 end
