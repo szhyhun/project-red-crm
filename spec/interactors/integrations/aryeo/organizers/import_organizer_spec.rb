@@ -18,15 +18,11 @@ RSpec.describe Integrations::Aryeo::Organizers::ImportOrganizer do
     ])
   end
 
-  it "records an unexpected child failure and preserves the original exception" do
+  it "propagates an unexpected child failure without owning terminal state" do
     error = StandardError.new("import exploded")
     allow(Integrations::Aryeo::Actions::StartImport).to receive(:call).and_raise(error)
 
-    result = described_class.call(run:)
-
-    expect(result).to be_failure
-    expect(result.failure.code).to eq("aryeo_import_failed")
-    expect(result.failure.original_error).to eq(error)
-    expect(run.reload).to be_failed
+    expect { described_class.call(run:) }.to raise_error(error)
+    expect(run.reload).not_to be_failed
   end
 end

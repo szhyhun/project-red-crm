@@ -222,8 +222,9 @@ module Aryeo
     end
 
     def import_dependency(resource_type, payload)
-      result = Integrations::Aryeo::Organizers::ImportResource.call(
-        session: self, resource_name: resource_type, payload:, dependency: true
+      result = Integrations::Aryeo::Actions::ImportSelectedCollections.call(
+        session: self,
+        single_payload: { resource_name: resource_type, payload:, dependency: true }
       )
       raise result.failure.original_error || result.failure if result.failure?
 

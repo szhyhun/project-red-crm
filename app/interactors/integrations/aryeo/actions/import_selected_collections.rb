@@ -5,6 +5,8 @@ module Integrations::Aryeo::Actions
 
       session = context[:session] || build_session
       context.set(:session, session)
+      return import_single_payload(session) if context[:single_payload]
+
       selected_collections(session).each do |name, endpoint|
         result = import_collection(session, name, endpoint, name == :listings ? session.listing_limit : nil)
         return result if result.failure?
@@ -47,10 +49,7 @@ module Integrations::Aryeo::Actions
       payloads = fetch_payloads(session, name, endpoint)
       payloads = filter_payloads(session, name, payloads, limit)
       payloads.each do |payload|
-        result = Integrations::Aryeo::Organizers::ImportResource.call(
-          context: context.set(:resource_name, name).set(:payload, payload).set(:dependency, false)
-        )
-        return result if result.failure?
+        import_resource(session, name, payload, dependency: false)
 
         session.heartbeat!
       end
@@ -64,6 +63,29 @@ module Integrations::Aryeo::Actions
       context
     ensure
       session.persist_progress!
+    end
+
+    def import_single_payload(session)
+      payload = context.fetch(:single_payload)
+      record = import_resource(session, payload.fetch(:resource_name), payload.fetch(:payload), dependency: payload.fetch(:dependency, true))
+      context.set(:record, record)
+    end
+
+    def import_resource(session, name, payload, dependency:)
+      existing_record = session.existing_external_record(name, payload)
+      if existing_record&.record.present? && session.conflict_resolution == "skip"
+        session.archive_imported_record(name, payload, record: existing_record.record, sync_status: :skipped)
+        session.record_conflict!(name, dependency:)
+        return existing_record.record
+      end
+
+      record = ::Aryeo::ResourceImporter.call(session:, name:, payload:)
+      session.archive_imported_record(name, payload, record:, sync_status: :imported)
+      session.record_imported!(name, dependency:)
+      record
+    rescue ActiveRecord::RecordInvalid => error
+      session.record_resource_error!(name, payload, error)
+      nil
     end
 
     def fetch_payloads(session, name, endpoint)
