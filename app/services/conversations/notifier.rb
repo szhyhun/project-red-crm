@@ -5,20 +5,16 @@ module Conversations
   # never reaches a client user. Organization admins are implicit recipients of
   # customer threads because the policy lets them see every customer thread,
   # even when they have not been explicitly added as a participant.
-  class Notifier
-    def self.call(message:)
-      new(message:).call
-    end
-
-    def initialize(message:)
-      @message = message
-      @conversation = message.conversation
-    end
-
+  class Notifier < ApplicationInteractor
     def call
+      @message = context.fetch(:message)
+      @conversation = @message.conversation
+
       recipients.find_each do |user|
         NotificationChannel.broadcast_to(user, payload)
       end
+
+      context.set(:message, @message)
     end
 
     private
