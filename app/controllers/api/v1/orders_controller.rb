@@ -1,12 +1,18 @@
 class Api::V1::OrdersController < Api::V1::BaseController
   def index
-    orders = policy_scope(Order).includes(:client_account, :listing, { invoices: :payments }, order_items: %i[product product_variant], order_deliverables: :service_product).order(created_at: :desc)
+    orders = policy_scope(Order).includes(
+      :client_account, :listing, { invoices: :payments }, order_items: %i[product product_variant],
+      order_deliverables: [ :service_product, :workflow_tasks, :media_assets ]
+    ).order(created_at: :desc)
     orders = orders.where(listing_id: params[:listing_id]) if params[:listing_id].present?
     render json: { orders: orders.map { |order| serialize(order, include_details: true) } }
   end
 
   def show
-    order = policy_scope(Order).includes(:client_account, :listing, order_items: %i[product product_variant], order_deliverables: :service_product, invoices: :payments).find(params[:id])
+    order = policy_scope(Order).includes(
+      :client_account, :listing, order_items: %i[product product_variant],
+      order_deliverables: [ :service_product, :workflow_tasks, :media_assets ], invoices: :payments
+    ).find(params[:id])
     authorize order
     render json: { order: serialize(order, include_details: true) }
   end
@@ -118,7 +124,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
         invoice.slice(:id, :number, :status, :subtotal_cents, :discount_cents, :tax_cents, :fee_cents, :fee_label,
                       :total_cents, :balance_due_cents, :due_on, :sent_at, :paid_at).merge(
           can_pay: policy(invoice).pay?,
-          payments: invoice.payments.order(created_at: :desc).map do |payment|
+          payments: ordered_payments_for(invoice).map do |payment|
             payment.slice(:id, :provider, :status, :amount_cents, :currency, :created_at)
           end
         )
@@ -136,17 +142,35 @@ class Api::V1::OrdersController < Api::V1::BaseController
   end
 
   def serialize_deliverable(deliverable)
+    assets = customer_visible_deliverable_assets(deliverable)
     data = deliverable.slice(:id, :title, :description, :deliverable_type, :sla_days, :scope_sqft_min,
                              :scope_sqft_max, :scope_label, :status, :target_on, :delivered_at,
                              :delivery_version, :position, :cancelled_at).merge(
-      asset_count: deliverable.customer_visible_assets.count
+      asset_count: assets.length
     )
     return data unless current_user.internal?
 
     data.merge(
       service_product: deliverable.service_product.slice(:id, :title, :deliverable_type),
-      task_ids: deliverable.workflow_tasks.ids
+      task_ids: deliverable.association(:workflow_tasks).loaded? ? deliverable.workflow_tasks.map(&:id) : deliverable.workflow_tasks.ids
     )
+  end
+
+  def ordered_payments_for(invoice)
+    payments = invoice.payments
+    return payments.to_a.sort_by { |payment| [ -payment.created_at.to_f, -payment.id ] } if invoice.association(:payments).loaded?
+
+    payments.order(created_at: :desc, id: :desc).to_a
+  end
+
+  def customer_visible_deliverable_assets(deliverable)
+    if deliverable.association(:media_assets).loaded?
+      return deliverable.media_assets.select do |asset|
+        asset.current_version? && asset.final? && asset.ready? && asset.customer_visible? && !asset.hidden?
+      end.sort_by { |asset| [ asset.position, asset.created_at, asset.id ] }
+    end
+
+    deliverable.customer_visible_assets.to_a
   end
 
   def record_listing_activity(order, event_type)

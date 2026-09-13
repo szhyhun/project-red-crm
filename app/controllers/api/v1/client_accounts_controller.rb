@@ -1,6 +1,8 @@
 class Api::V1::ClientAccountsController < Api::V1::BaseController
   def index
-    accounts = policy_scope(ClientAccount).includes(:tags).order(:name)
+    accounts = policy_scope(ClientAccount).includes(
+      :tags, :billing_user, :client_memberships, listing_feedbacks: :listing
+    ).order(:name)
     accounts = accounts.where(id: ClientAccountTag.where(tag_id: params[:tag_id]).select(:client_account_id)) if params[:tag_id].present?
     render json: { client_accounts: accounts.map { |account| serialize(account) } }
   end
@@ -78,7 +80,11 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
   end
 
   def serialize(account)
-    feedbacks = account.listing_feedbacks.includes(:listing).order(created_at: :desc)
+    feedbacks = if account.association(:listing_feedbacks).loaded?
+      account.listing_feedbacks.sort_by { |feedback| [ -feedback.created_at.to_f, -feedback.id ] }
+    else
+      account.listing_feedbacks.includes(:listing).order(created_at: :desc).to_a
+    end
     submitted = feedbacks.select(&:submitted_at?)
     ratings = submitted.flat_map { |feedback| [ feedback.delivery_rating, feedback.service_rating, feedback.media_rating ].compact }
 
@@ -89,7 +95,11 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
                   :downloads_visibility, :marketing_templates_visibility).merge(
       billing_user: account.billing_user&.slice(:id, :name, :email),
       tags: current_user.internal? ? account.tags.sort_by(&:name).map { |tag| tag.slice(:id, :name, :color) } : [],
-      member_count: account.client_memberships.active.count,
+      member_count: if account.association(:client_memberships).loaded?
+                       account.client_memberships.count(&:active?)
+                    else
+                       account.client_memberships.active.count
+                    end,
       capabilities: ClientAccountPolicy.new(current_user, account).capabilities,
       feedback_summary: {
         total: feedbacks.length,

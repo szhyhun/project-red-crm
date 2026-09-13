@@ -48,11 +48,7 @@ class Api::V1::ConversationsController < Api::V1::BaseController
   end
 
   def show
-    conversation = policy_scope(Conversation).includes(
-      conversation_memberships: :user,
-      messages: [ :author, :listing, :order_deliverable, :media_review, :conversation_attachments,
-                  { message_media_references: :media_asset } ]
-    ).find(params[:id])
+    conversation = policy_scope(Conversation).includes(conversation_memberships: :user).find(params[:id])
     authorize conversation
     mark_read!(conversation)
     render json: { conversation: serialize(conversation, include_messages: true) }
@@ -332,8 +328,8 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     message.slice(:id, :body, :body_html, :visibility, :message_kind, :listing_id, :order_deliverable_id,
                   :media_review_id, :created_at).merge(
       context: serialize_message_context(message),
-      attachments: message.conversation_attachments.order(:created_at, :id).map { |attachment| ConversationAttachment.serialize(attachment) },
-      media_references: message.message_media_references.includes(:media_asset).order(:position, :id).filter_map do |reference|
+      attachments: ordered_message_attachments(message).map { |attachment| ConversationAttachment.serialize(attachment) },
+      media_references: ordered_message_media_references(message).filter_map do |reference|
         asset = reference.media_asset
         next if asset.blank?
 
@@ -363,5 +359,19 @@ class Api::V1::ConversationsController < Api::V1::BaseController
       context[:review] = message.media_review.slice(:id, :number, :status, :outcome).merge(listing_id: message.media_review.listing_id)
     end
     context.presence
+  end
+
+  def ordered_message_attachments(message)
+    attachments = message.conversation_attachments
+    return attachments.to_a.sort_by { |attachment| [ attachment.created_at, attachment.id ] } if message.association(:conversation_attachments).loaded?
+
+    attachments.order(:created_at, :id).to_a
+  end
+
+  def ordered_message_media_references(message)
+    references = message.message_media_references
+    return references.to_a.sort_by { |reference| [ reference.position, reference.id ] } if message.association(:message_media_references).loaded?
+
+    references.includes(:media_asset).order(:position, :id).to_a
   end
 end

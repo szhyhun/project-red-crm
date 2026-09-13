@@ -5,8 +5,13 @@ class Api::V1::ListingsController < Api::V1::BaseController
     # count of "paid" listings is billing data. Only billing staff may use it.
     query_params = current_user.billing_access? || !current_user.internal? ? params : params.except(:payment_status)
     listings = Listings::Query.new(scope: base, params: query_params).call
-      .includes(:client_account, :assigned_users, :media_assets, :listing_feedbacks, :order_deliverables,
-                appointments: :assigned_user, orders: %i[order_items invoices order_deliverables])
+      .includes(
+        :client_account, :assigned_users, :media_assets, :listing_feedbacks,
+        { listing_customers: :client_account },
+        { order_deliverables: [ :service_product, :workflow_tasks, :media_assets ] },
+        { appointments: [ :assigned_user, :appointment_items, { appointment_team_members: :user }, { appointment_events: :actor } ] },
+        orders: %i[order_items invoices order_deliverables]
+      )
       .order(created_at: :desc)
     render json: { listings: listings.map { |listing| serialize_listing(listing) }, counts: listing_counts(base), filter_options: filter_options }
   end
@@ -24,7 +29,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
       { listing_notes: :author },
       { payroll_items: :team_member },
       { listing_feedbacks: :client_account },
-      { order_deliverables: :service_product }
+      { order_deliverables: [ :service_product, :workflow_tasks, :media_assets ] }
     ).find(params[:id])
     authorize listing
     render json: { listing: serialize_listing(listing, include_details: true) }
@@ -133,7 +138,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
       payment_status: current_user.billing_access? ? payment_status : nil,
       feedback_summary: listing_feedback_summary(listing),
       cover_image_url: cover && media_url_for(cover),
-      order_deliverables: listing.order_deliverables.active.ordered.map { |deliverable| serialize_deliverable(deliverable) }
+      order_deliverables: active_order_deliverables_for(listing).map { |deliverable| serialize_deliverable(deliverable) }
     }
     return data unless include_details
 
@@ -156,7 +161,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
 
     data.merge(
       workflow_tasks: tasks.map { |task| serialize_task(task) },
-      appointments: listing.appointments.includes(:assigned_user).order(:starts_at).map { |appointment| serialize_appointment(appointment) },
+      appointments: listing_appointments_for_details(listing).map { |appointment| serialize_appointment(appointment) },
       listing_custom_fields: listing.listing_custom_fields.map { |field| field.slice(:id, :name, :value, :position) },
       media_groups: listing.media_groups.ordered.map { |group| group.slice(:id, :listing_id, :name, :position, :customer_visible) },
       marketing_materials: listing.marketing_materials.where.not(status: :archived).order(created_at: :desc).map { |material| material.slice(:id, :material_type, :title, :status, :customer_visible, :settings, :created_at) },
@@ -190,7 +195,7 @@ class Api::V1::ListingsController < Api::V1::BaseController
 
   def serialize_customer_listing(listing, include_details: false)
     data = ClientPortal::ListingPresenter.new(listing).to_h.merge(
-      order_deliverables: listing.order_deliverables.active.ordered.map { |deliverable| serialize_deliverable(deliverable) }
+      order_deliverables: active_order_deliverables_for(listing).map { |deliverable| serialize_deliverable(deliverable) }
     )
     return data unless include_details
 
@@ -327,13 +332,25 @@ class Api::V1::ListingsController < Api::V1::BaseController
   end
 
   def serialize_appointment(appointment)
+    team_members = if appointment.association(:appointment_team_members).loaded?
+      appointment.appointment_team_members
+    else
+      appointment.appointment_team_members.includes(:user).to_a
+    end
+    items = appointment.association(:appointment_items).loaded? ? appointment.appointment_items : appointment.appointment_items.to_a
+    events = if appointment.association(:appointment_events).loaded?
+      appointment.appointment_events.sort_by { |event| [ -event.created_at.to_f, -event.id ] }
+    else
+      appointment.appointment_events.includes(:actor).order(created_at: :desc, id: :desc).to_a
+    end
+
     appointment.slice(:id, :order_id, :status, :request_status, :starts_at, :ends_at, :completed_at, :notes).merge(
       assigned_user: appointment.assigned_user && appointment.assigned_user.slice(:id, :name, :email, :role),
-      team_members: appointment.appointment_team_members.includes(:user).map do |member|
+      team_members: team_members.map do |member|
         member.slice(:id, :user_id, :role).merge(user: member.user.slice(:id, :name, :email, :role))
       end,
-      items: appointment.appointment_items.map { |item| item.slice(:id, :order_item_id, :title, :quantity) },
-      history: appointment.appointment_events.includes(:actor).order(created_at: :desc).map do |event|
+      items: items.map { |item| item.slice(:id, :order_item_id, :title, :quantity) },
+      history: events.map do |event|
         event.slice(:id, :event_type, :changeset, :created_at).merge(actor: event.actor&.slice(:id, :name))
       end
     )
@@ -371,19 +388,51 @@ class Api::V1::ListingsController < Api::V1::BaseController
   end
 
   def serialize_deliverable(deliverable)
+    assets = customer_visible_deliverable_assets(deliverable)
     customer_data = deliverable.slice(
       :id, :title, :description, :deliverable_type, :status, :target_on, :delivered_at, :scope_label
-    ).merge(asset_count: deliverable.customer_visible_assets.count)
+    ).merge(asset_count: assets.length)
     return customer_data unless current_user.internal?
 
+    task_ids = if deliverable.association(:workflow_tasks).loaded?
+      deliverable.workflow_tasks.map(&:id)
+    else
+      deliverable.workflow_tasks.pluck(:id)
+    end
     deliverable.slice(:id, :listing_id, :order_id, :order_item_id, :product_component_id,
                       :service_product_id, :title, :description, :deliverable_type, :sla_days,
                       :scope_sqft_min, :scope_sqft_max, :scope_label, :status, :target_on,
                       :delivered_at, :delivery_version, :position, :cancelled_at).merge(
-      asset_count: deliverable.customer_visible_assets.count,
+      asset_count: assets.length,
       service_product: deliverable.service_product&.slice(:id, :title, :deliverable_type, :sla_days),
-      task_ids: deliverable.workflow_tasks.pluck(:id)
+      task_ids:
     )
+  end
+
+  def active_order_deliverables_for(listing)
+    deliverables = listing.order_deliverables
+    return deliverables.reject { |deliverable| deliverable.cancelled_at.present? }
+      .sort_by { |deliverable| [ deliverable.position, deliverable.id ] } if listing.association(:order_deliverables).loaded?
+
+    deliverables.active.ordered.to_a
+  end
+
+  def listing_appointments_for_details(listing)
+    appointments = listing.appointments
+    return appointments.sort_by { |appointment| [ appointment.starts_at, appointment.id ] } if listing.association(:appointments).loaded?
+
+    appointments.includes(:assigned_user, :appointment_items, { appointment_team_members: :user }, { appointment_events: :actor })
+      .order(:starts_at, :id).to_a
+  end
+
+  def customer_visible_deliverable_assets(deliverable)
+    if deliverable.association(:media_assets).loaded?
+      return deliverable.media_assets.select do |asset|
+        asset.current_version? && asset.final? && asset.ready? && asset.customer_visible? && !asset.hidden?
+      end.sort_by { |asset| [ asset.position, asset.created_at, asset.id ] }
+    end
+
+    deliverable.customer_visible_assets.to_a
   end
 
   def serialize_activity(event)

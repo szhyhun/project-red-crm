@@ -271,8 +271,10 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
   end
 
   def serialize_review(review)
+    review = review_for_serialization(review)
     deliverable_assets = review.media_review_assets.group_by(&:order_deliverable_id)
     comments = visible_review_comments(review)
+    comments_by_thread = comments.group_by(&:media_review_thread_id)
     review.slice(:id, :listing_id, :client_account_id, :number, :delivery_version, :status, :outcome,
                  :summary, :summary_html, :created_at, :submitted_at).merge(
       listing: { id: review.listing.id, address: review.listing.address },
@@ -288,8 +290,21 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
         )
       end,
       asset_groups: serialize_review_asset_groups(review),
-      threads: review.media_review_threads.sort_by { |thread| [ thread.created_at, thread.id ] }.filter_map { |thread| serialize_thread(thread, comments) }
+      threads: review.media_review_threads.sort_by { |thread| [ thread.created_at, thread.id ] }
+        .filter_map { |thread| serialize_thread(thread, comments_by_thread) }
     )
+  end
+
+  def review_for_serialization(review)
+    required = %i[listing media_review_deliverables media_review_assets media_review_threads]
+    return review if required.all? { |association| review.association(association).loaded? }
+
+    Current.organization.media_reviews.includes(
+      :listing, :client_account, :created_by, :submitted_by,
+      media_review_deliverables: :order_deliverable,
+      media_review_assets: [ :media_asset, :order_deliverable ],
+      media_review_threads: [ :media_review_asset, { media_review_comments: :author } ]
+    ).find(review.id)
   end
 
   def serialize_review_asset_groups(review)
@@ -316,8 +331,8 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
     )
   end
 
-  def serialize_thread(thread, visible_comments)
-    comments = visible_comments.select { |comment| comment.media_review_thread_id == thread.id }
+  def serialize_thread(thread, comments_by_thread)
+    comments = comments_by_thread.fetch(thread.id, [])
     # Staff must not see a thread that is still only the customer's draft.
     return if comments.empty?
 
@@ -333,10 +348,11 @@ class Api::V1::MediaReviewsController < Api::V1::BaseController
   end
 
   def visible_review_comments(review)
-    comments = review.media_review_comments.includes(:author).to_a.select(&:published?)
+    comments = review.media_review_threads.flat_map(&:media_review_comments)
+    visible = comments.select(&:published?)
     if !current_user.internal? && current_user.client_account_ids.include?(review.client_account_id) && review.open?
-      comments.concat(review.media_review_comments.to_a.select(&:draft?))
+      visible.concat(comments.select(&:draft?))
     end
-    comments.uniq
+    visible
   end
 end

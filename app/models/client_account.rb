@@ -59,7 +59,10 @@ class ClientAccount < ApplicationRecord
     return false unless lock_downloads_before_payment?
     return false if listing.blank?
 
-    listing.orders.sum { |order| order.balance_due_cents.to_i }.positive?
+    Invoice.where(order_id: listing.orders.select(:id))
+      .where.not(status: :void)
+      .where("balance_due_cents > 0")
+      .exists?
   end
 
   def notify?(event, channel = "email")
@@ -72,7 +75,7 @@ class ClientAccount < ApplicationRecord
     return true if user.internal?
     return true if block.to_s == "billing" && billing_user_id == user.id
 
-    membership = client_memberships.active.find_by(user:)
+    membership = active_membership_for(user)
     return false if membership.blank?
 
     case public_send(:"#{block}_visibility")
@@ -91,6 +94,17 @@ class ClientAccount < ApplicationRecord
   end
 
   private
+
+  def active_membership_for(user)
+    @active_memberships_by_user_id ||= {}
+    return @active_memberships_by_user_id[user.id] if @active_memberships_by_user_id.key?(user.id)
+
+    @active_memberships_by_user_id[user.id] = if association(:client_memberships).loaded?
+      client_memberships.find { |membership| membership.active? && membership.user_id == user.id }
+    else
+      client_memberships.active.find_by(user_id: user.id)
+    end
+  end
 
   def order_form_belongs_to_organization
     errors.add(:order_form, "must belong to the same organization") if order_form && order_form.organization_id != organization_id

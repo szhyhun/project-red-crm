@@ -1,32 +1,4 @@
 class Api::V1::PortalController < Api::V1::BaseController
-  PORTAL_ASSET_GROUPS = {
-    "images" => {
-      title: "Property photos",
-      deliverable_type: "photography",
-      description: "Photos ready for this listing."
-    },
-    "videos" => {
-      title: "Videos",
-      deliverable_type: "video",
-      description: "Videos ready for this listing."
-    },
-    "floor_plans" => {
-      title: "Floor plans",
-      deliverable_type: "floor_plan",
-      description: "Floor plans ready for this listing."
-    },
-    "tours" => {
-      title: "Tours",
-      deliverable_type: "tour",
-      description: "Interactive and virtual tours ready for this listing."
-    },
-    "files" => {
-      title: "Files",
-      deliverable_type: "files",
-      description: "Documents and other files ready for this listing."
-    }
-  }.freeze
-
   def dashboard
     authorize :client_portal, :view?
 
@@ -41,8 +13,9 @@ class Api::V1::PortalController < Api::V1::BaseController
 
   def show_listing
     listing = policy_scope(Listing).includes(
-      :property_site,
-      :invoices,
+      { property_site: :organization },
+      { invoices: :client_account },
+      :listing_feedbacks,
       { workflow_tasks: { workflow_task_placements: [ :workflow_column, { board: :workflow_columns } ] } },
       :media_assets,
       appointments: :appointment_events
@@ -153,20 +126,22 @@ class Api::V1::PortalController < Api::V1::BaseController
     listing = policy_scope(Listing).includes(:media_assets, :client_account).find(params[:listing_id])
     authorize listing, :view?
     deliverables = policy_scope(OrderDeliverable).where(listing_id: listing.id)
-      .includes(:service_product, :media_assets).active.ordered
-    current_delivery_version = deliverables.maximum(:delivery_version).to_i
+      .includes(:service_product, :media_assets).active.ordered.to_a
+    current_delivery_version = deliverables.map(&:delivery_version).max.to_i
     current_review = policy_scope(MediaReview)
       .where(listing: listing, client_account: listing.client_account, delivery_version: current_delivery_version)
       .where.not(status: :outdated)
       .ordered.first
-    assets = listing.media_assets.current_version.final.ready.where(customer_visible: true, hidden: false)
-      .order(cover: :desc, position: :asc, created_at: :asc)
+    assets = customer_visible_listing_assets(listing)
+    deliverable_assets = deliverables.to_h do |deliverable|
+      [ deliverable.id, customer_visible_deliverable_assets(deliverable) ]
+    end
     # Imported listings can have ready media before an order workflow has
     # created deliverables. Keep those assets visible without fabricating a
     # deliverable that could incorrectly enable customer change requests. The
     # portal renders this compatibility set as category cards rather than one
     # misleading generic delivery card.
-    listing_assets = assets.where(order_deliverable_id: nil)
+    listing_assets = assets.select { |asset| asset.order_deliverable_id.nil? }
     render json: {
       listing: {
         id: listing.id,
@@ -182,7 +157,7 @@ class Api::V1::PortalController < Api::V1::BaseController
         delivered_count: deliverables.count(&:delivered?),
         asset_count: assets.size
       },
-      deliverables: deliverables.map { |deliverable| serialize_portal_deliverable(deliverable) },
+      deliverables: deliverables.map { |deliverable| serialize_portal_deliverable(deliverable, assets: deliverable_assets.fetch(deliverable.id)) },
       review: serialize_portal_review_summary(current_review),
       review_state: current_review&.status || "implicitly_accepted",
       listing_asset_groups: serialize_portal_asset_groups(listing_assets),
@@ -226,12 +201,7 @@ class Api::V1::PortalController < Api::V1::BaseController
     {
       client_accounts: current_user.client_accounts.order(:name).map { |account| serialize_portal_account(account) },
       listings: portal_listings.map { |listing| serialize_listing(listing, include_account: true) },
-      conversations: policy_scope(Conversation).includes(
-        :listing,
-        :client_account,
-        messages: [ :author, :listing, :order_deliverable, :media_review, :conversation_attachments,
-                    { message_media_references: :media_asset } ]
-      )
+      conversations: policy_scope(Conversation).includes(:listing, :client_account)
         .order(last_message_at: :desc, created_at: :desc).limit(20)
         .map { |conversation| serialize_conversation(conversation) }
     }
@@ -240,9 +210,10 @@ class Api::V1::PortalController < Api::V1::BaseController
   def portal_listings
     @portal_listings ||= policy_scope(Listing)
       .includes(
-        :property_site,
+        { property_site: :organization },
         :client_account,
-        :invoices,
+        { invoices: :client_account },
+        :listing_feedbacks,
         { workflow_tasks: { workflow_task_placements: [ :workflow_column, { board: :workflow_columns } ] } },
         :media_assets,
         appointments: :appointment_events
@@ -281,18 +252,16 @@ class Api::V1::PortalController < Api::V1::BaseController
 
   def serialize_listing(listing, include_details: false, include_account: false)
     mark_first_delivery_view(listing)
-    feedback = listing.listing_feedbacks
-                      .where(client_account_id: current_user.client_account_ids)
-                      .order(Arel.sql("submitted_at IS NULL DESC"), requested_at: :desc)
-                      .first
+    feedback = portal_feedback_for(listing)
+    appointments = portal_appointments_for(listing)
+    media_assets = customer_visible_listing_assets(listing)
+    invoices = portal_invoices_for(listing)
     data = ClientPortal::ListingPresenter.new(listing).to_h.merge(
       progress: portal_workflow_tasks_for(listing)
         .map { |task| serialize_progress_task(task) },
-      appointments: listing.appointments.where.not(status: :cancelled).order(:starts_at).map { |appointment| serialize_client_appointment(appointment) },
-      media_assets: listing.media_assets.current_version.final.ready.where(customer_visible: true, hidden: false)
-        .order(cover: :desc, position: :asc, created_at: :asc)
-        .map { |asset| serialize_asset(asset) },
-      invoices: listing.invoices.order(created_at: :desc).select { |invoice| policy(invoice).view? }.map do |invoice|
+      appointments: appointments.map { |appointment| serialize_client_appointment(appointment) },
+      media_assets: media_assets.map { |asset| serialize_asset(asset) },
+      invoices: invoices.select { |invoice| policy(invoice).view? }.map do |invoice|
         invoice.slice(:id, :number, :status, :currency, :subtotal_cents, :discount_cents, :tax_cents, :fee_cents,
                       :fee_label, :total_cents, :balance_due_cents, :due_on, :sent_at).merge(can_pay: policy(invoice).pay?)
       end,
@@ -338,12 +307,18 @@ class Api::V1::PortalController < Api::V1::BaseController
   end
 
   def portal_workflow_tasks_for(listing)
-    listing.workflow_tasks
-      .where(customer_visible: true)
-      .joins(workflow_task_placements: :board)
-      .where(boards: { client_visible: true })
-      .distinct
-      .sort_by { |task| [ task.position, task.id ] }
+    if listing.association(:workflow_tasks).loaded?
+      listing.workflow_tasks.select do |task|
+        task.customer_visible? && task.workflow_task_placements.any? { |placement| placement.board&.client_visible? }
+      end.sort_by { |task| [ task.position, task.id ] }
+    else
+      listing.workflow_tasks
+        .where(customer_visible: true)
+        .joins(workflow_task_placements: :board)
+        .where(boards: { client_visible: true })
+        .distinct
+        .sort_by { |task| [ task.position, task.id ] }
+    end
   end
 
   def serialize_asset(asset)
@@ -352,6 +327,60 @@ class Api::V1::PortalController < Api::V1::BaseController
       preview_path: asset.external? ? nil : preview_api_v1_media_asset_path(asset),
       download_path: download_api_v1_media_asset_path(asset)
     )
+  end
+
+  def portal_client_account_ids
+    @portal_client_account_ids ||= current_user.client_account_ids
+  end
+
+  def customer_visible_listing_assets(listing)
+    if listing.association(:media_assets).loaded?
+      visible_assets = listing.media_assets.select do |asset|
+        asset.current_version? && asset.final? && asset.ready? && asset.customer_visible? && !asset.hidden?
+      end
+      return visible_assets.sort_by { |asset| [ asset.cover? ? 0 : 1, asset.position, asset.created_at, asset.id ] }
+    end
+
+    listing.media_assets.current_version.final.ready.where(customer_visible: true, hidden: false)
+      .order(cover: :desc, position: :asc, created_at: :asc, id: :asc).to_a
+  end
+
+  def customer_visible_deliverable_assets(deliverable)
+    if deliverable.association(:media_assets).loaded?
+      return deliverable.media_assets.select do |asset|
+        asset.current_version? && asset.final? && asset.ready? && asset.customer_visible? && !asset.hidden?
+      end.sort_by { |asset| [ asset.position, asset.created_at, asset.id ] }
+    end
+
+    deliverable.customer_visible_assets.to_a
+  end
+
+  def portal_feedback_for(listing)
+    feedbacks = listing.listing_feedbacks
+    if listing.association(:listing_feedbacks).loaded?
+      return feedbacks.select { |feedback| portal_client_account_ids.include?(feedback.client_account_id) }
+        .sort_by { |feedback| [ feedback.submitted_at.present? ? 1 : 0, -feedback.requested_at.to_f, -feedback.id ] }
+        .first
+    end
+
+    feedbacks.where(client_account_id: portal_client_account_ids)
+      .order(Arel.sql("submitted_at IS NULL DESC"), requested_at: :desc).first
+  end
+
+  def portal_appointments_for(listing)
+    appointments = listing.appointments
+    if listing.association(:appointments).loaded?
+      return appointments.reject(&:cancelled?).sort_by { |appointment| [ appointment.starts_at, appointment.id ] }
+    end
+
+    appointments.where.not(status: :cancelled).order(:starts_at, :id).to_a
+  end
+
+  def portal_invoices_for(listing)
+    invoices = listing.invoices
+    return invoices.sort_by { |invoice| [ -invoice.created_at.to_f, -invoice.id ] } if listing.association(:invoices).loaded?
+
+    invoices.order(created_at: :desc, id: :desc).to_a
   end
 
   def serialize_portal_asset(asset)
@@ -373,7 +402,7 @@ class Api::V1::PortalController < Api::V1::BaseController
       category_assets = grouped_assets[category]
       next if category_assets.blank?
 
-      definition = PORTAL_ASSET_GROUPS.fetch(category)
+      definition = MediaAsset::CATEGORY_DEFINITIONS.fetch(category)
       {
         key: category,
         title: definition.fetch(:title),
@@ -387,12 +416,13 @@ class Api::V1::PortalController < Api::V1::BaseController
     end
   end
 
-  def serialize_portal_deliverable(deliverable)
+  def serialize_portal_deliverable(deliverable, assets: nil)
+    assets ||= customer_visible_deliverable_assets(deliverable)
     deliverable.slice(:id, :title, :description, :deliverable_type, :status, :target_on, :delivered_at,
                       :scope_label).merge(
-      asset_count: deliverable.customer_visible_assets.count,
+      asset_count: assets.length,
       can_request_changes: deliverable.delivered?,
-      assets: deliverable.customer_visible_assets.map { |asset| serialize_portal_asset(asset) }
+      assets: assets.map { |asset| serialize_portal_asset(asset) }
     )
   end
 
@@ -400,8 +430,8 @@ class Api::V1::PortalController < Api::V1::BaseController
     return nil if review.blank?
 
     review.slice(:id, :number, :delivery_version, :status, :outcome, :created_at, :submitted_at).merge(
-      pending_comment_count: review.open? && current_user.client_account_ids.include?(review.client_account_id) ? review.media_review_comments.where(status: :draft).count : 0,
-      can_submit: review.open? && current_user.client_account_ids.include?(review.client_account_id)
+      pending_comment_count: review.open? && portal_client_account_ids.include?(review.client_account_id) ? review.media_review_comments.where(status: :draft).count : 0,
+      can_submit: review.open? && portal_client_account_ids.include?(review.client_account_id)
     )
   end
 
@@ -417,10 +447,13 @@ class Api::V1::PortalController < Api::V1::BaseController
   end
 
   def serialize_client_appointment(appointment)
-    request = appointment.appointment_events
-      .where(event_type: "customer_reschedule_requested")
-      .order(created_at: :desc)
-      .first
+    events = appointment.appointment_events
+    request = if appointment.association(:appointment_events).loaded?
+      events.select { |event| event.event_type == "customer_reschedule_requested" }
+        .max_by { |event| [ event.created_at, event.id ] }
+    else
+      events.where(event_type: "customer_reschedule_requested").order(created_at: :desc, id: :desc).first
+    end
 
     appointment.slice(:id, :status, :request_status, :starts_at, :ends_at, :completed_at, :notes).merge(
       reschedule_request: appointment.requested? && request && request.changeset.slice("starts_at", "ends_at", "notes")
@@ -459,11 +492,14 @@ class Api::V1::PortalController < Api::V1::BaseController
     conversation.slice(:id, :listing_id, :subject, :last_message_at).merge(
       client_account: conversation.client_account&.slice(:id, :name),
       listing_address: conversation.listing&.address,
-      messages: conversation.messages.participants.includes(:author, :conversation_attachments, message_media_references: :media_asset).order(created_at: :desc).limit(20).reverse.map do |message|
+      messages: conversation.messages.participants.includes(
+        :author, :listing, :order_deliverable, :media_review, :conversation_attachments,
+        { message_media_references: :media_asset }
+      ).order(created_at: :desc).limit(20).reverse.map do |message|
         message.slice(:id, :body, :body_html, :message_kind, :listing_id, :order_deliverable_id, :created_at).merge(
           context: serialize_message_context(message),
-          attachments: message.conversation_attachments.order(:created_at, :id).map { |attachment| ConversationAttachment.serialize(attachment) },
-          media_references: message.message_media_references.includes(:media_asset).order(:position, :id).filter_map do |reference|
+          attachments: ordered_message_attachments(message).map { |attachment| ConversationAttachment.serialize(attachment) },
+          media_references: ordered_message_media_references(message).filter_map do |reference|
             asset = reference.media_asset
             next if asset.blank? || !asset.ready? || asset.external?
 
@@ -495,5 +531,19 @@ class Api::V1::PortalController < Api::V1::BaseController
       context[:review] = message.media_review.slice(:id, :number, :status, :outcome).merge(listing_id: message.media_review.listing_id)
     end
     context.presence
+  end
+
+  def ordered_message_attachments(message)
+    attachments = message.conversation_attachments
+    return attachments.to_a.sort_by { |attachment| [ attachment.created_at, attachment.id ] } if message.association(:conversation_attachments).loaded?
+
+    attachments.order(:created_at, :id).to_a
+  end
+
+  def ordered_message_media_references(message)
+    references = message.message_media_references
+    return references.to_a.sort_by { |reference| [ reference.position, reference.id ] } if message.association(:message_media_references).loaded?
+
+    references.includes(:media_asset).order(:position, :id).to_a
   end
 end
