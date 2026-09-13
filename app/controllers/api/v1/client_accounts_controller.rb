@@ -1,6 +1,7 @@
 class Api::V1::ClientAccountsController < Api::V1::BaseController
   def index
-    accounts = policy_scope(ClientAccount).order(:name)
+    accounts = policy_scope(ClientAccount).includes(:tags).order(:name)
+    accounts = accounts.where(id: ClientAccountTag.where(tag_id: params[:tag_id]).select(:client_account_id)) if params[:tag_id].present?
     render json: { client_accounts: accounts.map { |account| serialize(account) } }
   end
 
@@ -87,6 +88,7 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
                   :order_form_id, :member_listing_access, :billing_user_id, :billing_pays_externally, :billing_visibility, :pricing_visibility,
                   :downloads_visibility, :marketing_templates_visibility).merge(
       billing_user: account.billing_user&.slice(:id, :name, :email),
+      tags: current_user.internal? ? account.tags.sort_by(&:name).map { |tag| tag.slice(:id, :name, :color) } : [],
       member_count: account.client_memberships.active.count,
       capabilities: ClientAccountPolicy.new(current_user, account).capabilities,
       feedback_summary: {

@@ -30,6 +30,8 @@ Rails.application.routes.draw do
       get "listings/:listing_id/customer_access", to: "listing_customer_access#show"
       put "listings/:listing_id/customer_access", to: "listing_customer_access#update"
       resources :order_forms, only: %i[index create update destroy]
+      resources :tags, only: %i[index create update destroy]
+      put "client_accounts/:client_account_id/tags", to: "client_account_tags#update"
       resource :aryeo_integration, only: %i[show create destroy] do
         post :validate
         post :import

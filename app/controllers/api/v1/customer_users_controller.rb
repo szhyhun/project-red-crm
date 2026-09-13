@@ -3,7 +3,13 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
 
   def index
     authorize User, :index?, policy_class: CustomerUserPolicy
-    people = customer_scope.includes(client_memberships: :client_account).order(:name).to_a
+    people = customer_scope.includes(client_memberships: :client_account).order(:name)
+    people = people.where(id: ClientMembership.where(client_account_id: params[:client_account_id]).select(:user_id)) if params[:client_account_id].present?
+    if params[:tag_id].present?
+      tagged_teams = ClientAccountTag.where(tag_id: params[:tag_id]).select(:client_account_id)
+      people = people.where(id: ClientMembership.where(client_account_id: tagged_teams).select(:user_id))
+    end
+    people = people.to_a
     overrides = PricingPlan.where(user_id: people.map(&:id)).pluck(:user_id, :id).to_h
     @work_counts = WorkCounts.new(people)
 

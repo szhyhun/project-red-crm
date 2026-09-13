@@ -5,6 +5,8 @@ class ClientAccount < ApplicationRecord
   belongs_to :billing_user, class_name: "User", optional: true
   belongs_to :order_form, optional: true
   has_many :client_memberships, dependent: :destroy
+  has_many :client_account_tags, dependent: :destroy
+  has_many :tags, through: :client_account_tags
   has_many :pricing_plans, dependent: :destroy
   has_many :users, through: :client_memberships
   has_many :listings, dependent: :restrict_with_error

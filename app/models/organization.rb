@@ -1,5 +1,6 @@
 class Organization < ApplicationRecord
   has_many :order_forms, dependent: :destroy
+  has_many :tags, dependent: :destroy
   has_many :users, dependent: :restrict_with_error
   has_many :client_accounts, dependent: :destroy
   has_many :products, dependent: :destroy

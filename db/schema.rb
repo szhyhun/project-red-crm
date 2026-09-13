@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_13_130000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_13_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -265,6 +265,16 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_130000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["organization_id"], name: "index_catalog_sync_runs_on_organization_id"
+  end
+
+  create_table "client_account_tags", force: :cascade do |t|
+    t.bigint "client_account_id", null: false
+    t.bigint "tag_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["client_account_id", "tag_id"], name: "index_client_account_tags_on_client_account_id_and_tag_id", unique: true
+    t.index ["client_account_id"], name: "index_client_account_tags_on_client_account_id"
+    t.index ["tag_id"], name: "index_client_account_tags_on_tag_id"
   end
 
   create_table "client_accounts", force: :cascade do |t|
@@ -1186,6 +1196,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_130000) do
     t.index ["user_id"], name: "index_saved_listing_views_on_user_id"
   end
 
+  create_table "tags", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.string "color", default: "#6b7280", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "organization_id, lower((name)::text)", name: "index_tags_on_organization_and_lower_name", unique: true
+    t.index ["organization_id"], name: "index_tags_on_organization_id"
+    t.check_constraint "color::text ~ '^#[0-9a-fA-F]{6}$'::text", name: "tags_color_is_hex"
+  end
+
   create_table "task_checklist_items", force: :cascade do |t|
     t.bigint "workflow_task_id", null: false
     t.bigint "completed_by_id"
@@ -1424,6 +1445,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_130000) do
   add_foreign_key "boards", "organizations"
   add_foreign_key "boards", "users", column: "created_by_id"
   add_foreign_key "catalog_sync_runs", "organizations"
+  add_foreign_key "client_account_tags", "client_accounts", on_delete: :cascade
+  add_foreign_key "client_account_tags", "tags", on_delete: :cascade
   add_foreign_key "client_accounts", "order_forms", on_delete: :nullify
   add_foreign_key "client_accounts", "organizations"
   add_foreign_key "client_accounts", "users", column: "billing_user_id", on_delete: :nullify
@@ -1549,6 +1572,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_130000) do
   add_foreign_key "property_sites", "organizations"
   add_foreign_key "saved_listing_views", "organizations"
   add_foreign_key "saved_listing_views", "users"
+  add_foreign_key "tags", "organizations"
   add_foreign_key "task_checklist_items", "users", column: "completed_by_id"
   add_foreign_key "task_checklist_items", "workflow_tasks"
   add_foreign_key "task_comments", "task_comments", column: "parent_comment_id"
