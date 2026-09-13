@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Orders::Approval do
+RSpec.describe Orders::Approve do
   include ActiveJob::TestHelper
 
   let!(:organization) { Organization.create!(name: "Approval Agency", slug: "approval-workflow") }
@@ -35,7 +35,7 @@ RSpec.describe Orders::Approval do
 
   it "approves once, creates scoped deliverables, and queues the board workflow" do
     expect {
-      described_class.new(order:, actor: nil).call
+      described_class.call(order:, actor: nil)
     }.to change { order.reload.order_deliverables.count }.from(0).to(1)
       .and change(BoardWorkflowRun, :count).by(1)
 
@@ -54,20 +54,20 @@ RSpec.describe Orders::Approval do
   end
 
   it "is safe to retry after the deliverables and workflow run already exist" do
-    described_class.new(order:, actor: nil).call
+    described_class.call(order:, actor: nil)
     clear_enqueued_jobs
 
     expect {
-      described_class.new(order: order.reload, actor: nil).call
+      described_class.call(order: order.reload, actor: nil)
     }.not_to change { [ order.reload.order_deliverables.count, BoardWorkflowRun.count ] }
     expect(enqueued_jobs.map { |job| job[:job] }).to include(BoardWorkflowJob)
   end
 
   it "records one approval event per order and listing across retries" do
-    described_class.new(order:, actor: nil).call
+    described_class.call(order:, actor: nil)
 
     expect {
-      described_class.new(order: order.reload, actor: nil).call
+      described_class.call(order: order.reload, actor: nil)
     }.not_to change(ActivityEvent, :count)
 
     expect(ActivityEvent.where(subject: order, event_type: "order.approved").count).to eq(1)
@@ -75,7 +75,7 @@ RSpec.describe Orders::Approval do
   end
 
   it "does not create a second invoice line for a package component" do
-    described_class.new(order:, actor: nil).call
+    described_class.call(order:, actor: nil)
 
     expect(order.reload.order_items.count).to eq(1)
     expect(order.order_deliverables.count).to eq(1)

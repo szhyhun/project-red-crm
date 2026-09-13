@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Orders::Approval do
+RSpec.describe Orders::Approve do
   let!(:organization) { Organization.create!(name: "Approval transaction agency", slug: "approval-transaction-agency") }
   let!(:manager) do
     User.create!(organization:, name: "Approval transaction manager", email: "approval-transaction@example.test",
@@ -26,7 +26,7 @@ RSpec.describe Orders::Approval do
     allow(materializer).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(order))
 
     expect {
-      described_class.new(order:, actor: manager).call
+      described_class.call(order:, actor: manager)
     }.to raise_error(ActiveRecord::RecordInvalid)
 
     expect(order.reload).to have_attributes(status: "draft", approved_at: nil)
@@ -38,14 +38,14 @@ RSpec.describe Orders::Approval do
     trigger = instance_double(Workflows::Trigger, enqueue!: true)
     allow(Workflows::Trigger).to receive(:new).and_return(trigger)
 
-    described_class.new(order:, actor: manager).call
+    described_class.call(order:, actor: manager)
 
     expect(Workflows::Trigger).to have_received(:new).with(order: have_attributes(id: order.id, status: "approved"))
     expect(trigger).to have_received(:enqueue!)
   end
 
   it "records the approving actor on both order and listing activity" do
-    described_class.new(order:, actor: manager).call
+    described_class.call(order:, actor: manager)
 
     expect(ActivityEvent.where(event_type: "order.approved").where(actor: manager).count).to eq(2)
     expect(ActivityEvent.where(subject: order, event_type: "order.approved").sole.payload).to include(

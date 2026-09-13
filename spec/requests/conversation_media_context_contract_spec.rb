@@ -24,7 +24,7 @@ RSpec.describe "Conversation media context contract", type: :request do
     }).create!
   end
   let!(:deliverable) do
-    Orders::Approval.new(order:, actor: manager).call
+    Orders::Approve.call(order:, actor: manager)
     order.reload.order_deliverables.sole
   end
   let!(:asset) do
@@ -92,7 +92,8 @@ RSpec.describe "Conversation media context contract", type: :request do
       client_account_id: client_account.id, listing_id: listing.id, payment_mode: "pay_later",
       items: [ { product_variant_id: other_variant.id, quantity: 1 } ]
     }).create!
-    other_deliverable = Orders::Approval.new(order: other_order, actor: manager).call.order_deliverables.sole
+    Orders::Approve.call(order: other_order, actor: manager)
+    other_deliverable = other_order.reload.order_deliverables.sole
     foreign_asset = other_deliverable.media_assets.create!(organization:, listing:, order: other_order,
                                                             order_item: other_order.order_items.sole, kind: :final,
                                                             status: :ready, storage_key: "private/other.jpg",

@@ -32,7 +32,7 @@ RSpec.describe "Media workflow API", type: :request do
     ).create!
   end
   let!(:deliverable) do
-    Orders::Approval.new(order:, actor: manager).call
+    Orders::Approve.call(order:, actor: manager)
     order.reload.order_deliverables.sole
   end
 
@@ -220,7 +220,8 @@ RSpec.describe "Media workflow API", type: :request do
         items: [ { product_variant_id: another_variant.id, quantity: 1 } ]
       }
     ).create!
-    another_deliverable = Orders::Approval.new(order: another_order, actor: manager).call.order_deliverables.sole
+    Orders::Approve.call(order: another_order, actor: manager)
+    another_deliverable = another_order.reload.order_deliverables.sole
     asset = another_deliverable.media_assets.create!(organization:, listing:, kind: :final, status: :ready,
                                                       storage_key: "organizations/#{organization.id}/deliverables/foreign.jpg",
                                                       filename: "foreign.jpg", content_type: "image/jpeg", byte_size: 5,

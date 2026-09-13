@@ -32,7 +32,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
     # canonical endpoint instead of silently treating that legacy state as
     # complete.
     if update_params[:status].to_s == "approved" && approval_service_required?(order)
-      Orders::Approval.new(order:, actor: current_user).call
+      approve_order!(order)
       render json: { order: serialize(order.reload, include_details: true) }
       return
     end
@@ -51,7 +51,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
   def approve
     order = policy_scope(Order).find(params[:id])
     authorize order, :update?
-    Orders::Approval.new(order:, actor: current_user).call
+    approve_order!(order)
     render json: { order: serialize(order.reload, include_details: true) }
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
@@ -158,5 +158,10 @@ class Api::V1::OrdersController < Api::V1::BaseController
 
   def approval_service_required?(order)
     !order.approved? || order.approved_at.blank? || order.order_deliverables.none?
+  end
+
+  def approve_order!(order)
+    result = Orders::Approve.call(order:, actor: current_user)
+    raise result.failure.original_error || result.failure if result.failure?
   end
 end

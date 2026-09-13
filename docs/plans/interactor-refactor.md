@@ -74,8 +74,9 @@ The first implementation slice is now in place:
   and preserve retry/error semantics.
 
 The remaining work is to apply the same boundary to the large Aryeo resource
-mapping internals, order approval/materialization, and conversation retention
-without adding wrappers that do not remove a competing path.
+mapping internals, deliverable materialization, and conversation retention
+without adding wrappers that do not remove a competing path. Order approval
+itself now uses `Orders::ApproveOrder` plus `Orders::EnqueueWorkflow`.
 
 | Current entry point | Proposed business action | Durable result |
 | --- | --- | --- |
@@ -92,7 +93,7 @@ without adding wrappers that do not remove a competing path.
 The first three rows are implemented as the initial extraction because the
 Aryeo work has the clearest terminal-state and partial-failure requirements.
 Workflow execution and notification/media actions are now also decomposed.
-The next targets are order approval/materialization, the large Aryeo resource
+The next targets are deliverable materialization, the large Aryeo resource
 mapping internals, and conversation retention; each must remove a competing
 path rather than add a wrapper around an unchanged service.
 
