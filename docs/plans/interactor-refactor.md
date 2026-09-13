@@ -60,6 +60,23 @@ to compose the same rules in different workflows.
 
 ## Current job-to-interactor map
 
+The first implementation slice is now in place:
+
+- `ApplicationInteractor` provides a small context with typed failures and
+  step records; `ApplicationOrganizer` composes reusable actions.
+- Media verification, Aryeo media copying, notification delivery, message
+  notification, stale-import recovery, and import orchestration now run
+  through Interactor entry points.
+- Workflow execution is split into action Interactors for parent tasks, child
+  tasks, placements, deliverable links, user assignment, and group assignment.
+  The old monolithic `Workflows::Runner` path has been removed.
+- Queue jobs are adapters: they load the durable record, call the Interactor,
+  and preserve retry/error semantics.
+
+The remaining work is to apply the same boundary to the large Aryeo resource
+mapping internals, order approval/materialization, and conversation retention
+without adding wrappers that do not remove a competing path.
+
 | Current entry point | Proposed business action | Durable result |
 | --- | --- | --- |
 | `AryeoImportJob` | `Aryeo::RunImport` organizer | `IntegrationImportRun` is completed, completed with errors, or failed |
@@ -72,11 +89,12 @@ to compose the same rules in different workflows.
 | `Conversations::NotifyJob` | `Conversations::PublishMessage` | Participants, unread state, and Action Cable notification are consistent |
 | `Conversations::RetentionJob` | `Conversations::PurgeExpired` | Expired messages and private attachments are removed by policy |
 
-The first three rows are the next extraction target because the current Aryeo
-work has the clearest terminal-state and partial-failure requirements. The
-order/workflow rows come next because approval creates production work. Chat,
-notifications, and media verification follow once their retry and live-update
-contracts have their own regression coverage.
+The first three rows are implemented as the initial extraction because the
+Aryeo work has the clearest terminal-state and partial-failure requirements.
+Workflow execution and notification/media actions are now also decomposed.
+The next targets are order approval/materialization, the large Aryeo resource
+mapping internals, and conversation retention; each must remove a competing
+path rather than add a wrapper around an unchanged service.
 
 ## Observability and composition contract
 

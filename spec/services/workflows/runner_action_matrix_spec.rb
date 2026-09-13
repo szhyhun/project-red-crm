@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Workflows::Runner do
+RSpec.describe Workflows::ExecuteRun do
   let!(:organization) { Organization.create!(name: "Action matrix agency", slug: "action-matrix-agency") }
   let!(:manager) do
     User.create!(organization:, name: "Action matrix manager", email: "action-matrix-manager@example.test",
@@ -51,7 +51,7 @@ RSpec.describe Workflows::Runner do
     workflow.actions.create!(action_type: "assign_to_user", configuration: { "user_id" => manager.id }, position: 4)
     workflow.actions.create!(action_type: "assign_to_group", configuration: { "user_group_id" => group.id }, position: 5)
 
-    expect { described_class.new(run:).call }.to change(WorkflowTask, :count).by(2)
+    expect { described_class.call(run:) }.to change(WorkflowTask, :count).by(2)
 
     parent = WorkflowTask.find_by!(workflow_group_key: "workflow:#{run.id}:parent")
     child = WorkflowTask.find_by!(workflow_group_key: "deliverable:#{deliverable.materialization_key}")

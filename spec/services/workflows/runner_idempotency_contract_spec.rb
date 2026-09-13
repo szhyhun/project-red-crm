@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Workflows::Runner do
+RSpec.describe Workflows::ExecuteRun do
   let!(:organization) { Organization.create!(name: "Runner contract agency", slug: "runner-contract-agency") }
   let!(:manager) do
     User.create!(organization:, name: "Runner contract manager", email: "runner-contract-manager@example.test",
@@ -64,13 +64,13 @@ RSpec.describe Workflows::Runner do
       position: 0
     )
 
-    expect { described_class.new(run:).call }.to change(WorkflowTask, :count).by(1)
+    expect { described_class.call(run:) }.to change(WorkflowTask, :count).by(1)
 
     completed_at = run.reload.completed_at
     task_id = deliverable.reload.workflow_tasks.sole.id
     step_id = run.steps.sole.id
 
-    expect { described_class.new(run: run.reload).call }.not_to change(WorkflowTask, :count)
+    expect { described_class.call(run: run.reload) }.not_to change(WorkflowTask, :count)
 
     expect(run.reload).to have_attributes(status: "succeeded", completed_at:)
     expect(run.steps.reload).to contain_exactly(have_attributes(id: step_id, status: "succeeded"))
@@ -84,7 +84,7 @@ RSpec.describe Workflows::Runner do
       position: 0
     ).save!(validate: false)
 
-    expect { described_class.new(run:).call }.not_to change(WorkflowTask, :count)
+    expect { described_class.call(run:) }.not_to change(WorkflowTask, :count)
 
     expect(run.reload).to be_succeeded_with_warnings
     expect(run.error).to include("Unsupported workflow action legacy_assign_to_queue")

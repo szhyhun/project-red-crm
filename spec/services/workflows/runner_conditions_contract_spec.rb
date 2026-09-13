@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Workflows::Runner do
+RSpec.describe Workflows::ExecuteRun do
   let!(:organization) { Organization.create!(name: "Condition runner agency", slug: "condition-runner-agency") }
   let!(:client_account) { ClientAccount.create!(organization:, name: "Condition runner client", kind: :agent) }
   let!(:listing) { Listing.create!(organization:, client_account:, address_line_1: "60 Condition Runner Street") }
@@ -54,7 +54,7 @@ RSpec.describe Workflows::Runner do
     workflow.conditions.create!(field: "package_product_id", operator: "equals", value: package.id, position: 0)
     workflow.actions.create!(action_type: "create_or_group_child_task", configuration: {}, position: 0)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     tasks = WorkflowTask.where(organization:, task_kind: "deliverable").joins(:order_deliverables)
     expect(tasks.count).to eq(2)
@@ -68,7 +68,7 @@ RSpec.describe Workflows::Runner do
     workflow.conditions.create!(field: "service_product_id", operator: "equals", value: video.id, position: 0)
     workflow.actions.create!(action_type: "create_or_group_child_task", configuration: {}, position: 0)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(organization:, task_kind: "deliverable").sole
     expect(task.order_deliverables.sole).to have_attributes(service_product: video, product_component: be_present)
@@ -81,7 +81,7 @@ RSpec.describe Workflows::Runner do
     workflow.conditions.create!(field: "service_product_id", operator: "equals", value: photography.id, position: 1)
     workflow.actions.create!(action_type: "create_or_group_child_task", configuration: {}, position: 0)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     expect(run.reload).to be_succeeded
     expect(WorkflowTask.where(organization:, task_kind: "deliverable")).to be_empty

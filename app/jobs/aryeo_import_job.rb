@@ -3,16 +3,10 @@ class AryeoImportJob < ApplicationJob
 
   def perform(import_run_id)
     run = IntegrationImportRun.find(import_run_id)
-    Aryeo::Importer.new(
-      run:,
-      resources: run.requested_resources,
-      import_start_date: run.import_start_date,
-      import_end_date: run.import_end_date,
-      conflict_resolution: run.conflict_resolution
-    ).call
-  rescue StandardError => error
-    run&.mark_failed!("#{error.class}: #{error.message}")
-    Rails.logger.error("Aryeo import #{import_run_id} failed: #{error.class}: #{error.message}")
-    raise
+    result = Aryeo::RunImport.call(run:)
+    return if result.success?
+
+    Rails.logger.error("Aryeo import #{import_run_id} failed: #{result.failure.class}: #{result.failure.message}")
+    raise result.failure.original_error || result.failure
   end
 end

@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Workflows::Runner do
+RSpec.describe Workflows::ExecuteRun do
   let!(:organization) { Organization.create!(name: "Runner mapping agency", slug: "runner-mapping-agency") }
   let!(:manager) do
     User.create!(organization:, name: "Runner mapping manager", email: "runner-mapping@example.test",
@@ -42,7 +42,7 @@ RSpec.describe Workflows::Runner do
     workflow.status_mappings.create!(source_status: "in_review", target_column_key: review.key, position: 0)
     add_action
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(task_kind: "deliverable").sole
     expect(task).to have_attributes(status: "review")
@@ -55,7 +55,7 @@ RSpec.describe Workflows::Runner do
     workflow.status_mappings.create!(source_status: "delivered", target_column_key: "done", position: 0)
     add_action
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(task_kind: "deliverable").sole
     expect(task).to have_attributes(status: "done")
@@ -69,7 +69,7 @@ RSpec.describe Workflows::Runner do
     mapping.save!(validate: false)
     add_action
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(task_kind: "deliverable").sole
     expect(task).to have_attributes(status: "todo")

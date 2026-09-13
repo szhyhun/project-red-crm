@@ -9,23 +9,7 @@ module Aryeo
     end
 
     def perform(at = Time.current)
-      IntegrationImportRun.where(status: :running).find_each do |run|
-        next unless run.stale?(at:)
-
-        message = "Aryeo import worker heartbeat expired at #{at.iso8601}"
-        run.mark_failed!(message, at:)
-        reconnect_connection_if_idle(run.integration_connection)
-        Rails.logger.error("Aryeo import #{run.id} marked failed: #{message}")
-      end
-    end
-
-    private
-
-    def reconnect_connection_if_idle(connection)
-      return unless connection.status_importing?
-      return if connection.integration_import_runs.running.exists?
-
-      connection.update!(status: :connected)
+      Aryeo::FailStaleImports.call(at:)
     end
   end
 end

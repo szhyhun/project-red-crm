@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Workflows::Runner do
+RSpec.describe Workflows::ExecuteRun do
   let!(:organization) { Organization.create!(name: "Runner Agency", slug: "runner-agency") }
   let!(:manager) do
     User.create!(organization:, name: "Workflow Manager", email: "runner-manager@example.test",
@@ -50,7 +50,7 @@ RSpec.describe Workflows::Runner do
     add_action("create_or_group_child_task", { "customer_visible" => true }, position: 1)
 
     expect {
-      described_class.new(run:).call
+      described_class.call(run:)
     }.to change(WorkflowTask, :count).by(2)
       .and change(WorkflowTaskPlacement, :count).by(2)
       .and change(WorkflowTaskDeliverable, :count).by(1)
@@ -68,7 +68,7 @@ RSpec.describe Workflows::Runner do
     workflow.status_mappings.create!(source_status: "not_started", target_column_key: "in_progress", position: 0)
     add_action("create_or_group_child_task", { "customer_visible" => true }, position: 0)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(task_kind: "deliverable").sole
     expect(task).to have_attributes(status: "in_progress")
@@ -79,10 +79,10 @@ RSpec.describe Workflows::Runner do
     add_action("create_parent_task", { "title" => "Production" }, position: 0)
     add_action("create_or_group_child_task", {}, position: 1)
 
-    described_class.new(run:).call
+    described_class.call(run:)
     counts = [ WorkflowTask.count, WorkflowTaskPlacement.count, WorkflowTaskDeliverable.count, run.steps.count ]
 
-    described_class.new(run: run.reload).call
+    described_class.call(run: run.reload)
 
     expect([ WorkflowTask.count, WorkflowTaskPlacement.count, WorkflowTaskDeliverable.count, run.reload.steps.count ]).to eq(counts)
     expect(WorkflowTask.where(workflow_group_key: "deliverable:#{order.order_deliverables.sole.materialization_key}").count).to eq(1)
@@ -92,7 +92,7 @@ RSpec.describe Workflows::Runner do
     workflow.conditions.create!(field: "deliverable_type", operator: "equals", value: "video", position: 0)
     add_action("create_or_group_child_task", {}, position: 0)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     expect(run.reload).to be_succeeded
     expect(run.steps.sole).to be_succeeded
@@ -107,7 +107,7 @@ RSpec.describe Workflows::Runner do
     add_action("create_or_group_child_task", {}, position: 0)
     add_action("place_on_board", { "board_id" => second_board.id, "column_key" => "in_progress" }, position: 1)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(task_kind: "deliverable").sole
     expect(task.home_placement).to have_attributes(board_id: board.id, is_home: true)
@@ -122,7 +122,7 @@ RSpec.describe Workflows::Runner do
     add_action("assign_to_user", { "user_id" => manager.id }, position: 1)
     add_action("assign_to_group", { "user_group_id" => group.id }, position: 2)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(task_kind: "deliverable").sole
     expect(task.assignee).to eq(manager)
@@ -133,7 +133,7 @@ RSpec.describe Workflows::Runner do
     action = add_action("link_deliverable", {}, position: 0)
     action.update_column(:action_type, "future_action")
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     expect(run.reload).to be_succeeded_with_warnings
     expect(run.error).to include("Unsupported workflow action future_action")
@@ -150,7 +150,7 @@ RSpec.describe Workflows::Runner do
     action.save!(validate: false)
 
     expect {
-      described_class.new(run:).call
+      described_class.call(run:)
     }.to raise_error(ActiveRecord::RecordNotFound)
 
     expect(run.reload).to be_failed

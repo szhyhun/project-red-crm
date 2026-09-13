@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Workflows::Runner do
+RSpec.describe Workflows::ExecuteRun do
   let!(:organization) { Organization.create!(name: "Recovery Agency", slug: "recovery-agency") }
   let!(:other_organization) { Organization.create!(name: "Other Recovery Agency", slug: "other-recovery-agency") }
   let!(:manager) do
@@ -42,7 +42,7 @@ RSpec.describe Workflows::Runner do
     )
     broken_action.save!(validate: false)
 
-    expect { described_class.new(run:).call }.to raise_error(ActiveRecord::RecordNotFound)
+    expect { described_class.call(run:) }.to raise_error(ActiveRecord::RecordNotFound)
 
     expect(run.reload).to be_failed
     expect(run.steps.order(:position).pluck(:status)).to eq(%w[succeeded succeeded succeeded failed])
@@ -53,7 +53,7 @@ RSpec.describe Workflows::Runner do
     broken_action.update_columns(configuration: { "board_id" => board.id, "column_key" => "todo" })
     run.update!(status: :pending, error: nil, completed_at: nil)
 
-    expect { described_class.new(run: run.reload).call }.not_to raise_error
+    expect { described_class.call(run: run.reload) }.not_to raise_error
 
     expect(run.reload).to be_succeeded
     expect(run.steps.order(:position).pluck(:status)).to all(eq("succeeded"))
@@ -75,7 +75,7 @@ RSpec.describe Workflows::Runner do
     warning_run = warning_workflow.runs.create!(organization:, order: order_without_listing,
                                                 idempotency_key: "warning-#{SecureRandom.uuid}", triggered_at: Time.current)
 
-    described_class.new(run: warning_run).call
+    described_class.call(run: warning_run)
 
     expect(warning_run.reload).to be_succeeded_with_warnings
     expect(warning_run.error).to include("No listing is available")

@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Workflows::Runner do
+RSpec.describe Workflows::ExecuteRun do
   let!(:organization) { Organization.create!(name: "Target board agency", slug: "target-board-agency") }
   let!(:manager) do
     User.create!(organization:, name: "Target board manager", email: "target-board-manager@example.test",
@@ -44,7 +44,7 @@ RSpec.describe Workflows::Runner do
     workflow.actions.create!(action_type: "place_on_board",
                              configuration: { "board_id" => production_board.id, "column_key" => "todo" }, position: 1)
 
-    expect { described_class.new(run:).call }.not_to raise_error
+    expect { described_class.call(run:) }.not_to raise_error
 
     expect(run.reload).to be_succeeded_with_warnings
     expect(run.error).to include("No listing is available for the target board")
@@ -59,7 +59,7 @@ RSpec.describe Workflows::Runner do
     workflow.actions.create!(action_type: "place_on_board",
                              configuration: { "board_id" => production_board.id, "column_key" => "in_progress" }, position: 1)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(organization:, task_kind: "deliverable").sole
     expect(run.reload).to be_succeeded
@@ -75,7 +75,7 @@ RSpec.describe Workflows::Runner do
     workflow.actions.create!(action_type: "create_or_group_child_task", configuration: { "customer_visible" => false }, position: 0)
     workflow.actions.create!(action_type: "place_on_board", configuration: { "board_id" => target_board.id }, position: 1)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(organization:, task_kind: "deliverable").sole
     expect(run.reload).to be_succeeded_with_warnings

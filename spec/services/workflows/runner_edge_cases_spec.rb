@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Workflows::Runner do
+RSpec.describe Workflows::ExecuteRun do
   let!(:organization) { Organization.create!(name: "Runner edge agency", slug: "runner-edge-agency") }
   let!(:manager) do
     User.create!(organization:, name: "Runner edge manager", email: "runner-edge-manager@example.test",
@@ -41,7 +41,7 @@ RSpec.describe Workflows::Runner do
     add_action("create_or_group_child_task", {}, position: 0)
     add_action("assign_to_user", { "user_id" => suspended_user.id }, position: 1)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     expect(run.reload).to be_succeeded_with_warnings
     expect(run.error).to include("active organization user")
@@ -54,7 +54,7 @@ RSpec.describe Workflows::Runner do
     workflow.actions.build(action_type: "assign_to_group", configuration: { "user_group_id" => 999_999 }, position: 1)
       .save!(validate: false)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     expect(run.reload).to be_succeeded_with_warnings
     expect(run.error).to include("not in this organization")
@@ -67,7 +67,7 @@ RSpec.describe Workflows::Runner do
                            configuration: { "board_id" => organization.default_board.id,
                                             "column_key" => "does_not_exist" }, position: 1).save!(validate: false)
 
-    described_class.new(run:).call
+    described_class.call(run:)
 
     task = WorkflowTask.where(workflow_group_key: "deliverable:#{deliverable.materialization_key}").sole
     expect(task.home_placement.workflow_column).to eq(organization.default_board.workflow_columns.ordered.first)
@@ -78,7 +78,7 @@ RSpec.describe Workflows::Runner do
     deliverable.update!(cancelled_at: Time.current)
     add_action("create_or_group_child_task", {}, position: 0)
 
-    expect { described_class.new(run:).call }.not_to change(WorkflowTask, :count)
+    expect { described_class.call(run:) }.not_to change(WorkflowTask, :count)
 
     expect(run.reload).to be_succeeded
     expect(run.steps.sole.output).to include("task_ids" => [], "deliverable_ids" => [])
@@ -122,7 +122,7 @@ RSpec.describe Workflows::Runner do
     )
 
     expect do
-      described_class.new(run: run_without_listing).call
+      described_class.call(run: run_without_listing)
     end.not_to change(WorkflowTask, :count)
 
     expect(run_without_listing.reload).to be_succeeded_with_warnings
