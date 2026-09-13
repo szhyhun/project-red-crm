@@ -4,8 +4,6 @@ class ClientAccount < ApplicationRecord
   belongs_to :organization
   belongs_to :billing_user, class_name: "User", optional: true
   has_many :client_memberships, dependent: :destroy
-  has_many :customer_team_memberships, dependent: :destroy
-  has_many :customer_teams, through: :customer_team_memberships
   has_many :pricing_plans, dependent: :destroy
   has_many :users, through: :client_memberships
   has_many :listings, dependent: :restrict_with_error

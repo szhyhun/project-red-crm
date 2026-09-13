@@ -74,33 +74,45 @@ module Aryeo
       client
     end
 
+    # An Aryeo customer team is one of our client accounts: it holds people,
+    # and its settings apply to everyone ordering under it. Each person is
+    # brought in with an invitation that has not been sent, so nobody hears from
+    # us until staff invite them.
     def import_customer_team
       external = session.external_id(payload)
       return if external.blank?
 
       team = session.record_for("customer_teams", external)&.record
-      name = session.value(payload, "name", "brokerage_name").presence || "Aryeo customer team #{external}"
-      team ||= session.organization.customer_teams.find_by("lower(name) = ?", name.downcase)
-      team ||= session.organization.customer_teams.build
+      team = nil unless team.is_a?(ClientAccount)
+      team ||= session.organization.client_accounts.find_by("metadata ->> 'aryeo_team_id' = ?", external)
+      team ||= session.organization.client_accounts.build(kind: :team)
       team.assign_attributes(
-        name:,
+        name: session.value(payload, "name", "brokerage_name").presence || "Aryeo customer team #{external}",
         brokerage_name: session.value(payload, "brokerage_name"),
         brokerage_website: session.value(payload, "brokerage_website"),
         website: session.value(payload, "website"),
         logo_url: session.value(payload, "logo_url"),
         description: session.value(payload, "description"),
-        archived: session.boolean_value(payload, "is_archived"),
-        origin: :aryeo
+        internal_note: session.value(payload, "internal_notes", "internal_note"),
+        archived_at: session.boolean_value(payload, "is_archived") ? (team.archived_at || Time.current) : nil,
+        origin: :aryeo,
+        metadata: team.metadata.merge("aryeo_team_id" => external)
       )
       team.save!
 
       session.customer_payloads_for(payload).each do |customer_payload|
         customer_id = session.external_id(customer_payload)
-        account = session.record_for("clients", customer_id)&.record
-        if customer_id.present? && account.blank? && session.customer_payload_has_profile(customer_payload)
-          account = session.import_dependency(:clients, customer_payload)
+        if customer_id.present? && session.record_for("clients", customer_id).blank? && session.customer_payload_has_profile(customer_payload)
+          session.import_dependency(:clients, customer_payload)
         end
-        team.customer_team_memberships.find_or_create_by!(client_account: account) if account
+        session.import_team_member(team, customer_payload)
+      end
+      session.membership_payloads_for(payload).each do |membership_payload|
+        person = session.records(membership_payload, "customer_user", "customer", "user").first
+        next if person.blank?
+
+        session.import_team_member(team, person, role: session.value(membership_payload, "role"),
+                                                 status: session.value(membership_payload, "status"))
       end
       team
     end

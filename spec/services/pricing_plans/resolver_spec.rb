@@ -2,38 +2,45 @@ require "rails_helper"
 
 RSpec.describe PricingPlans::Resolver do
   let(:organization) { Organization.create!(name: "Pricing Agency", slug: "pricing-agency") }
-  let(:client) { ClientAccount.create!(organization:, name: "Avery Agent") }
+  let(:team) { ClientAccount.create!(organization:, name: "Oak Bay Realty", kind: :team) }
+  let(:person) do
+    User.create!(organization:, name: "Avery Agent", email: "avery-pricing@example.test",
+                 password: "long-enough-password", role: :client_member)
+  end
   let(:product) { Product.create!(organization:, slug: "premium-photo", title: "Premium Photo", kind: :service) }
   let(:variant) { product.product_variants.create!(title: "Standard", price_cents: 50_000) }
 
-  def resolve
-    described_class.new(client_account: client, product_variant: variant).price_cents
+  def resolve(user: nil)
+    described_class.new(client_account: team, product_variant: variant, user:).price_cents
   end
 
-  it "uses a client plan over a team plan" do
-    team = organization.customer_teams.create!(name: "Oak Bay Realty")
-    team.customer_team_memberships.create!(client_account: client)
-    team_plan = organization.pricing_plans.create!(name: "Team", customer_team: team)
-    team_plan.pricing_plan_prices.create!(product_variant: variant, price_cents: 42_000)
-    client_plan = organization.pricing_plans.create!(name: "Client", client_account: client)
-    client_plan.pricing_plan_prices.create!(product_variant: variant, price_cents: 39_000)
-
-    expect(resolve).to eq(39_000)
+  it "charges the list price when neither the team nor the person has a plan" do
+    expect(resolve(user: person)).to eq(50_000)
   end
 
-  it "uses team priority and falls back to the catalog price" do
-    first_team = organization.customer_teams.create!(name: "First Team")
-    second_team = organization.customer_teams.create!(name: "Second Team")
-    [ first_team, second_team ].each { |team| team.customer_team_memberships.create!(client_account: client) }
-    first_plan = organization.pricing_plans.create!(name: "First", customer_team: first_team, priority: 10)
-    first_plan.pricing_plan_prices.create!(product_variant: variant, price_cents: 44_000)
-    second_plan = organization.pricing_plans.create!(name: "Second", customer_team: second_team, priority: 1)
-    second_plan.pricing_plan_prices.create!(product_variant: variant, price_cents: 43_000)
+  it "charges the team's plan, and the list price for anything the plan leaves out" do
+    plan = organization.pricing_plans.create!(name: "Team", client_account: team)
+    plan.pricing_plan_prices.create!(product_variant: variant, price_cents: 42_000)
+    expect(resolve).to eq(42_000)
 
-    expect(resolve).to eq(43_000)
+    plan.pricing_plan_prices.destroy_all
+    expect(resolve).to eq(50_000)
+  end
 
-    second_plan.pricing_plan_prices.destroy_all
-    first_plan.pricing_plan_prices.destroy_all
+  it "lets a price promised to the person beat the team's plan" do
+    organization.pricing_plans.create!(name: "Team", client_account: team)
+                .pricing_plan_prices.create!(product_variant: variant, price_cents: 42_000)
+    organization.pricing_plans.create!(name: "Avery", user: person)
+                .pricing_plan_prices.create!(product_variant: variant, price_cents: 39_000)
+
+    expect(resolve(user: person)).to eq(39_000)
+    expect(resolve).to eq(42_000)
+  end
+
+  it "ignores a plan that has been switched off" do
+    organization.pricing_plans.create!(name: "Old", client_account: team, active: false)
+                .pricing_plan_prices.create!(product_variant: variant, price_cents: 10_000)
+
     expect(resolve).to eq(50_000)
   end
 end

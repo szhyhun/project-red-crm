@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_12_170000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_12_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -375,7 +375,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_170000) do
     t.index ["organization_id", "kind", "last_message_at"], name: "idx_on_organization_id_kind_last_message_at_fcb0d57e64"
     t.index ["organization_id"], name: "index_conversations_on_organization_id"
     t.index ["retention_period"], name: "index_conversations_on_retention_period"
-    t.check_constraint "retention_period::text = ANY (ARRAY['two_months'::character varying, 'six_months'::character varying, 'one_year'::character varying, 'forever'::character varying]::text[])", name: "conversations_retention_period_values"
+    t.check_constraint "retention_period::text = ANY (ARRAY['two_months'::character varying::text, 'six_months'::character varying::text, 'one_year'::character varying::text, 'forever'::character varying::text])", name: "conversations_retention_period_values"
   end
 
   create_table "coupons", force: :cascade do |t|
@@ -413,35 +413,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_170000) do
     t.index ["user_id"], name: "index_credit_transactions_on_user_id"
     t.check_constraint "amount_cents <> 0", name: "credit_transactions_amount_not_zero"
     t.check_constraint "balance_after_cents >= 0", name: "credit_transactions_balance_not_negative"
-  end
-
-  create_table "customer_team_memberships", force: :cascade do |t|
-    t.bigint "customer_team_id", null: false
-    t.bigint "client_account_id", null: false
-    t.boolean "primary", default: false, null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["client_account_id"], name: "index_customer_team_memberships_on_client_account_id"
-    t.index ["customer_team_id", "client_account_id"], name: "idx_on_customer_team_id_client_account_id_31b990e941", unique: true
-    t.index ["customer_team_id"], name: "index_customer_team_memberships_on_customer_team_id"
-  end
-
-  create_table "customer_teams", force: :cascade do |t|
-    t.bigint "organization_id", null: false
-    t.string "name", null: false
-    t.string "brokerage_name"
-    t.string "brokerage_website"
-    t.string "website"
-    t.string "logo_url"
-    t.text "description"
-    t.boolean "archived", default: false, null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.string "origin", default: "native", null: false
-    t.index "organization_id, lower((name)::text)", name: "index_customer_teams_on_organization_and_lower_name", unique: true
-    t.index ["organization_id", "archived"], name: "index_customer_teams_on_organization_id_and_archived"
-    t.index ["organization_id", "origin"], name: "index_customer_teams_on_organization_id_and_origin"
-    t.index ["organization_id"], name: "index_customer_teams_on_organization_id"
   end
 
   create_table "external_records", force: :cascade do |t|
@@ -1064,7 +1035,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_170000) do
     t.bigint "organization_id", null: false
     t.string "name", null: false
     t.bigint "client_account_id"
-    t.bigint "customer_team_id"
     t.bigint "coupon_id"
     t.integer "priority", default: 0, null: false
     t.boolean "active", default: true, null: false
@@ -1074,12 +1044,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_170000) do
     t.index ["client_account_id", "active"], name: "index_pricing_plans_on_client_account_id_and_active"
     t.index ["client_account_id"], name: "index_pricing_plans_on_client_account_id"
     t.index ["coupon_id"], name: "index_pricing_plans_on_coupon_id"
-    t.index ["customer_team_id", "active", "priority"], name: "idx_on_customer_team_id_active_priority_0e9ec032fc"
-    t.index ["customer_team_id"], name: "index_pricing_plans_on_customer_team_id"
     t.index ["organization_id", "active"], name: "index_pricing_plans_on_organization_id_and_active"
     t.index ["organization_id"], name: "index_pricing_plans_on_organization_id"
     t.index ["user_id", "active"], name: "index_pricing_plans_on_user_and_active"
-    t.check_constraint "((client_account_id IS NOT NULL)::integer + (customer_team_id IS NOT NULL)::integer + (user_id IS NOT NULL)::integer) = 1", name: "pricing_plans_exactly_one_owner"
+    t.check_constraint "((client_account_id IS NOT NULL)::integer + (user_id IS NOT NULL)::integer) = 1", name: "pricing_plans_exactly_one_owner"
   end
 
   create_table "product_components", force: :cascade do |t|
@@ -1431,9 +1399,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_170000) do
   add_foreign_key "credit_transactions", "organizations"
   add_foreign_key "credit_transactions", "users"
   add_foreign_key "credit_transactions", "users", column: "actor_id", on_delete: :nullify
-  add_foreign_key "customer_team_memberships", "client_accounts"
-  add_foreign_key "customer_team_memberships", "customer_teams"
-  add_foreign_key "customer_teams", "organizations"
   add_foreign_key "external_records", "integration_connections"
   add_foreign_key "external_records", "integration_import_runs"
   add_foreign_key "external_records", "organizations"
@@ -1522,7 +1487,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_170000) do
   add_foreign_key "pricing_plan_prices", "product_variants"
   add_foreign_key "pricing_plans", "client_accounts"
   add_foreign_key "pricing_plans", "coupons"
-  add_foreign_key "pricing_plans", "customer_teams"
   add_foreign_key "pricing_plans", "organizations"
   add_foreign_key "pricing_plans", "users"
   add_foreign_key "product_components", "organizations"

@@ -14,7 +14,6 @@ module Capabilities
     invoices: "Invoice",
     products: "Product",
     client_accounts: "ClientAccount",
-    customer_teams: "CustomerTeam",
     conversations: "Conversation",
     media_assets: "MediaAsset",
     workflow_tasks: "WorkflowTask",

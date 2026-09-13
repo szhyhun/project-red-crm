@@ -285,10 +285,42 @@ module Aryeo
       team_payload ||= { "id" => team_external } if team_external.present?
       return if team_payload.blank? || external_id(team_payload).blank?
 
-      team_payload = team_payload.merge("customer_ids" => (customer_ids(team_payload) + [ external_id(client_payload) ]).compact.uniq)
+      person = client_payload.except("customer_team", "team")
       team = record_for("customer_teams", external_id(team_payload))&.record
-      team ||= import_dependency(:customer_teams, team_payload)
-      team&.customer_team_memberships&.find_or_create_by!(client_account: client)
+      team = nil unless team.is_a?(ClientAccount)
+      team ||= import_dependency(:customer_teams, team_payload.merge("customers" => [ person ]))
+      import_team_member(team, person) if team
+    end
+
+    # Aryeo's membership statuses, in ours. Nobody imported is active: access
+    # begins when staff send our own invitation and the person accepts it.
+    TEAM_MEMBER_STATUSES = { "archived" => "archived", "revoked" => "revoked", "deleted" => "revoked" }.freeze
+
+    def import_team_member(team, person_payload, role: nil, status: nil)
+      email = value(person_payload, "email", "email_address").to_s.strip.downcase
+      return if email.blank?
+
+      admin = role.to_s.casecmp("admin").zero?
+      user = @organization.users.find_by("LOWER(email) = ?", email)
+      return if user&.internal? || (user.nil? && User.where("LOWER(email) = ?", email).exists?)
+
+      user ||= begin
+        password = SecureRandom.urlsafe_base64(32)
+        @organization.users.create!(
+          name: person_name(person_payload).presence || email.split("@").first, email:,
+          phone: value(person_payload, "phone", "phone_number"),
+          role: admin ? :client_admin : :client_member, origin: :aryeo, password:, password_confirmation: password
+        )
+      end
+      membership = team.client_memberships.find_or_initialize_by(user:)
+      return membership if membership.persisted?
+
+      membership.update!(role: admin ? :admin : :member, status: TEAM_MEMBER_STATUSES.fetch(status.to_s.downcase, "invited"))
+      membership
+    end
+
+    def membership_payloads_for(payload)
+      records(payload, "customer_team_memberships", "memberships")
     end
 
     def import_order_appointments(order, payload)

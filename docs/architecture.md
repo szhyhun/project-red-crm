@@ -44,7 +44,7 @@ All application endpoints are under `/api/v1`.
 | `Appointment` | Scheduled listing work. |
 | `Product` / `ProductVariant` | Catalog, package, service, and add-on facts with prices. |
 | `Tax` / `Coupon` / `TravelFee` | Organization pricing configuration; applying them to an order is a separate workflow. |
-| `CustomerTeam` / `PricingPlan` | Brokerage/team relationships and deterministic customer-specific variant price overrides. |
+| `PricingPlan` | Price overrides for a team (`ClientAccount`) or one person (`User`); a person's plan beats their team's. |
 | `Order` / `Invoice` / `Payment` | Commercial record; payment card data is never stored here. |
 | `MediaAsset` | A delivery media record pointing to a storage key. |
 | `PropertySite` | Published listing landing-page configuration. |

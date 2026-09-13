@@ -18,7 +18,7 @@ RSpec.describe PricingPlan, type: :model do
     plan = organization.pricing_plans.build(name: "Confused", client_account: account, user: person)
 
     expect(plan).not_to be_valid
-    expect(plan.errors.full_messages).to include("must belong to exactly one client account, customer team, or person")
+    expect(plan.errors.full_messages).to include("must belong to exactly one team or person")
     expect { plan.save!(validate: false) }.to raise_error(ActiveRecord::StatementInvalid, /pricing_plans_exactly_one_owner/)
   end
 

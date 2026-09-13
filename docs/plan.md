@@ -61,10 +61,8 @@ records configure the calculation; they do not make past orders mutable.
 
 - `PayRun`: draft, approved, and paid periods containing `PayrollItem`s.
 - Add `pay_run_id` to `PayrollItem` when pay-run approval is implemented.
-- `CustomerTeam` and `CustomerTeamMembership`: a real brokerage/team model in
-  place of a free-text brokerage name.
-- `CreditTransaction`: append-only client credit/debit ledger. Invoice balance
-  remains derived from invoices rather than duplicated.
+- `CreditTransaction`: append-only per-person credit ledger (built). Invoice
+  balance remains derived from invoices rather than duplicated.
 
 ### Scheduling and dispatch
 

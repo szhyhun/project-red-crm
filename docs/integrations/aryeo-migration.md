@@ -73,10 +73,15 @@ importer brings that record in as a dependency. This prevents orders from
 silently landing under the placeholder imported client or losing their
 catalog links merely because the user selected a narrower resource group.
 
-Existing raw `customer_teams` external records can be mapped once with
-`bin/rails customer_teams:backfill`. The task is idempotent and deliberately
-keeps `ClientAccount#brokerage_name` in place until customer-facing screens are
-migrated to read teams directly.
+An Aryeo customer team becomes a `ClientAccount` of kind `team`, carrying its
+brokerage, website, logo, description, internal notes and archived state. Each
+person in it who has an email becomes a customer `User` with a
+`ClientMembership` in that team: the role follows Aryeo's, a revoked, deleted
+or archived membership stays that way, and every other one arrives as
+`invited`. Nobody imported is emailed or given access; that begins when staff
+send our own invitation and the person accepts it. Teams recorded by earlier
+imports as the retired `CustomerTeam` were converted in place by the
+`RetireCustomerTeams` migration, pricing plans and external records included.
 
 ## Import controls and conflicts
 

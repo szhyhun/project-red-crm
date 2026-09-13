@@ -28,7 +28,7 @@ RSpec.describe Aryeo::ResourceImporter do
     expect(product.package_components).to be_empty
   end
 
-  it "maps a customer team and its profiled customer dependency" do
+  it "maps a customer team to a client account holding its people" do
     team = described_class.call(
       session:,
       name: :customer_teams,
@@ -40,7 +40,9 @@ RSpec.describe Aryeo::ResourceImporter do
       }
     )
 
-    expect(team).to be_aryeo
-    expect(team.client_accounts.pluck(:email)).to eq([ "avery@example.test" ])
+    expect(team).to be_a(ClientAccount).and have_attributes(kind: "team", origin: "aryeo")
+    expect(team.client_memberships.sole).to have_attributes(status: "invited", role: "member")
+    expect(team.client_memberships.sole.user).to have_attributes(email: "avery@example.test", role: "client_member")
+    expect(organization.client_accounts.find_by!(email: "avery@example.test").kind).not_to eq("team")
   end
 end

@@ -846,10 +846,9 @@ Rules:
   old rule, and removing people silently would cut them off from conversations
   they are already in.
 
-`CustomerTeam` is a separate, older record and not part of this model: it
-groups client accounts so one pricing plan can apply to all of them. It arrived
-with the Aryeo import model, has no rows today and no CRM screen, and is used
-only by the pricing-plan resolver. Whether to keep it is an open question.
+The older `CustomerTeam` record, which grouped client accounts, has been
+retired: a pricing plan belongs to a team (`ClientAccount`) or to one person,
+and Aryeo customer teams import as client accounts holding their people.
 
 Build order:
 

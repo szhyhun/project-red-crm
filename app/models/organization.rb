@@ -1,7 +1,6 @@
 class Organization < ApplicationRecord
   has_many :users, dependent: :restrict_with_error
   has_many :client_accounts, dependent: :destroy
-  has_many :customer_teams, dependent: :destroy
   has_many :products, dependent: :destroy
   has_many :taxes, dependent: :destroy
   has_many :coupons, dependent: :destroy

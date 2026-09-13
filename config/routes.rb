@@ -93,9 +93,6 @@ Rails.application.routes.draw do
         post :accept, on: :member
       end
       get "portal/memberships", to: "client_memberships#mine"
-      resources :customer_teams, only: %i[index create update destroy] do
-        resources :memberships, only: %i[create destroy], controller: "customer_team_memberships"
-      end
       resource :profile, only: %i[show update], controller: "profile"
       resources :staff, only: %i[index create update], controller: "staff"
       resources :customer_users, only: %i[index show update] do

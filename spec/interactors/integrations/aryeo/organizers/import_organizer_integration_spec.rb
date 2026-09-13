@@ -198,7 +198,11 @@ RSpec.describe Integrations::Aryeo::Organizers::ImportOrganizer do
     expect(order.listing).to eq(listing)
     expect(order.order_items.pluck(:title)).to contain_exactly("Premium photos")
     expect(organization.appointments.find_by("notes LIKE ?", "%[aryeo:appointment-1]%")).to have_attributes(listing:, status: "confirmed")
-    expect(organization.customer_teams.find_by!(name: "Oak Bay Realty").client_accounts).to contain_exactly(listing.client_account)
+    team = organization.client_accounts.find_by!(name: "Oak Bay Realty")
+    expect(team).to be_team
+    # The person joins the team with an invitation nobody has sent yet.
+    expect(team.client_memberships.sole).to have_attributes(status: "invited", role: "member")
+    expect(team.client_memberships.sole.user.email).to eq("avery@example.test")
     expect(run.reload.coverage).to include(
       "clients" => include("status" => "imported_as_dependency"),
       "customer_teams" => include("status" => "imported_as_dependency"),
@@ -399,15 +403,27 @@ RSpec.describe Integrations::Aryeo::Organizers::ImportOrganizer do
         block.call({ "id" => "customer-1", "name" => "Avery Agent", "email" => "avery@example.test" })
       when "customer-teams"
         block.call({ "id" => "team-1", "name" => "Oak Bay Realty", "brokerage_website" => "https://oakbay.example.test",
-                     "customer_ids" => [ "customer-1" ], "is_archived" => false, "internal_notes" => "Keep in Aryeo payload" })
+                     "customer_ids" => [ "customer-1" ], "is_archived" => false, "internal_notes" => "Keep in Aryeo payload",
+                     "customer_team_memberships" => [
+                       { "role" => "ADMIN", "status" => "ACTIVE",
+                         "customer_user" => { "id" => "customer-2", "email" => "tess@example.test", "first_name" => "Tess", "last_name" => "Admin" } },
+                       { "role" => "MEMBER", "status" => "REVOKED",
+                         "customer_user" => { "id" => "customer-3", "email" => "gone@example.test", "name" => "Gone Member" } }
+                     ] })
       end
     end
 
     described_class.call(run: import_run(resources: %w[clients customer_teams]), client:, resources: %w[clients customer_teams])
 
-    team = organization.customer_teams.find_by!(name: "Oak Bay Realty")
-    expect(team).to be_aryeo
-    expect(team.client_accounts.pluck(:email)).to contain_exactly("avery@example.test")
-    expect(ExternalRecord.find_by!(resource_type: "customer_teams", external_id: "team-1").source_payload).to include("internal_notes" => "Keep in Aryeo payload")
+    team = organization.client_accounts.find_by!(name: "Oak Bay Realty")
+    expect(team).to have_attributes(kind: "team", origin: "aryeo", internal_note: "Keep in Aryeo payload",
+                                    brokerage_website: "https://oakbay.example.test")
+    expect(team.client_memberships.includes(:user).map { |membership| [ membership.user.email, membership.role, membership.status ] })
+      .to contain_exactly([ "tess@example.test", "admin", "invited" ], [ "gone@example.test", "member", "revoked" ])
+    # A person with no email cannot be invited, so only their own account arrives.
+    expect(organization.client_accounts.find_by!(email: "avery@example.test")).to be_present
+    record = ExternalRecord.find_by!(resource_type: "customer_teams", external_id: "team-1")
+    expect(record.record).to eq(team)
+    expect(record.source_payload).to include("internal_notes" => "Keep in Aryeo payload")
   end
 end
