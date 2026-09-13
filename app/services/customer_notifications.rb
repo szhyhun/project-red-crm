@@ -7,7 +7,7 @@ class CustomerNotifications
     end
 
     def invoice_ready(invoice)
-      schedule_for_client_account(kind: "invoice_ready", notifiable: invoice, client_account: invoice.client_account, required: true)
+      schedule_for_client_account(kind: "invoice_ready", notifiable: invoice, client_account: invoice.client_account, required: true, billing: true)
     end
 
     def listing_ready(listing)
@@ -21,7 +21,7 @@ class CustomerNotifications
     end
 
     def payment_received(payment)
-      schedule_for_client_account(kind: "payment_received", notifiable: payment, client_account: payment.invoice.client_account)
+      schedule_for_client_account(kind: "payment_received", notifiable: payment, client_account: payment.invoice.client_account, billing: true)
     end
 
     def deliver_now(delivery)
@@ -38,8 +38,14 @@ class CustomerNotifications
 
     private
 
-    def schedule_for_client_account(kind:, notifiable:, client_account:, required: false)
-      recipients = [ client_account.email, *client_account.users.active.pluck(:email) ].compact_blank.map(&:downcase).uniq
+    # Money goes to the team's billing member when it has one: the rest of the
+    # team is not the one being asked to pay.
+    def schedule_for_client_account(kind:, notifiable:, client_account:, required: false, billing: false)
+      recipients = if billing && client_account.billing_user.present?
+        [ client_account.billing_user.email ]
+      else
+        [ client_account.email, *client_account.users.active.pluck(:email) ]
+      end.compact_blank.map(&:downcase).uniq
       raise MissingRecipient, "Add a client email address before sending this notification." if recipients.empty? && required
 
       schedule(kind:, notifiable:, recipients:)

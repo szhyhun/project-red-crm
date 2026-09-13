@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_12_150000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_12_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -288,11 +288,22 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_150000) do
     t.boolean "lock_downloads_before_payment", default: false, null: false
     t.boolean "display_original_price", default: true, null: false
     t.boolean "suppress_payment_reminders", default: false, null: false
+    t.bigint "billing_user_id"
+    t.boolean "billing_pays_externally", default: false, null: false
+    t.string "billing_visibility", default: "everyone", null: false
+    t.string "pricing_visibility", default: "hidden", null: false
+    t.string "downloads_visibility", default: "hidden", null: false
+    t.string "marketing_templates_visibility", default: "hidden", null: false
+    t.index ["billing_user_id"], name: "index_client_accounts_on_billing_user_id"
     t.index ["organization_id", "affiliate_id"], name: "index_client_accounts_on_organization_and_affiliate", unique: true, where: "(affiliate_id IS NOT NULL)"
     t.index ["organization_id", "archived_at"], name: "index_client_accounts_on_organization_and_archived"
     t.index ["organization_id", "name"], name: "index_client_accounts_on_organization_id_and_name"
     t.index ["organization_id"], name: "index_client_accounts_on_organization_id"
     t.index ["origin"], name: "index_client_accounts_on_origin"
+    t.check_constraint "billing_visibility::text = ANY (ARRAY['hidden'::character varying, 'admins'::character varying, 'everyone'::character varying]::text[])", name: "client_accounts_billing_visibility_values"
+    t.check_constraint "downloads_visibility::text = ANY (ARRAY['hidden'::character varying, 'admins'::character varying, 'everyone'::character varying]::text[])", name: "client_accounts_downloads_visibility_values"
+    t.check_constraint "marketing_templates_visibility::text = ANY (ARRAY['hidden'::character varying, 'admins'::character varying, 'everyone'::character varying]::text[])", name: "client_accounts_marketing_templates_visibility_values"
+    t.check_constraint "pricing_visibility::text = ANY (ARRAY['hidden'::character varying, 'admins'::character varying, 'everyone'::character varying]::text[])", name: "client_accounts_pricing_visibility_values"
   end
 
   create_table "client_memberships", force: :cascade do |t|
@@ -1383,6 +1394,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_150000) do
   add_foreign_key "boards", "users", column: "created_by_id"
   add_foreign_key "catalog_sync_runs", "organizations"
   add_foreign_key "client_accounts", "organizations"
+  add_foreign_key "client_accounts", "users", column: "billing_user_id", on_delete: :nullify
   add_foreign_key "client_memberships", "client_accounts"
   add_foreign_key "client_memberships", "users"
   add_foreign_key "conversation_attachments", "conversations"

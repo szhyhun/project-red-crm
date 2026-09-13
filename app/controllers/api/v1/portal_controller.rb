@@ -201,7 +201,7 @@ class Api::V1::PortalController < Api::V1::BaseController
 
   def portal_payload
     {
-      client_accounts: current_user.client_accounts.order(:name).map { |account| account.slice(:id, :name, :kind, :brokerage_name) },
+      client_accounts: current_user.client_accounts.order(:name).map { |account| serialize_portal_account(account) },
       listings: portal_listings.map { |listing| serialize_listing(listing) },
       conversations: policy_scope(Conversation).includes(
         :listing,
@@ -246,7 +246,7 @@ class Api::V1::PortalController < Api::V1::BaseController
       media_assets: listing.media_assets.current_version.final.ready.where(customer_visible: true, hidden: false)
         .order(cover: :desc, position: :asc, created_at: :asc)
         .map { |asset| serialize_asset(asset) },
-      invoices: listing.invoices.order(created_at: :desc).map do |invoice|
+      invoices: listing.invoices.order(created_at: :desc).select { |invoice| policy(invoice).view? }.map do |invoice|
         invoice.slice(:id, :number, :status, :currency, :subtotal_cents, :discount_cents, :tax_cents, :fee_cents,
                       :fee_label, :total_cents, :balance_due_cents, :due_on, :sent_at).merge(can_pay: policy(invoice).pay?)
       end,
@@ -257,6 +257,17 @@ class Api::V1::PortalController < Api::V1::BaseController
 
     data.merge(
       workflow_tasks: data[:progress]
+    )
+  end
+
+  # What this person may read of the team's settings, and whether its bill is
+  # theirs to pay, so the portal can leave out what is not theirs.
+  def serialize_portal_account(account)
+    account.slice(:id, :name, :kind, :brokerage_name).merge(
+      pays_externally: account.billing_pays_externally,
+      billing_member: account.billing_user_id.present?,
+      is_billing_member: account.billing_user_id == current_user.id,
+      visible_blocks: ClientAccount::VISIBILITY_BLOCKS.select { |block| account.visible_to?(block, current_user) }
     )
   end
 

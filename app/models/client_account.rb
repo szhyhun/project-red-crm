@@ -2,6 +2,7 @@ class ClientAccount < ApplicationRecord
   has_many :listing_customers, dependent: :destroy
   has_many :customer_listings, through: :listing_customers, source: :listing
   belongs_to :organization
+  belongs_to :billing_user, class_name: "User", optional: true
   has_many :client_memberships, dependent: :destroy
   has_many :customer_team_memberships, dependent: :destroy
   has_many :customer_teams, through: :customer_team_memberships
@@ -14,10 +15,15 @@ class ClientAccount < ApplicationRecord
   has_many :listing_feedbacks, dependent: :restrict_with_error
   has_many :media_reviews, dependent: :destroy
 
+  VISIBILITY_BLOCKS = %w[billing pricing downloads marketing_templates].freeze
+  VISIBILITIES = %w[hidden admins everyone].freeze
+
   enum :kind, { agent: "agent", team: "team", brokerage: "brokerage" }, validate: true
 
   validates :name, presence: true
   validates :affiliate_id, uniqueness: { scope: :organization_id, case_sensitive: false }, allow_blank: true
+  VISIBILITY_BLOCKS.each { |block| validates :"#{block}_visibility", inclusion: { in: VISIBILITIES } }
+  validate :billing_user_is_an_active_admin, if: -> { billing_user_id.present? && will_save_change_to_billing_user_id? }
 
   scope :active, -> { where(archived_at: nil) }
   scope :archived, -> { where.not(archived_at: nil) }
@@ -41,7 +47,37 @@ class ClientAccount < ApplicationRecord
     listing.orders.sum { |order| order.balance_due_cents.to_i }.positive?
   end
 
+  # Whether a customer may read one of the team's settings blocks. The billing
+  # member always sees billing, since the bill is theirs.
+  def visible_to?(block, user)
+    return true if user.internal?
+    return true if block.to_s == "billing" && billing_user_id == user.id
+
+    membership = client_memberships.active.find_by(user:)
+    return false if membership.blank?
+
+    case public_send(:"#{block}_visibility")
+    when "everyone" then true
+    when "admins" then membership.admin?
+    else false
+    end
+  end
+
+  # With a billing member, nobody else in the team is asked to pay; a team that
+  # settles outside the system is not asked to pay online at all.
+  def payable_online_by?(user)
+    return false if billing_pays_externally?
+
+    billing_user_id.nil? || billing_user_id == user.id
+  end
+
   private
+
+  def billing_user_is_an_active_admin
+    return if client_memberships.active.admin.exists?(user_id: billing_user_id)
+
+    errors.add(:billing_user, "must be an active admin of this team")
+  end
 
   def normalize_affiliate_id
     self.affiliate_id = affiliate_id.strip.presence if affiliate_id.is_a?(String)

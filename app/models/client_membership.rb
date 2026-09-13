@@ -10,6 +10,7 @@ class ClientMembership < ApplicationRecord
 
   validate :same_organization
   validate :account_keeps_an_admin
+  validate :billing_member_stays_an_admin
 
   # The partial unique index allows one landing team per person; clearing the
   # others first is what keeps a switch from colliding with it.
@@ -53,6 +54,16 @@ class ClientMembership < ApplicationRecord
     return if client_account.client_memberships.active.admin.where.not(id: id).exists?
 
     errors.add(:base, "An account must keep at least one active admin")
+  end
+
+  # The team's bill has to land on someone who can still see and pay it.
+  def billing_member_stays_an_admin
+    return if client_account.blank? || !persisted?
+    return unless will_save_change_to_role? || will_save_change_to_status?
+    return if admin? && active?
+    return unless client_account.billing_user_id == user_id
+
+    errors.add(:base, "Choose another billing member before changing this person's access")
   end
 
   def clear_other_defaults

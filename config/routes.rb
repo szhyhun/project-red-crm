@@ -85,6 +85,7 @@ Rails.application.routes.draw do
       delete "conversations/:conversation_id/messages/:message_id/attachments/:id", to: "conversation_attachments#destroy"
       get "dashboard", to: "dashboard#show"
       resources :client_accounts, only: %i[index create update] do
+        patch :billing, on: :member
         post :invite, on: :member
         resources :memberships, only: %i[index create], controller: "client_memberships"
       end

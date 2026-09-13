@@ -9,7 +9,7 @@ class InvoicePolicy < OrganizationRecordPolicy
     return index? if record.is_a?(Class)
 
     belongs_to_current_organization? &&
-      (billing_staff? || user.client_account_ids.include?(record.client_account_id))
+      (billing_staff? || (user.client_account_ids.include?(record.client_account_id) && billing_visible?))
   end
 
   def update?
@@ -19,7 +19,8 @@ class InvoicePolicy < OrganizationRecordPolicy
   end
 
   def pay?
-    view? && !record.draft? && !record.void? && record.balance_due_cents.positive?
+    view? && !record.draft? && !record.void? && record.balance_due_cents.positive? &&
+      (billing_staff? || record.client_account.payable_online_by?(user))
   end
 
   class Scope < Scope
@@ -28,11 +29,16 @@ class InvoicePolicy < OrganizationRecordPolicy
       return invoices if user.internal? && user.billing_access?
       return invoices.none if user.internal?
 
-      invoices.where(client_account_id: user.client_account_ids)
+      visible_account_ids = user.client_accounts.select { |account| account.visible_to?(:billing, user) }.map(&:id)
+      invoices.where(client_account_id: visible_account_ids)
     end
   end
 
   private
+
+  def billing_visible?
+    record.client_account.visible_to?(:billing, user)
+  end
 
   def billing_staff?
     user.internal? && user.billing_access?

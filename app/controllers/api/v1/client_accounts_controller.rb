@@ -26,6 +26,17 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
     end
   end
 
+  def billing
+    account = policy_scope(ClientAccount).find(params[:id])
+    authorize account, :configure_billing?
+    result = ClientAccounts::ConfigureBilling.call(account:, actor: current_user, attributes: billing_params)
+    raise result.failure.original_error || result.failure if result.failure?
+
+    render json: { client_account: serialize(result.fetch(:account)) }
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_errors(error.record)
+  end
+
   # Kept for older clients. The membership it creates is an invitation like any
   # other, so access begins when the person accepts rather than when we add them.
   def invite
@@ -51,6 +62,10 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
     )
   end
 
+  def billing_params
+    params.require(:client_account).permit(*ClientAccounts::ConfigureBilling::ATTRIBUTES)
+  end
+
   def invite_params
     params.require(:client_user).permit(:name, :email, :membership_role).tap do |attributes|
       attributes[:role] = attributes[:membership_role] == "member" ? "client_member" : "client_admin"
@@ -65,7 +80,10 @@ class Api::V1::ClientAccountsController < Api::V1::BaseController
 
     account.slice(:id, :name, :kind, :email, :phone, :brokerage_name, :brokerage_website, :website,
                   :logo_url, :description, :internal_note, :affiliate_id, :archived_at,
-                  :lock_downloads_before_payment, :display_original_price, :suppress_payment_reminders).merge(
+                  :lock_downloads_before_payment, :display_original_price, :suppress_payment_reminders,
+                  :billing_user_id, :billing_pays_externally, :billing_visibility, :pricing_visibility,
+                  :downloads_visibility, :marketing_templates_visibility).merge(
+      billing_user: account.billing_user&.slice(:id, :name, :email),
       member_count: account.client_memberships.active.count,
       capabilities: ClientAccountPolicy.new(current_user, account).capabilities,
       feedback_summary: {

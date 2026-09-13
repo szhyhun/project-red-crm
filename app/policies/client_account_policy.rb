@@ -15,6 +15,12 @@ class ClientAccountPolicy < OrganizationRecordPolicy
 
   alias_method :manage?, :invite?
 
+  # Who pays and what customers may read are decisions between us and the
+  # team, so the team's own admins cannot make them for themselves.
+  def configure_billing?
+    belongs_to_current_organization? && user.internal? && user.billing_access?
+  end
+
   class Scope < Scope
     def resolve
       accounts = scope.where(organization_id: user.organization_id)
