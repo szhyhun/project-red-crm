@@ -3,7 +3,8 @@ require "rails_helper"
 # The verify_authorized callback catches a forgotten `authorize` at runtime, but
 # only for controllers that inherit it. A controller that inherits
 # ApplicationController directly opts out of the whole mechanism silently, which
-# is exactly what the four unauthenticated endpoints below do on purpose.
+# is exactly what the unauthenticated endpoints below do on purpose. Finishing a
+# password reset is one: its token is the proof, not a session.
 #
 # This is the pre-deploy half of that guarantee: any new API controller either
 # inherits the enforced base or is named here deliberately.
@@ -12,6 +13,7 @@ RSpec.describe "Authorization coverage", type: :request do
   UNAUTHENTICATED_CONTROLLERS = %w[
     api/v1/auth/sessions
     api/v1/auth/registrations
+    api/v1/auth/passwords
     api/v1/public/property_sites
     api/v1/webhooks/stripe
   ].freeze
