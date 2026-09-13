@@ -1,0 +1,233 @@
+# Background-job business workflows and Interactors
+
+This is the refactoring plan for ProjectRed's background business workflows. It
+is intentionally separate from the Aryeo import correction and watchdog that
+are being implemented now. The first implementation step is to make the
+current jobs observable and terminal; the Interactor migration follows after
+that baseline is green.
+
+The plan has four equal outcomes:
+
+1. Make business workflows easier to read, debug, and reason about by giving
+   them one consistent action shape.
+2. Make failures visible at the exact interactor step that failed, including
+   safe inputs, outputs, warnings, and error codes.
+3. Reuse small, well-tested interactors inside multiple organizers so tests
+   cover each business rule once and organizers focus on composition.
+4. Simplify the codebase: remove stale services, duplicate orchestration,
+   dead branches, obsolete compatibility paths, and abstractions that do not
+   earn their complexity. Fewer lines is useful, but removing competing paths
+   and reducing cognitive load is the real measure of success.
+
+The design is based on the [Interactor pattern described by FullStack
+Labs](https://www.fullstack.com/labs/resources/blog/encapsulating-ruby-on-rails-business-logic-with-interactors):
+a plain Ruby object exposes one `call` entry point, carries explicit inputs and
+outputs in a context, and fails through a consistent mechanism. An Interactor
+is a business-action boundary, not a replacement for Resque, Active Job, a
+database transaction, or a model validation.
+
+This is not a promise to convert every class into an interactor or to minimize
+line count mechanically. A one-line database operation should remain simple.
+The pattern is justified when an action has multiple business steps, more than
+one entry point, retries, partial failure, authorization boundaries, or a need
+to compose the same rules in different workflows.
+
+## Rules for the refactor
+
+1. Jobs remain thin infrastructure adapters. They load the durable record,
+   call one interactor or organizer, and let the queue retry or record the
+   failure.
+2. Interactors own business decisions and state transitions. A job must not
+   contain a second implementation of the same workflow.
+3. Every interactor has a small, documented context contract. Inputs are
+   required explicitly; outputs use stable names; failures have a safe error
+   code and a human-readable message.
+4. An organizer is used only where the steps are a real ordered business
+   transaction. Independent work stays in separate interactors rather than
+   becoming one large “do everything” context.
+5. Transactions surround the records that must commit together. External HTTP,
+   S3, email, Action Cable, and queue calls happen outside the database
+   transaction or through an outbox/idempotency boundary.
+6. Every retry is idempotent. The interactor receives a durable idempotency key
+   or finds the existing record before creating another one.
+7. Authorization stays at the controller/service boundary. Interactors do not
+   bypass Pundit or accept another organization's records.
+8. A job's intermediate state is visible, but every normal return, handled
+   failure, retry exhaustion, and watchdog timeout ends in a terminal state.
+9. Every extracted interactor must replace an old path. After the new path is
+   proven, delete the old service methods, branches, compatibility aliases, and
+   unused helpers rather than leaving both implementations in the repository.
+
+## Current job-to-interactor map
+
+| Current entry point | Proposed business action | Durable result |
+| --- | --- | --- |
+| `AryeoImportJob` | `Aryeo::RunImport` organizer | `IntegrationImportRun` is completed, completed with errors, or failed |
+| `AryeoMediaCopyJob` | `Aryeo::CopyMedia` | `MediaAsset` and `ExternalRecord` are copied or failed idempotently |
+| `Aryeo::ImportWatchdogJob` | `Aryeo::FailStaleImport` | An abandoned import is failed and its connection is released |
+| `BoardWorkflowJob` | `Workflows::ExecuteRun` organizer | Workflow steps and task placements are synchronized |
+| `Orders::Approval` and the approval job boundary | `Orders::Approve` organizer | Order approval and deliverable/task materialization are idempotent |
+| `MediaAssets::VerifyUploadJob` | `MediaAssets::VerifyUpload` | Asset becomes ready or records a safe processing failure |
+| `Notifications::DeliverJob` | `Notifications::Deliver` | Delivery becomes delivered or failed with retry metadata |
+| `Conversations::NotifyJob` | `Conversations::PublishMessage` | Participants, unread state, and Action Cable notification are consistent |
+| `Conversations::RetentionJob` | `Conversations::PurgeExpired` | Expired messages and private attachments are removed by policy |
+
+The first three rows are the next extraction target because the current Aryeo
+work has the clearest terminal-state and partial-failure requirements. The
+order/workflow rows come next because approval creates production work. Chat,
+notifications, and media verification follow once their retry and live-update
+contracts have their own regression coverage.
+
+## Observability and composition contract
+
+An organizer is a visible sequence of named steps, not a hidden call chain.
+Each step must expose:
+
+- a stable step name;
+- the minimal input identifiers, never secrets or full provider payloads;
+- created or changed record IDs as output;
+- warnings separately from failures;
+- a safe error code, exception class, and human-readable message;
+- start, completion, and duration timestamps;
+- whether the step was skipped, retried, or completed.
+
+The durable workflow/run record should retain this step history when the
+workflow is user-visible or retryable. Logs should include the organizer ID,
+step name, organization ID, and business record ID so a failure can be traced
+from the UI to Rails logs without reproducing the whole workflow. This is what
+makes an organizer easier for a person or a language model to inspect: the
+control flow is explicit and the failure boundary is named.
+
+Shared interactors are tested at the business-rule level once. Organizers then
+test only sequencing, branching, context hand-off, and failure propagation.
+They should not repeat every internal assertion already covered by the shared
+interactor. This keeps scenario coverage strong while avoiding a combinatorial
+test suite.
+
+## Simplification and stale-code audit
+
+Every phase includes a cleanup pass. Before extracting a workflow, inventory:
+
+- duplicate service objects that perform the same action under different names;
+- controller branches that bypass the existing service;
+- job-specific copies of retry, status, or authorization logic;
+- dead compatibility fields and aliases;
+- unreachable provider branches and title-based inference;
+- serializers, routes, and UI clients that no longer have a caller;
+- tests that describe behavior the product no longer supports.
+
+For each candidate, record one of: keep, merge, deprecate with a removal date,
+or delete. A refactor is not complete while the old and new paths can both
+mutate the same records. The acceptance checklist for every phase includes a
+repository search proving that removed names and obsolete branches have no
+live callers, plus a focused test proving the replacement path owns the
+behavior.
+
+## Import organizer shape
+
+The eventual Aryeo organizer should have a context similar to:
+
+```ruby
+Aryeo::RunImport.call(
+  run: integration_import_run,
+  client: client,
+  resources: resources,
+  conflict_resolution: conflict_resolution
+)
+```
+
+Its steps should be explicit:
+
+1. `Aryeo::StartImport` locks the run, sets `running`, records `started_at`,
+   and starts the heartbeat.
+2. `Aryeo::ImportResources` imports the selected collections and records
+   endpoint coverage, source IDs, partial errors, and progress.
+3. `Aryeo::ReconcileImportedDelivery` links imported orders, services, media,
+   and deliverables without inventing Aryeo package relationships.
+4. `Aryeo::CompleteImport` chooses `completed` versus
+   `completed_with_errors`, stores final counts, and reconnects the integration.
+5. `Aryeo::FailImport` is the single failure transition used by exceptions,
+   retry exhaustion, and the watchdog. It records the error and completion time
+   exactly once.
+
+The current importer can be split along these seams without changing its
+external API. First preserve the existing payload and media contracts with
+characterization specs; then move one step at a time behind the same job.
+
+## Implementation sequence
+
+### Phase 1 — safety baseline
+
+- Keep the current import heartbeat/watchdog and terminal-state specs green.
+- Capture a short baseline of the current job/service graph and identify the
+  duplicate or stale paths that the phase is expected to remove.
+- Add an integration-run state transition matrix: pending → running → each
+  terminal state, with no terminal → running transition.
+- Add a structured error code for endpoint failure, record validation failure,
+  media-copy failure, and stale-worker failure.
+- Add a run-level idempotency spec proving a retry does not duplicate external
+  records, variants, media, deliverables, or workflow runs.
+
+### Phase 2 — Aryeo interactors
+
+- Add the `interactor-rails` dependency only after agreeing on the context API
+  and gem version in a separate change.
+- Extract start/fail/complete first; these are small and remove duplicate state
+  transitions before moving import mapping logic.
+- Extract catalog, customer/team, listing/media, order, appointment, and task
+  import steps. Each step receives the organization and run explicitly and
+  writes only its own coverage keys.
+- Keep local date filtering and `MAIN`/`ADDON` classification in the catalog
+  and resource interactors. Never infer packages from names or descriptions.
+- Keep remote media copy as a separate retryable job/interactor because it has a
+  different network and storage failure boundary.
+- Delete the old monolithic importer branches only after characterization and
+  replacement specs pass; do not leave a second “legacy import” path behind.
+
+### Phase 3 — order and workflow automation
+
+- Extract `Orders::Approve`, `Orders::MaterializeDeliverables`, and
+  `Workflows::ExecuteRun` into organizers with one idempotency key per order or
+  workflow run.
+- Give each action a result object/context containing created IDs and warnings;
+  do not make later steps query loosely related titles.
+- Keep board authorization and placement synchronization in the workflow
+  interactor, with negative specs for cross-organization and unauthorized-board
+  access.
+
+### Phase 4 — media, chat, and notifications
+
+- Extract media verification/publish actions with explicit storage boundary and
+  API-relative URL contracts.
+- Extract message publication so database persistence, unread counters, and
+  Action Cable broadcast have a documented order and retry behavior.
+- Extract retention as a policy-driven organizer that deletes database rows and
+  private storage objects together, with a safe retry result.
+- Remove duplicate URL, storage, unread-count, and notification paths once the
+  shared interactors own those contracts.
+
+## Required specs before each extraction
+
+- A unit spec for success, validation failure, and retry/idempotency behavior.
+- A job spec proving the queue adapter invokes the interactor and terminal
+  state is written when the interactor fails.
+- A request/scenario spec for the user-visible critical path.
+- A negative authorization spec wherever an interactor receives a record ID or
+  organization-scoped input.
+- A storage/media spec that checks serialized paths and the final URL boundary,
+  not merely that an object exists.
+- A logging/observability spec for handled partial failures so a green worker
+  process cannot hide `completed_with_errors`.
+- A cleanup assertion or repository search showing that the replaced stale
+  path is gone.
+
+## Completion criteria
+
+The refactor is complete when each job is a thin queue adapter, each business
+workflow has one reusable `call` path, all state transitions are centralized,
+retries are idempotent, and the full RSpec suite covers both success and the
+failure/authorization boundaries. The codebase must have fewer competing
+paths, fewer obsolete branches, and a smaller workflow surface to understand,
+not merely more wrapper classes. No controller, job, or model should contain a
+second competing implementation of an interactor's business action, and every
+deleted path must be backed by evidence that it has no remaining callers.
