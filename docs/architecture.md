@@ -65,6 +65,30 @@ scheduled Aryeo import watchdog is the recovery boundary for a worker that
 dies after dequeuing an import: it turns an abandoned intermediate `running`
 record into a terminal `failed` record instead of leaving misleading history.
 
+## Performance and stale-code rules
+
+Read-side API serializers must not issue relation queries inside a collection
+loop. A controller either preloads the association or deliberately uses one
+scoped query; it then filters, sorts, and groups the loaded records in memory.
+Review workspaces batch visible media for all deliverables, and conversation
+responses preload message context, attachments, and media references together.
+If a serializer is intentionally limited (for example, the latest 20 chat
+messages), keep that limit in SQL rather than preloading an unbounded history.
+
+Request-scoped memoization is appropriate for stable, repeated authorization
+lookups such as a customer's active membership. It must not be used for data
+that can change during a transaction or for private data shared between users.
+Cache keys for customer-facing responses must include the organization, user or
+account boundary, and the relevant record version; never cache an authorization
+decision globally.
+
+When a provider or media contract is shared by more than one surface, its
+metadata belongs to the domain model or a dedicated service, not to a
+controller. Remove pass-through aliases and compatibility helpers as soon as
+their callers are moved to the canonical method. A new abstraction is justified
+only when it owns behavior, a query boundary, or an independently testable
+business action.
+
 ## Business logic and Interactors
 
 Multi-step business workflows use the Interactor boundary documented in
