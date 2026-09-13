@@ -182,7 +182,10 @@ RSpec.describe Integrations::Aryeo::Organizers::ImportOrganizer do
     }.to have_enqueued_job(AryeoMediaCopyJob).exactly(6).times
 
     listing = organization.listings.find_by!(address_line_1: "111 Oak Bay Ave")
-    expect(listing.client_account.email).to eq("avery@example.test")
+    # Work a team member books belongs to the team; their own account stays linked.
+    expect(listing.client_account).to have_attributes(name: "Oak Bay Realty", kind: "team")
+    expect(listing.customer_accounts.pluck(:email)).to include("avery@example.test")
+    expect(listing.booked_by.email).to eq("avery@example.test")
     expect(listing.media_assets.pluck(:category, :filename, :content_type, :position)).to contain_exactly(
       [ "images", "front.jpg", "image/jpeg", 2 ],
       [ "images", "backyard.jpg", "image/jpeg", 1 ],
@@ -196,6 +199,7 @@ RSpec.describe Integrations::Aryeo::Organizers::ImportOrganizer do
     expect(run.reload.coverage.fetch("listings")).to include("media_assets" => { "queued" => 6 })
     order = organization.orders.find_by!("metadata ->> 'aryeo_id' = ?", "order-1")
     expect(order.listing).to eq(listing)
+    expect(order).to have_attributes(client_account_id: listing.client_account_id, ordered_by_id: listing.booked_by_id)
     expect(order.order_items.pluck(:title)).to contain_exactly("Premium photos")
     expect(organization.appointments.find_by("notes LIKE ?", "%[aryeo:appointment-1]%")).to have_attributes(listing:, status: "confirmed")
     team = organization.client_accounts.find_by!(name: "Oak Bay Realty")

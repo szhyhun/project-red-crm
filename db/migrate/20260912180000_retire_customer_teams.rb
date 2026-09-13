@@ -22,6 +22,41 @@ class RetireCustomerTeams < ActiveRecord::Migration[8.0]
       UPDATE external_records SET record_type = 'ClientAccount', record_id = retired.client_account_id
       FROM retired_customer_teams retired
       WHERE external_records.record_type = 'CustomerTeam' AND external_records.record_id = retired.customer_team_id;
+
+      -- The old table linked a team to accounts. The people of each linked
+      -- account become members of the team, keeping their role and status.
+      INSERT INTO client_memberships (client_account_id, user_id, role, status, invitation_accepted_at,
+                                      listing_delivery_notification_enabled, created_at, updated_at)
+      SELECT DISTINCT ON (retired.client_account_id, people.user_id)
+             retired.client_account_id, people.user_id, people.role, people.status, people.invitation_accepted_at,
+             people.listing_delivery_notification_enabled, NOW(), NOW()
+      FROM customer_team_memberships links
+      JOIN retired_customer_teams retired ON retired.customer_team_id = links.customer_team_id
+      JOIN client_memberships people ON people.client_account_id = links.client_account_id
+      ORDER BY retired.client_account_id, people.user_id, (people.role = 'admin') DESC
+      ON CONFLICT (client_account_id, user_id) DO NOTHING;
+
+      -- An account in exactly one team did its work for that team, so its
+      -- listings, orders and invoices move there; the account stays linked to
+      -- each listing so its people keep seeing them. An account in several
+      -- teams cannot say which, so its work stays where it is.
+      CREATE TEMP TABLE single_team_accounts ON COMMIT DROP AS
+      SELECT links.client_account_id, MIN(retired.client_account_id) AS team_account_id
+      FROM customer_team_memberships links
+      JOIN retired_customer_teams retired ON retired.customer_team_id = links.customer_team_id
+      GROUP BY links.client_account_id HAVING COUNT(*) = 1;
+
+      INSERT INTO listing_customers (listing_id, client_account_id, created_at, updated_at)
+      SELECT listings.id, listings.client_account_id, NOW(), NOW()
+      FROM listings JOIN single_team_accounts moved ON moved.client_account_id = listings.client_account_id
+      ON CONFLICT DO NOTHING;
+
+      UPDATE listings SET client_account_id = moved.team_account_id
+      FROM single_team_accounts moved WHERE listings.client_account_id = moved.client_account_id;
+      UPDATE orders SET client_account_id = moved.team_account_id
+      FROM single_team_accounts moved WHERE orders.client_account_id = moved.client_account_id;
+      UPDATE invoices SET client_account_id = moved.team_account_id
+      FROM single_team_accounts moved WHERE invoices.client_account_id = moved.client_account_id;
     SQL
 
     remove_check_constraint :pricing_plans, name: "pricing_plans_exactly_one_owner"

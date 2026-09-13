@@ -173,10 +173,11 @@ module Aryeo
       listing = session.listing_record(external)
       related_clients = session.import_listing_clients(payload)
       client = related_clients.first || session.client_for(payload) || session.imported_client
+      team, membership = session.team_and_member_for(payload, client)
       address = session.stringify(payload["address"] || payload["property_address"] || {})
-      listing ||= session.organization.listings.build(client_account: client, metadata: { "aryeo_id" => external })
+      listing ||= session.organization.listings.build(client_account: team || client, metadata: { "aryeo_id" => external })
       listing.assign_attributes(
-        client_account: client,
+        client_account: team || client,
         address_line_1: session.value(address, "address_line_1", "line1", "street_address", "address").presence ||
           session.value(payload, "address_line_1", "address").presence || "Aryeo listing #{external}",
         address_line_2: session.value(address, "address_line_2", "line2", "unit"),
@@ -197,10 +198,12 @@ module Aryeo
         origin: :aryeo,
         metadata: listing.metadata.merge("aryeo_id" => external, "aryeo_status" => session.value(payload, "status"))
       )
+      listing.booked_by ||= membership&.user
       listing.save!
       related_clients.drop(1).each do |related_client|
         listing.listing_customers.find_or_create_by!(client_account: related_client)
       end
+      listing.listing_customers.find_or_create_by!(client_account: client) if team && client.id != team.id
       import_listing_media(listing)
       session.import_listing_relations(listing, payload)
       session.import_property_site(listing, payload)
@@ -278,12 +281,16 @@ module Aryeo
       end
       client = session.client_for(payload)
       client ||= session.import_order_client(payload)
-      client ||= listing&.client_account || session.imported_client
+      team, membership = session.team_and_member_for(payload, client)
+      session.place_listing_under_team(listing, team, client) if listing
+      # The listing decides the team; an order without one follows its customer's team.
+      client = listing&.client_account || team || client || session.imported_client
       order = session.order_record(external)
       order ||= session.organization.orders.build(client_account: client, listing:, metadata: { "aryeo_id" => external })
       order.assign_attributes(
         client_account: client,
         listing:,
+        ordered_by: order.ordered_by || membership&.user || listing&.booked_by,
         source: "aryeo",
         origin: :aryeo,
         status: session.order_status_for(payload),

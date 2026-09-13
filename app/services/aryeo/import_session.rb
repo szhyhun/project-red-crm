@@ -277,33 +277,52 @@ module Aryeo
       end
     end
 
+    # The team a customer payload names, and that customer's membership in it.
+    # Aryeo places work under a team, so listings and orders follow the team
+    # rather than the person's own account.
     def import_related_customer_team(client_payload, client)
-      return if client.blank?
+      return [ nil, nil ] if client.blank? || client_payload.blank?
 
       team_payload = records(client_payload, "customer_team", "team").first
       team_external = value(client_payload, "customer_team_id", "team_id")
       team_payload ||= { "id" => team_external } if team_external.present?
-      return if team_payload.blank? || external_id(team_payload).blank?
+      return [ nil, nil ] if team_payload.blank? || external_id(team_payload).blank?
 
       person = client_payload.except("customer_team", "team")
       team = record_for("customer_teams", external_id(team_payload))&.record
       team = nil unless team.is_a?(ClientAccount)
       team ||= import_dependency(:customer_teams, team_payload.merge("customers" => [ person ]))
-      import_team_member(team, person) if team
+      [ team, team && import_team_member(team, person) ]
     end
 
-    # Aryeo's membership statuses, in ours. Nobody imported is active: access
-    # begins when staff send our own invitation and the person accepts it.
+    def team_and_member_for(payload, client)
+      import_related_customer_team(listing_client_payloads(payload).first, client)
+    end
+
+    # Work booked by a team member belongs to the team. The person's own
+    # account stays linked to the listing, so nothing they could see is lost.
+    def place_listing_under_team(listing, team, person_account)
+      return if team.blank? || listing.client_account_id == team.id
+
+      previous = listing.client_account
+      listing.update!(client_account: team)
+      [ previous, person_account ].compact.uniq.each do |account|
+        listing.listing_customers.find_or_create_by!(client_account: account) unless account.id == team.id
+      end
+    end
+
+    # Aryeo's membership statuses, in ours. Nobody imported becomes active:
+    # access begins when staff send our own invitation and the person accepts.
     TEAM_MEMBER_STATUSES = { "archived" => "archived", "revoked" => "revoked", "deleted" => "revoked" }.freeze
 
     def import_team_member(team, person_payload, role: nil, status: nil)
       email = value(person_payload, "email", "email_address").to_s.strip.downcase
       return if email.blank?
 
-      admin = role.to_s.casecmp("admin").zero?
       user = @organization.users.find_by("LOWER(email) = ?", email)
       return if user&.internal? || (user.nil? && User.where("LOWER(email) = ?", email).exists?)
 
+      admin = role.to_s.casecmp("admin").zero?
       user ||= begin
         password = SecureRandom.urlsafe_base64(32)
         @organization.users.create!(
@@ -313,10 +332,28 @@ module Aryeo
         )
       end
       membership = team.client_memberships.find_or_initialize_by(user:)
-      return membership if membership.persisted?
-
-      membership.update!(role: admin ? :admin : :member, status: TEAM_MEMBER_STATUSES.fetch(status.to_s.downcase, "invited"))
+      if membership.new_record?
+        membership.update!(role: admin ? :admin : :member, status: TEAM_MEMBER_STATUSES.fetch(status.to_s.downcase, "invited"))
+      else
+        reconcile_team_member(membership, role:, status:)
+      end
       membership
+    end
+
+    # A re-import carries Aryeo's later changes: a new role, or the end of a
+    # membership. It never grants access Aryeo reports as active but we have
+    # not invited, and a change our own rules refuse (the last admin, the
+    # billing member) is left as it is here.
+    def reconcile_team_member(membership, role:, status:)
+      changes = {}
+      changes[:role] = role.to_s.casecmp("admin").zero? ? "admin" : "member" if role.present?
+      ended = TEAM_MEMBER_STATUSES[status.to_s.downcase]
+      changes[:status] = ended if ended
+      changes[:status] = "invited" if status.to_s.casecmp("active").zero? && membership.status.in?(%w[revoked archived])
+      membership.update!(changes) if changes.any? { |key, value| membership.public_send(key) != value }
+    rescue ActiveRecord::RecordInvalid => error
+      Rails.logger.warn("Aryeo membership #{membership.id} kept local state: #{error.record.errors.full_messages.to_sentence}")
+      membership.reload
     end
 
     def membership_payloads_for(payload)

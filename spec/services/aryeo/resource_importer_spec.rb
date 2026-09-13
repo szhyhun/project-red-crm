@@ -45,4 +45,41 @@ RSpec.describe Aryeo::ResourceImporter do
     expect(team.client_memberships.sole.user).to have_attributes(email: "avery@example.test", role: "client_member")
     expect(organization.client_accounts.find_by!(email: "avery@example.test").kind).not_to eq("team")
   end
+
+  describe "re-importing a team whose memberships changed in Aryeo" do
+    def import_team(memberships)
+      described_class.call(session:, name: :customer_teams, payload: {
+        "id" => "team-9", "name" => "Harbour Group",
+        "customer_team_memberships" => memberships.map do |email, role, status|
+          { "role" => role, "status" => status, "customer_user" => { "id" => email, "email" => email, "name" => email } }
+        end
+      })
+    end
+
+    def membership(team, email) = team.client_memberships.joins(:user).find_by!(users: { email: })
+
+    it "carries a new role and an ended membership, but never grants access Aryeo alone reports" do
+      team = import_team([ [ "lead@example.test", "ADMIN", "ACTIVE" ], [ "helper@example.test", "MEMBER", "ACTIVE" ],
+                           [ "left@example.test", "MEMBER", "ACTIVE" ] ])
+      membership(team, "lead@example.test").accept!
+
+      import_team([ [ "lead@example.test", "ADMIN", "ACTIVE" ], [ "helper@example.test", "ADMIN", "ACTIVE" ],
+                    [ "left@example.test", "MEMBER", "REVOKED" ] ])
+
+      expect(membership(team, "helper@example.test")).to have_attributes(role: "admin", status: "invited")
+      expect(membership(team, "left@example.test")).to have_attributes(status: "revoked")
+      expect(membership(team, "lead@example.test")).to have_attributes(role: "admin", status: "active")
+    end
+
+    it "keeps a change our own rules refuse, such as demoting the billing member" do
+      team = import_team([ [ "payer@example.test", "ADMIN", "ACTIVE" ], [ "other@example.test", "ADMIN", "ACTIVE" ] ])
+      payer = membership(team, "payer@example.test").tap(&:accept!)
+      membership(team, "other@example.test").accept!
+      team.update!(billing_user: payer.user)
+
+      expect { import_team([ [ "payer@example.test", "MEMBER", "ACTIVE" ], [ "other@example.test", "ADMIN", "ACTIVE" ] ]) }
+        .not_to raise_error
+      expect(payer.reload).to be_admin
+    end
+  end
 end
