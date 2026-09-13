@@ -1,5 +1,6 @@
 class Api::V1::CustomerUsersController < Api::V1::BaseController
   SOCIAL_PROFILE_KEYS = %i[website facebook instagram linkedin twitter zillow].freeze
+  BILLING_ADDRESS_KEYS = %i[line_1 line_2 city province postal_code country].freeze
 
   def index
     authorize User, :index?, policy_class: CustomerUserPolicy
@@ -42,6 +43,38 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
     }
   end
 
+  # Staff send a person the email to choose a new password. Someone who has
+  # never accepted an invitation has no password to reset; they need the
+  # invitation instead.
+  def password_reset
+    person = customer_scope.find(params[:id])
+    authorize person, :update?, policy_class: CustomerUserPolicy
+    if verification_status(person) != "verified"
+      return render json: { error: "not_verified", details: { base: [ "Send this person their invitation; they have not set a password yet" ] } },
+                    status: :unprocessable_content
+    end
+
+    person.send_reset_password_instructions
+    ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: person, event_type: "customer_user.password_reset_sent")
+    head :accepted
+  end
+
+  # Photographers this person does not want sent to their shoots.
+  def blocked_staff
+    person = customer_scope.find(params[:id])
+    authorize person, :update?, policy_class: CustomerUserPolicy
+    staff_ids = Array(params.fetch(:staff_ids, [])).compact_blank.map(&:to_i).uniq
+    staff = Current.organization.users.where(id: staff_ids).reject { |user| !user.internal? }
+    return render json: { error: "unknown_staff", details: { base: [ "Choose staff from this organization" ] } }, status: :unprocessable_content if staff.size != staff_ids.size
+
+    CustomerBlockedStaff.transaction do
+      person.customer_blocked_staff.where.not(staff_id: staff_ids).destroy_all
+      staff.each { |member| person.customer_blocked_staff.find_or_create_by!(staff: member) }
+    end
+    @work_counts = WorkCounts.new([ person ])
+    render json: { customer_user: serialize(person.reload, PricingPlan.where(user: person).pick(:id)) }
+  end
+
   # A plain record edit: no other record has to agree with it, so it stays in
   # the controller rather than becoming an Interactor.
   def update
@@ -60,6 +93,15 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
 
   private
 
+  # Verified once they have set a password through an invitation, or were
+  # created with one; invited while an invitation waits; otherwise not yet.
+  def verification_status(person)
+    return "verified" if person.invitation_accepted_at.present?
+    return "invited" if person.invitation_sent_at.present?
+
+    person.origin == "aryeo" ? "unverified" : "verified"
+  end
+
   def customer_scope
     policy_scope(User, policy_scope_class: CustomerUserPolicy::Scope)
   end
@@ -67,14 +109,17 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
   def update_params
     params.require(:customer_user).permit(
       :name, :phone, :license_number, :avatar_url, :timezone, :internal_note,
-      :blocked_from_ordering, social_profiles: SOCIAL_PROFILE_KEYS
+      :blocked_from_ordering, social_profiles: SOCIAL_PROFILE_KEYS,
+      billing_address: BILLING_ADDRESS_KEYS
     )
   end
 
   def serialize(person, pricing_plan_id)
     memberships = person.client_memberships.sort_by { |membership| [ membership.created_at, membership.id ] }
     person.slice(:id, :name, :email, :phone, :license_number, :avatar_url, :timezone, :internal_note,
-                 :social_profiles, :blocked_from_ordering, :credit_balance_cents, :created_at).merge(
+                 :social_profiles, :billing_address, :blocked_from_ordering, :credit_balance_cents, :created_at).merge(
+      verification_status: verification_status(person),
+      blocked_staff: person.blocked_staff.map { |staff| staff.slice(:id, :name) },
       invitation_pending: person.invitation_sent_at.present? && person.invitation_accepted_at.blank?,
       team_count: memberships.count(&:active?),
       pricing_plan_id:,

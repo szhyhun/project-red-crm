@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_13_140000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_13_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -428,6 +428,16 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_140000) do
     t.index ["user_id"], name: "index_credit_transactions_on_user_id"
     t.check_constraint "amount_cents <> 0", name: "credit_transactions_amount_not_zero"
     t.check_constraint "balance_after_cents >= 0", name: "credit_transactions_balance_not_negative"
+  end
+
+  create_table "customer_blocked_staff", force: :cascade do |t|
+    t.bigint "customer_id", null: false
+    t.bigint "staff_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["customer_id", "staff_id"], name: "index_customer_blocked_staff_on_customer_id_and_staff_id", unique: true
+    t.index ["customer_id"], name: "index_customer_blocked_staff_on_customer_id"
+    t.index ["staff_id"], name: "index_customer_blocked_staff_on_staff_id"
   end
 
   create_table "external_records", force: :cascade do |t|
@@ -1313,6 +1323,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_140000) do
     t.jsonb "social_profiles", default: {}, null: false
     t.boolean "blocked_from_ordering", default: false, null: false
     t.integer "credit_balance_cents", default: 0, null: false
+    t.jsonb "billing_address", default: {}, null: false
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["invitation_token"], name: "index_users_on_invitation_token", unique: true
     t.index ["invited_by_id"], name: "index_users_on_invited_by_id"
@@ -1466,6 +1477,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_140000) do
   add_foreign_key "credit_transactions", "organizations"
   add_foreign_key "credit_transactions", "users"
   add_foreign_key "credit_transactions", "users", column: "actor_id", on_delete: :nullify
+  add_foreign_key "customer_blocked_staff", "users", column: "customer_id", on_delete: :cascade
+  add_foreign_key "customer_blocked_staff", "users", column: "staff_id", on_delete: :cascade
   add_foreign_key "external_records", "integration_connections"
   add_foreign_key "external_records", "integration_import_runs"
   add_foreign_key "external_records", "organizations"

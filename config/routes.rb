@@ -18,6 +18,7 @@ Rails.application.routes.draw do
         post "sign_in", to: "sessions#create"
         delete "sign_out", to: "sessions#destroy"
         get "me", to: "sessions#show"
+        put "password", to: "passwords#update"
       end
 
       resources :products, only: %i[index show create update] do
@@ -109,6 +110,8 @@ Rails.application.routes.draw do
       resources :staff, only: %i[index create update], controller: "staff"
       resources :customer_users, only: %i[index show update] do
         get :work, on: :member
+        post :password_reset, on: :member
+        put :blocked_staff, on: :member
         resources :credit_transactions, only: %i[index create]
       end
       resources :listings, only: %i[index show create update] do

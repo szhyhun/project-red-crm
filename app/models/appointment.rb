@@ -20,6 +20,7 @@ class Appointment < ApplicationRecord
   validate :ends_after_start
   validate :assigned_user_belongs_to_organization
   validate :assigned_user_is_available
+  validate :assigned_user_is_not_blocked
   validate :order_belongs_to_listing
   before_save :stamp_completion
 
@@ -46,6 +47,26 @@ class Appointment < ApplicationRecord
     conflict = conflict.where.not(id:) if persisted?
     errors.add(:assigned_user, "already has an appointment during this time") if conflict.exists?
   end
+
+  def assigned_user_is_not_blocked
+    return if assigned_user_id.blank? || !will_save_change_to_assigned_user_id?
+    return unless blocked_staff_ids.include?(assigned_user_id)
+
+    errors.add(:assigned_user, "is blocked by this customer")
+  end
+
+  public
+
+  # Staff the customer who booked the listing, or placed its order, asked us
+  # not to send.
+  def blocked_staff_ids
+    customer_ids = [ listing&.booked_by_id, order&.ordered_by_id ].compact
+    return [] if customer_ids.empty?
+
+    CustomerBlockedStaff.where(customer_id: customer_ids).pluck(:staff_id)
+  end
+
+  private
 
   def order_belongs_to_listing
     return if order.blank? || order.listing_id == listing_id
