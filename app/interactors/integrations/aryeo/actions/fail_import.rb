@@ -3,8 +3,8 @@ module Integrations::Aryeo::Actions
     def call
       run = context.fetch(:run)
       error = context.fetch(:error)
-      importer = context[:importer]
-      state = importer&.state || empty_state
+      session = context[:session]
+      state = session&.state || empty_state
 
       run.mark_failed!("#{error.class}: #{error.message}", counts: state[:counts], coverage: state[:coverage],
                        error_details: state[:errors], error_code: error_code_for(error))

@@ -4,8 +4,8 @@ module Integrations::Aryeo::Actions
       return context if context[:skipped]
 
       run = context.fetch(:run)
-      importer = context.fetch(:importer)
-      state = importer.state
+      session = context.fetch(:session)
+      state = session.state
 
       state.fetch(:deferred_skipped_resources).each do |name|
         state[:coverage][name] ||= { status: "skipped", detail: "Not selected for this import run" }

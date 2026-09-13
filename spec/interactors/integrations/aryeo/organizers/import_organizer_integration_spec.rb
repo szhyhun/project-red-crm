@@ -1,10 +1,10 @@
 require "rails_helper"
 
-RSpec.describe Aryeo::Importer do
+RSpec.describe Integrations::Aryeo::Organizers::ImportOrganizer do
   let!(:organization) { Organization.create!(name: "Import Agency", slug: "import-agency") }
   let!(:connection) { IntegrationConnection.create!(organization:, provider: :aryeo, api_key: "aryeo-key", status: :connected) }
 
-  def import_run(resources: Aryeo::Importer::RESOURCE_KEYS, conflict_resolution: "skip")
+  def import_run(resources: Aryeo::ImportSession::RESOURCE_KEYS, conflict_resolution: "skip")
     connection.integration_import_runs.create!(organization:, provider: :aryeo, requested_resources: resources, conflict_resolution:)
   end
 
@@ -32,8 +32,8 @@ RSpec.describe Aryeo::Importer do
     local_client = ClientAccount.create!(organization:, name: "Local agent")
     local_listing = Listing.create!(organization:, client_account: local_client, address_line_1: "Local Street")
 
-    described_class.new(run: import_run, client: client_with_catalog).call
-    described_class.new(run: import_run, client: client_with_catalog).call
+    described_class.call(run: import_run, client: client_with_catalog)
+    described_class.call(run: import_run, client: client_with_catalog)
 
     expect(Product.where(origin: "aryeo").count).to eq(1)
     expect(Product.first.product_variants.count).to eq(1)
@@ -61,7 +61,7 @@ RSpec.describe Aryeo::Importer do
       block.call({ "id" => "newer-listing", "updated_at" => "2026-01-01T00:00:00Z", "address" => { "address_line_1" => "Newer Street" } })
     end
 
-    described_class.new(run: import_run, client:, listing_limit: 1).call
+    described_class.call(run: import_run, client:, listing_limit: 1)
 
     expect(Listing.where(origin: "aryeo").pluck(:address_line_1)).to contain_exactly("Newer Street")
   end
@@ -72,7 +72,7 @@ RSpec.describe Aryeo::Importer do
       block.call({ "id" => "product-1", "title" => "Premium photos" }) if endpoint == "products"
     end
 
-    described_class.new(run: import_run, client:, skip_resources: [ :listings ]).call
+    described_class.call(run: import_run, client:, skip_resources: [ :listings ])
 
     expect(client).not_to have_received(:paginate).with("listings")
     expect(connection.reload.endpoint_coverage).to include("listings" => include("status" => "skipped"))
@@ -91,7 +91,7 @@ RSpec.describe Aryeo::Importer do
     end
 
     run = import_run(resources: [ "listings" ])
-    described_class.new(run:, client:, resources: [ "listings" ], import_start_date: "2026-01-01", import_end_date: "2026-01-31").call
+    described_class.call(run:, client:, resources: [ "listings" ], import_start_date: "2026-01-01", import_end_date: "2026-01-31")
 
     expect(run.reload.error_details).to be_empty
     expect(run.coverage.fetch("listings")).to include("count" => 2, "filtered_before_date" => 1,
@@ -107,11 +107,11 @@ RSpec.describe Aryeo::Importer do
     allow(client).to receive(:paginate)
 
     run = import_run(resources: %w[staff products listings orders appointments])
-    described_class.new(run:, client:, resources: run.requested_resources, import_start_date: "2026-07-03").call
+    described_class.call(run:, client:, resources: run.requested_resources, import_start_date: "2026-07-03")
 
     expect(client).to have_received(:paginate).with("appointments")
-    expect(client).to have_received(:paginate).with("orders", params: { "include" => described_class::ORDER_INCLUDE })
-    expect(client).to have_received(:paginate).with("listings", params: { "include" => described_class::LISTING_INCLUDE })
+    expect(client).to have_received(:paginate).with("orders", params: { "include" => Aryeo::ImportSession::ORDER_INCLUDE })
+    expect(client).to have_received(:paginate).with("listings", params: { "include" => Aryeo::ImportSession::LISTING_INCLUDE })
     expect(client).to have_received(:paginate).with("company-team-members")
     expect(client).to have_received(:paginate).with("products")
   end
@@ -121,12 +121,12 @@ RSpec.describe Aryeo::Importer do
     allow(client).to receive(:paginate)
 
     run = import_run(resources: %w[listings orders appointments])
-    described_class.new(run:, client:, resources: run.requested_resources,
-                        import_start_date: "2026-07-03", import_end_date: "2026-07-10").call
+    described_class.call(run:, client:, resources: run.requested_resources,
+                        import_start_date: "2026-07-03", import_end_date: "2026-07-10")
 
     expect(client).to have_received(:paginate).with("appointments")
-    expect(client).to have_received(:paginate).with("orders", params: { "include" => described_class::ORDER_INCLUDE })
-    expect(client).to have_received(:paginate).with("listings", params: { "include" => described_class::LISTING_INCLUDE })
+    expect(client).to have_received(:paginate).with("orders", params: { "include" => Aryeo::ImportSession::ORDER_INCLUDE })
+    expect(client).to have_received(:paginate).with("listings", params: { "include" => Aryeo::ImportSession::LISTING_INCLUDE })
   end
 
   it "imports selected listing dependencies, nested order data, appointments, and expanded media" do
@@ -134,7 +134,7 @@ RSpec.describe Aryeo::Importer do
     allow(client).to receive(:paginate) do |endpoint, params: {}, &block|
       next unless endpoint == "listings"
 
-      expect(params).to eq("include" => described_class::LISTING_INCLUDE)
+      expect(params).to eq("include" => Aryeo::ImportSession::LISTING_INCLUDE)
       block.call(
         {
           "id" => "listing-1",
@@ -178,7 +178,7 @@ RSpec.describe Aryeo::Importer do
 
     run = import_run(resources: [ "listings" ])
     expect {
-      described_class.new(run:, client:, resources: [ "listings" ], import_start_date: "2026-07-03").call
+      described_class.call(run:, client:, resources: [ "listings" ], import_start_date: "2026-07-03")
     }.to have_enqueued_job(AryeoMediaCopyJob).exactly(6).times
 
     listing = organization.listings.find_by!(address_line_1: "111 Oak Bay Ave")
@@ -220,7 +220,7 @@ RSpec.describe Aryeo::Importer do
     end
 
     run = import_run(resources: [ "listings" ])
-    described_class.new(run:, client:, resources: [ "listings" ]).call
+    described_class.call(run:, client:, resources: [ "listings" ])
 
     asset = organization.media_assets.find_by!(filename: "Hosted video")
     expect(asset).to have_attributes(status: "failed", content_type: "video/mp4")
@@ -248,8 +248,8 @@ RSpec.describe Aryeo::Importer do
     end
 
     run = import_run(resources: %w[listings orders appointments])
-    described_class.new(run:, client:, resources: run.requested_resources,
-                        import_start_date: "2026-07-03", import_end_date: "2026-07-10").call
+    described_class.call(run:, client:, resources: run.requested_resources,
+                        import_start_date: "2026-07-03", import_end_date: "2026-07-10")
 
     expect(run.reload.coverage.fetch("orders")).to include("count" => 2, "filtered_before_date" => 1, "date_unavailable" => 1)
     expect(run.coverage.fetch("appointments")).to include("count" => 2, "filtered_before_date" => 1)
@@ -290,7 +290,7 @@ RSpec.describe Aryeo::Importer do
     end
 
     run = import_run(resources: %w[clients products listings orders])
-    described_class.new(run:, client:, resources: run.requested_resources).call
+    described_class.call(run:, client:, resources: run.requested_resources)
 
     product = organization.products.find_by!(external_id: "photo-product-1")
     variant = product.product_variants.find_by!(external_id: "photo-variant-1")
@@ -343,7 +343,7 @@ RSpec.describe Aryeo::Importer do
     end
 
     run = import_run(resources: %w[products orders])
-    described_class.new(run:, client:, resources: run.requested_resources).call
+    described_class.call(run:, client:, resources: run.requested_resources)
 
     package_titled_product = organization.products.find_by!(external_id: "package-product-1")
     expect(package_titled_product).to be_service
@@ -366,7 +366,7 @@ RSpec.describe Aryeo::Importer do
     end
 
     run = import_run(resources: [ "orders" ])
-    described_class.new(run:, client:, resources: [ "orders" ]).call
+    described_class.call(run:, client:, resources: [ "orders" ])
 
     expect(organization.client_accounts.find_by!(email: "nested@example.test")).to have_attributes(origin: "aryeo")
     expect(run.reload.coverage.fetch("clients")).to include("status" => "imported_as_dependency", "count" => 1)
@@ -377,17 +377,17 @@ RSpec.describe Aryeo::Importer do
     allow(first_client).to receive(:paginate) do |endpoint, params: {}, &block|
       block.call({ "id" => "customer-1", "name" => "Original name", "email" => "customer@example.test" }) if endpoint == "customers"
     end
-    described_class.new(run: import_run(resources: [ "clients" ]), client: first_client, resources: [ "clients" ]).call
+    described_class.call(run: import_run(resources: [ "clients" ]), client: first_client, resources: [ "clients" ])
 
     changed_client = instance_double(Aryeo::Client)
     allow(changed_client).to receive(:paginate) do |endpoint, params: {}, &block|
       block.call({ "id" => "customer-1", "name" => "Changed in Aryeo", "email" => "customer@example.test" }) if endpoint == "customers"
     end
 
-    described_class.new(run: import_run(resources: [ "clients" ]), client: changed_client, resources: [ "clients" ], conflict_resolution: "skip").call
+    described_class.call(run: import_run(resources: [ "clients" ]), client: changed_client, resources: [ "clients" ], conflict_resolution: "skip")
     expect(ClientAccount.find_by!(email: "customer@example.test").name).to eq("Original name")
 
-    described_class.new(run: import_run(resources: [ "clients" ], conflict_resolution: "overwrite"), client: changed_client, resources: [ "clients" ], conflict_resolution: "overwrite").call
+    described_class.call(run: import_run(resources: [ "clients" ], conflict_resolution: "overwrite"), client: changed_client, resources: [ "clients" ], conflict_resolution: "overwrite")
     expect(ClientAccount.find_by!(email: "customer@example.test").name).to eq("Changed in Aryeo")
   end
 
@@ -403,7 +403,7 @@ RSpec.describe Aryeo::Importer do
       end
     end
 
-    described_class.new(run: import_run(resources: %w[clients customer_teams]), client:, resources: %w[clients customer_teams]).call
+    described_class.call(run: import_run(resources: %w[clients customer_teams]), client:, resources: %w[clients customer_teams])
 
     team = organization.customer_teams.find_by!(name: "Oak Bay Realty")
     expect(team).to be_aryeo

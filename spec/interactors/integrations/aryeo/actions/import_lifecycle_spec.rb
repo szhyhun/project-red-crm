@@ -9,7 +9,7 @@ RSpec.describe "Aryeo import lifecycle interactors", type: :service do
     connection.integration_import_runs.create!(organization:, provider: :aryeo, requested_resources: [ "products" ])
   end
 
-  def importer_state(overrides = {})
+  def session_state(overrides = {})
     {
       counts: {},
       conflict_counts: {},
@@ -46,7 +46,7 @@ RSpec.describe "Aryeo import lifecycle interactors", type: :service do
   end
 
   it "completes with warnings and records skipped resources and dependency coverage" do
-    importer = instance_double(Aryeo::Importer, state: importer_state(
+    session = instance_double(Aryeo::ImportSession, state: session_state(
       deferred_skipped_resources: [ "appointments" ],
       dependency_counts: { "clients" => 2 },
       dependency_conflict_counts: { "clients" => 1 },
@@ -55,7 +55,7 @@ RSpec.describe "Aryeo import lifecycle interactors", type: :service do
     run.update!(status: :running, phase: "products")
     connection.update!(status: :importing)
 
-    result = Integrations::Aryeo::Actions::CompleteImport.call(run:, importer:)
+    result = Integrations::Aryeo::Actions::CompleteImport.call(run:, session:)
 
     expect(result).to be_success
     expect(run.reload).to be_completed_with_errors
@@ -70,9 +70,9 @@ RSpec.describe "Aryeo import lifecycle interactors", type: :service do
   it "marks unexpected failures with a stable error code" do
     run.update!(status: :running, phase: "products")
     error = StandardError.new("database unavailable")
-    importer = instance_double(Aryeo::Importer, state: importer_state)
+    session = instance_double(Aryeo::ImportSession, state: session_state)
 
-    result = Integrations::Aryeo::Actions::FailImport.call(run:, importer:, error:)
+    result = Integrations::Aryeo::Actions::FailImport.call(run:, session:, error:)
 
     expect(result).to be_success
     expect(run.reload).to have_attributes(status: "failed", error_code: "import_failure", phase: "failed")

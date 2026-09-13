@@ -3,7 +3,7 @@ require "set"
 require "uri"
 
 module Aryeo
-  class Importer
+  class ImportSession
     ENDPOINTS = {
       staff: "company-team-members",
       clients: "customers",
@@ -69,13 +69,13 @@ module Aryeo
       @run = run
       @connection = run.integration_connection
       @organization = run.organization
-      @client = client || Client.new(api_key: @connection.api_key)
+      @client = client || ::Aryeo::Client.new(api_key: @connection.api_key)
       @listing_limit = listing_limit.to_i.positive? ? listing_limit.to_i : nil
       requested_resources = resources.nil? ? ENDPOINTS.keys.map(&:to_s) : Array(resources).map(&:to_s)
       @resources = requested_resources.intersection(RESOURCE_KEYS).map(&:to_sym).to_set - skip_resources.map(&:to_sym).to_set
-      @import_start_date = import_start_date.present? ? Date.iso8601(import_start_date.to_s) : nil
-      @import_end_date = import_end_date.present? ? Date.iso8601(import_end_date.to_s) : nil
-      @conflict_resolution = conflict_resolution.presence || run.conflict_resolution || "skip"
+      @import_start_date = parse_date(import_start_date || run.import_start_date)
+      @import_end_date = parse_date(import_end_date || run.import_end_date)
+      @conflict_resolution = (conflict_resolution || run.conflict_resolution).presence || "skip"
       @counts = Hash.new(0)
       @conflict_counts = Hash.new(0)
       @filtered_counts = Hash.new(0)
@@ -106,45 +106,133 @@ module Aryeo
       }
     end
 
-    def call
-      result = ::Integrations::Aryeo::Organizers::ImportOrganizer.call(
-        run: @run,
-        importer: self,
-        client: @client,
-        resources: @resources.to_a,
-        import_start_date: @import_start_date,
-        import_end_date: @import_end_date,
-        conflict_resolution: @conflict_resolution,
-        listing_limit: @listing_limit,
-        skip_resources: @resources.to_a.empty? ? [] : nil
-      )
-      raise result.failure.original_error || result.failure if result.failure?
+    attr_reader :organization
 
-      result[:run]
+    def resource_endpoints
+      ENDPOINTS
     end
 
-    def reconcile_imported_delivery!
-      reconcile_imported_delivery_graph!
+    def selected_resource?(name)
+      @resources.include?(name.to_sym)
     end
 
-    def import_collections!
-      ENDPOINTS.each do |name, endpoint|
-        unless @resources.include?(name)
-          @deferred_skipped_resources << name
-          next
-        end
+    def skip_resource!(name)
+      @deferred_skipped_resources << name.to_sym unless @deferred_skipped_resources.include?(name.to_sym)
+    end
 
-        import_collection(name, endpoint, limit: name == :listings ? @listing_limit : nil)
-      end
+    def listing_limit
+      @listing_limit
+    end
 
+    def conflict_resolution
+      @conflict_resolution
+    end
+
+    def prepare_collection!(name)
+      @run.update!(phase: name.to_s)
       heartbeat!(force: true)
     end
 
-    # These narrow methods are the resource-mapper boundary. Resource
-    # Interactors can reuse the importer session's organization and parsing
-    # rules without reaching into its mutable state or duplicating them.
-    attr_reader :organization
+    def paginate_resource(name, endpoint, &block)
+      paginate_collection(name, endpoint, &block)
+    end
 
+    def normalize_payload(payload)
+      stringify(payload)
+    end
+
+    def filter_reason_for(name, payload)
+      date_filter_reason(name.to_sym, payload)
+    end
+
+    def record_date_unavailable!(name)
+      @date_unavailable_counts[name.to_sym] += 1
+    end
+
+    def record_filtered!(name, reason)
+      increment_filtered_count(name.to_sym, reason)
+    end
+
+    def sort_key_for(payload)
+      [ source_timestamp(payload), external_id(payload) ]
+    end
+
+    def count_for(name)
+      @counts[name.to_sym]
+    end
+
+    def complete_collection!(name, count_before)
+      name = name.to_sym
+      @coverage[name] = {
+        status: "imported",
+        count: @counts[name] - count_before,
+        skipped_conflicts: @conflict_counts[name],
+        filtered_before_date: @filtered_counts[name],
+        filtered_after_date: @filtered_after_counts[name],
+        date_unavailable: @date_unavailable_counts[name],
+        media_assets: name == :listings && @media_counts.present? ? @media_counts.dup : nil
+      }.compact
+    end
+
+    def mark_endpoint_unavailable!(name, error)
+      @coverage[name.to_sym] = { status: "unavailable", detail: error.message }
+      Rails.logger.warn("Aryeo import #{@run.id} endpoint unavailable: #{name}: #{error.message}")
+    end
+
+    def mark_endpoint_failed!(name, error)
+      @coverage[name.to_sym] = { status: "failed", detail: error.message }
+      @errors << "#{name}: #{error.message}"
+      Rails.logger.warn("Aryeo import #{@run.id} endpoint failed: #{name}: #{error.message}")
+    end
+
+    def persist_progress!
+      @run.update!(counts: @counts, coverage: @coverage, error_details: @errors, heartbeat_at: Time.current)
+    end
+
+    def existing_external_record(resource_type, payload)
+      record_for(resource_type.to_s, external_id(payload))
+    end
+
+    def archive_imported_record(resource_type, payload, **attributes)
+      archive!(resource_type, payload, **attributes)
+    end
+
+    def record_imported!(name, dependency: false)
+      name = name.to_sym
+      @counts[name] += 1
+      @dependency_counts[name] += 1 if dependency
+    end
+
+    def record_conflict!(name, dependency: false)
+      name = name.to_sym
+      dependency ? @dependency_conflict_counts[name] += 1 : @conflict_counts[name] += 1
+    end
+
+    def record_resource_error!(name, payload, error)
+      message = "#{name} #{external_id(payload) || "unknown"}: #{error.record.errors.full_messages.to_sentence}"
+      @errors << message
+      Rails.logger.warn("Aryeo import #{@run.id} record skipped: #{message}")
+    end
+
+    def record_linked_media!(count)
+      @media_counts["linked"] += count if count.positive?
+      return unless @coverage[:listings].present? && @media_counts.present?
+
+      @coverage[:listings][:media_assets] = @media_counts.dup
+    end
+
+    def import_dependency(resource_type, payload)
+      result = Integrations::Aryeo::Organizers::ImportResource.call(
+        session: self, resource_name: resource_type, payload:, dependency: true
+      )
+      raise result.failure.original_error || result.failure if result.failure?
+
+      result[:record]
+    end
+
+    # These narrow methods are the resource-mapper boundary. Resource
+    # Interactors can reuse the import session's organization and parsing
+    # rules without reaching into its mutable state or duplicating them.
     def catalog_record_for(resource_type, external)
       record_for(resource_type, external)
     end
@@ -223,10 +311,6 @@ module Aryeo
 
     def customer_import_dependency(resource_type, payload)
       import_dependency(resource_type, payload)
-    end
-
-    def import_dependency(resource_type, payload)
-      import_resource(resource_type, payload, dependency: true)
     end
 
     def staff_value(payload, *keys)
@@ -347,10 +431,6 @@ module Aryeo
 
     def listing_time_value(payload, *keys)
       time_value(payload, *keys)
-    end
-
-    def listing_import_media(listing, payload)
-      import_media_assets(listing, payload)
     end
 
     def listing_import_relations(listing, payload)
@@ -477,8 +557,6 @@ module Aryeo
       @errors << message
     end
 
-    private
-
     def heartbeat!(force: false)
       if force
         @run.heartbeat!
@@ -493,136 +571,19 @@ module Aryeo
       @records_since_heartbeat = 0
     end
 
-    def import_collection(name, endpoint, limit: nil)
-      @run.update!(phase: name.to_s)
-      heartbeat!(force: true)
-      count_before = @counts[name]
-      if limit
-        payloads = []
-        paginate_collection(name, endpoint) do |payload|
-          payloads << stringify(payload)
-          heartbeat!
-        end
-        payloads = payloads.filter_map do |payload|
-          filter_reason = date_filter_reason(name, payload)
-          if filter_reason == :unavailable
-            @date_unavailable_counts[name] += 1
-            payload
-          elsif filter_reason
-            increment_filtered_count(name, filter_reason)
-            nil
-          else
-            payload
-          end
-        end
-        payloads.sort_by { |payload| [ source_timestamp(payload), external_id(payload) ] }.reverse.first(limit).each do |payload|
-          import_resource(name, payload)
-          heartbeat!
-        end
-      else
-        paginate_collection(name, endpoint) do |payload|
-          payload = stringify(payload)
-          filter_reason = date_filter_reason(name, payload)
-          if filter_reason == :unavailable
-            @date_unavailable_counts[name] += 1
-          elsif filter_reason
-            increment_filtered_count(name, filter_reason)
-            heartbeat!
-            next
-          end
-          import_resource(name, payload)
-          heartbeat!
-        end
-      end
-      @coverage[name] = {
-        status: "imported",
-        count: @counts[name] - count_before,
-        skipped_conflicts: @conflict_counts[name],
-        filtered_before_date: @filtered_counts[name],
-        filtered_after_date: @filtered_after_counts[name],
-        date_unavailable: @date_unavailable_counts[name],
-        media_assets: name == :listings && @media_counts.present? ? @media_counts.dup : nil
-      }.compact
-    rescue Client::EndpointUnavailable => error
-      @coverage[name] = { status: "unavailable", detail: error.message }
-      Rails.logger.warn("Aryeo import #{@run.id} endpoint unavailable: #{name}: #{error.message}")
-    rescue Client::Error => error
-      @coverage[name] = { status: "failed", detail: error.message }
-      @errors << "#{name}: #{error.message}"
-      Rails.logger.warn("Aryeo import #{@run.id} endpoint failed: #{name}: #{error.message}")
-    ensure
-      @run.update!(counts: @counts, coverage: @coverage, error_details: @errors, heartbeat_at: Time.current)
-    end
+    private
 
-    def import_resource(name, payload, dependency: false)
-      existing_record = record_for(name.to_s, external_id(payload))
-      if existing_record&.record.present? && @conflict_resolution == "skip"
-        archive!(name, payload, record: existing_record.record, sync_status: :skipped)
-        dependency ? @dependency_conflict_counts[name] += 1 : @conflict_counts[name] += 1
-        return existing_record.record
-      end
+    def parse_date(value)
+      return if value.blank?
 
-      record = case name
-      when :staff then import_staff_user(payload)
-      when :clients then import_customer(payload)
-      when :customer_teams then import_customer_team(payload)
-      when :products then import_catalog_product(payload)
-      when :listings then import_listing_record(payload)
-      when :orders then import_order_record(payload)
-      when :appointments then import_appointment_record(payload)
-      when :tasks then import_task_record(payload)
-      end
-
-      archive!(name, payload, record: record)
-      @counts[name] += 1
-      @dependency_counts[name] += 1 if dependency
-      record
-    rescue ActiveRecord::RecordInvalid => error
-      message = "#{name} #{external_id(payload) || "unknown"}: #{error.record.errors.full_messages.to_sentence}"
-      @errors << message
-      Rails.logger.warn("Aryeo import #{@run.id} record skipped: #{message}")
-    end
-
-    def import_staff_user(payload)
-      result = ::Integrations::Aryeo::Actions::Staff::ImportUser.call(importer: self, payload:)
-      raise result.failure.original_error || result.failure if result.failure?
-
-      result[:user]
-    end
-
-    def import_customer(payload)
-      result = ::Integrations::Aryeo::Actions::Customers::ImportClient.call(importer: self, payload:)
-      raise result.failure.original_error || result.failure if result.failure?
-
-      result[:client]
-    end
-
-    def import_customer_team(payload)
-      result = ::Integrations::Aryeo::Actions::Customers::ImportTeam.call(importer: self, payload:)
-      raise result.failure.original_error || result.failure if result.failure?
-
-      result[:team]
-    end
-
-    def import_catalog_product(payload)
-      result = ::Integrations::Aryeo::Actions::Catalog::ImportProduct.call(importer: self, payload:)
-      raise result.failure.original_error || result.failure if result.failure?
-
-      result[:product]
-    end
-
-    def import_listing_record(payload)
-      result = ::Integrations::Aryeo::Actions::Listings::ImportListing.call(importer: self, payload:)
-      raise result.failure.original_error || result.failure if result.failure?
-
-      result[:listing]
+      Date.iso8601(value.to_s)
     end
 
     def import_listing_clients(payload)
       listing_client_payloads(payload).filter_map do |client_payload|
         client = client_for_payload(client_payload)
         if client.blank? && external_id(client_payload).present?
-          client = import_resource(:clients, client_payload, dependency: true)
+          client = import_dependency(:clients, client_payload)
         end
         import_related_customer_team(client_payload, client)
         client
@@ -634,14 +595,14 @@ module Aryeo
 
       unless @resources.include?(:orders)
         records(payload, "orders").each do |order_payload|
-          import_resource(:orders, order_payload.merge("listing_id" => listing_external), dependency: true)
+          import_dependency(:orders, order_payload.merge("listing_id" => listing_external))
         end
       end
 
       return if @resources.include?(:appointments)
 
       records(payload, "appointments", "appointment").each do |appointment_payload|
-        import_resource(:appointments, appointment_payload.merge("listing_id" => listing_external), dependency: true)
+        import_dependency(:appointments, appointment_payload.merge("listing_id" => listing_external))
       end
     end
 
@@ -655,15 +616,8 @@ module Aryeo
 
       team_payload = team_payload.merge("customer_ids" => (customer_ids(team_payload) + [ external_id(client_payload) ]).compact.uniq)
       team = record_for("customer_teams", external_id(team_payload))&.record
-      team ||= import_resource(:customer_teams, team_payload, dependency: true)
+      team ||= import_dependency(:customer_teams, team_payload)
       team&.customer_team_memberships&.find_or_create_by!(client_account: client)
-    end
-
-    def import_order_record(payload)
-      result = ::Integrations::Aryeo::Actions::Orders::ImportOrder.call(importer: self, payload:)
-      raise result.failure.original_error || result.failure if result.failure?
-
-      result[:order]
     end
 
     def import_order_appointments(order, payload)
@@ -671,8 +625,8 @@ module Aryeo
       return if listing_external.blank?
 
       records(payload, "appointments", "appointment").each do |appointment_payload|
-        import_resource(:appointments, appointment_payload.merge("listing_id" => listing_external,
-                                                                  "order_id" => external_id(payload)), dependency: true)
+        import_dependency(:appointments, appointment_payload.merge("listing_id" => listing_external,
+                                                                   "order_id" => external_id(payload)))
       end
     end
 
@@ -699,7 +653,7 @@ module Aryeo
       client_payload = listing_client_payloads(payload).first
       return if client_payload.blank? || external_id(client_payload).blank?
 
-      import_resource(:clients, client_payload, dependency: true)
+      import_dependency(:clients, client_payload)
     end
 
     def order_item_catalog_reference(payload)
@@ -748,7 +702,7 @@ module Aryeo
       return product if product.present?
       return if payload.keys == [ "id" ]
 
-      import_resource(:products, payload, dependency: true)
+      import_dependency(:products, payload)
     end
 
     def import_payment_metadata(order, payload)
@@ -771,27 +725,6 @@ module Aryeo
                                 currency: currency(payment_payload), paid_at: time_value(payment_payload, "paid_at", "completed_at"),
                                 provider_payload: payment_payload, origin: :aryeo)
       payment.save!
-    end
-
-    def import_appointment_record(payload)
-      result = ::Integrations::Aryeo::Actions::Appointments::ImportAppointment.call(importer: self, payload:)
-      raise result.failure.original_error || result.failure if result.failure?
-
-      result[:appointment]
-    end
-
-    def import_task_record(payload)
-      result = ::Integrations::Aryeo::Actions::Tasks::ImportTask.call(importer: self, payload:)
-      raise result.failure.original_error || result.failure if result.failure?
-
-      result[:task]
-    end
-
-    def import_media_assets(listing, payload)
-      result = ::Integrations::Aryeo::Actions::Media::ImportListing.call(importer: self, listing:, payload:)
-      raise result.failure.original_error || result.failure if result.failure?
-
-      result[:listing]
     end
 
     def import_property_site(listing, payload)
@@ -819,19 +752,6 @@ module Aryeo
                                         source_updated_at: time_value(payload, "updated_at"), last_imported_at: Time.current)
       external_record.save!
       external_record
-    end
-
-    def reconcile_imported_delivery_graph!
-      # Listings and media are imported before the complete order/catalog graph
-      # is known. Reconcile only after all endpoints have been processed, so
-      # media is linked to real services by category and provider relationship
-      # instead of being left as an orphan listing file.
-      result = Aryeo::ImportedDeliveryMaterializer.new(run: @run).call
-      linked_count = result.fetch(:linked_media_assets).size
-      @media_counts["linked"] += linked_count if linked_count.positive?
-      return unless @coverage[:listings].present? && @media_counts.present?
-
-      @coverage[:listings][:media_assets] = @media_counts.dup
     end
 
     def paginate_collection(name, endpoint, &block)

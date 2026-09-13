@@ -3,8 +3,10 @@ module Integrations::Aryeo::Actions
     def call
       return context if context[:skipped]
 
-      context.fetch(:importer).reconcile_imported_delivery!
-      context
+      session = context.fetch(:session)
+      result = ::Aryeo::ImportedDeliveryMaterializer.new(run: context.fetch(:run)).call
+      session.record_linked_media!(result.fetch(:linked_media_assets).size)
+      context.set(:materialization, result)
     end
   end
 end

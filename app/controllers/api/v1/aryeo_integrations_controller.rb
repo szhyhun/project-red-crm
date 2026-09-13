@@ -34,7 +34,7 @@ class Api::V1::AryeoIntegrationsController < Api::V1::BaseController
     return render json: { error: "aryeo_not_connected" }, status: :unprocessable_entity unless @connection.api_key_configured?
 
     resources = Array(params[:resources]).map(&:to_s).uniq
-    invalid_resources = resources - Aryeo::Importer::RESOURCE_KEYS
+    invalid_resources = resources - ::Aryeo::ImportSession::RESOURCE_KEYS
     return render json: { error: "aryeo_import_resources_required" }, status: :unprocessable_entity if resources.empty?
     return render json: { error: "aryeo_import_resources_invalid", resources: invalid_resources }, status: :unprocessable_entity if invalid_resources.any?
 

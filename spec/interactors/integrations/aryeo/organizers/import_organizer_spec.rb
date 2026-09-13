@@ -9,34 +9,18 @@ RSpec.describe Integrations::Aryeo::Organizers::ImportOrganizer do
     connection.integration_import_runs.create!(organization:, provider: :aryeo, requested_resources: [ "products" ])
   end
 
-  let(:import_state) do
-    {
-      counts: {}, conflict_counts: {}, filtered_counts: {}, filtered_after_counts: {},
-      date_unavailable_counts: {}, dependency_counts: {}, dependency_conflict_counts: {},
-      media_counts: {}, deferred_skipped_resources: [], coverage: {}, errors: []
-    }
+  it "is only the ordered import workflow" do
+    expect(described_class.interactors).to eq([
+      Integrations::Aryeo::Actions::StartImport,
+      Integrations::Aryeo::Actions::ImportSelectedCollections,
+      Integrations::Aryeo::Actions::ReconcileImportedDelivery,
+      Integrations::Aryeo::Actions::CompleteImport
+    ])
   end
 
-  it "returns the reloaded run after the importer completes" do
-    importer = instance_double(Aryeo::Importer)
-    allow(Aryeo::Importer).to receive(:new).with(
-      run:, resources: [ "products" ], import_start_date: nil, import_end_date: nil, conflict_resolution: "skip"
-    ).and_return(importer)
-    allow(importer).to receive(:import_collections!)
-    allow(importer).to receive(:reconcile_imported_delivery!)
-    allow(importer).to receive(:state).and_return(import_state)
-
-    result = described_class.call(run:)
-
-    expect(result).to be_success
-    expect(result[:run]).to eq(run.reload)
-  end
-
-  it "returns a typed failure and preserves the importer exception" do
-    importer = instance_double(Aryeo::Importer)
+  it "records an unexpected child failure and preserves the original exception" do
     error = StandardError.new("import exploded")
-    allow(Aryeo::Importer).to receive(:new).and_return(importer)
-    allow(importer).to receive(:import_collections!).and_raise(error)
+    allow(Integrations::Aryeo::Actions::StartImport).to receive(:call).and_raise(error)
 
     result = described_class.call(run:)
 

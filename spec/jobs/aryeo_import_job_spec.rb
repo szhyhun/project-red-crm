@@ -9,10 +9,9 @@ RSpec.describe AryeoImportJob do
     connection.integration_import_runs.create!(organization:, provider: :aryeo, requested_resources: [ "products" ])
   end
 
-  it "marks the run failed when the importer raises and re-raises the job error" do
-    importer = instance_double(Aryeo::Importer)
-    allow(Aryeo::Importer).to receive(:new).and_return(importer)
-    allow(importer).to receive(:import_collections!).and_raise(StandardError, "catalog database failure")
+  it "marks the run failed when the import workflow raises and re-raises the job error" do
+    allow(Integrations::Aryeo::Actions::StartImport).to receive(:call)
+      .and_raise(StandardError, "catalog database failure")
 
     expect { described_class.perform_now(run.id) }.to raise_error(StandardError, "catalog database failure")
 
@@ -24,10 +23,6 @@ RSpec.describe AryeoImportJob do
   it "does not re-run a terminal completed-with-errors result" do
     run.update!(status: :completed_with_errors, phase: "completed", completed_at: Time.current,
                 error_details: [ "one record was invalid" ])
-    importer = instance_double(Aryeo::Importer)
-    allow(Aryeo::Importer).to receive(:new).and_return(importer)
-    allow(importer).to receive(:import_collections!).and_raise(StandardError, "late notification failure")
-
     expect { described_class.perform_now(run.id) }.not_to raise_error
 
     expect(run.reload).to be_completed_with_errors
