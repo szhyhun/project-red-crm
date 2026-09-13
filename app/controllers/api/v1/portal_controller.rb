@@ -36,7 +36,7 @@ class Api::V1::PortalController < Api::V1::BaseController
   def listings
     authorize Listing, :index?
 
-    render json: { listings: portal_listings.map { |listing| serialize_listing(listing) } }
+    render json: { listings: portal_listings.map { |listing| serialize_listing(listing, include_account: true) } }
   end
 
   def show_listing
@@ -71,7 +71,7 @@ class Api::V1::PortalController < Api::V1::BaseController
       return render json: { error: result.failure.code, details: { base: [ result.failure.message ] } }, status: :unprocessable_content
     end
 
-    render json: { listing: serialize_listing(result.fetch(:listing)), order_id: result[:order]&.id }, status: :created
+    render json: { listing: serialize_listing(result.fetch(:listing), include_account: true), order_id: result[:order]&.id }, status: :created
   end
 
   # The settings blocks of one of this customer's teams that the team lets them
@@ -207,32 +207,15 @@ class Api::V1::PortalController < Api::V1::BaseController
     assets = deliverable.customer_visible_assets.where(id: selected_ids)
     return render json: { error: "invalid_media_asset_reference" }, status: :unprocessable_entity if assets.size != selected_ids.size
 
-    conversation = Conversation.account_thread_for(organization: Current.organization, client_account: listing.client_account)
-    conversation.conversation_memberships.find_or_create_by!(user: current_user) do |membership|
-      membership.role = :participant
-    end
-    conversation.join_team_admins!
-    message = nil
-    OrderDeliverable.transaction do
-      message = conversation.messages.create!(author: current_user, body:, body_html: body_html,
-                                               message_kind: :change_request, listing:, order_deliverable: deliverable)
-      assets.each_with_index { |asset, position| message.message_media_references.create!(media_asset: asset, position:) }
-      deliverable.update!(status: :in_progress, delivered_at: nil)
-      ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: deliverable,
-                            event_type: "order_deliverable.change_requested", payload: {
-                              message_id: message.id,
-                              media_asset_ids: selected_ids
-                            })
-      ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: listing,
-                            event_type: "order_deliverable.change_requested", payload: {
-                              order_deliverable_id: deliverable.id,
-                              message_id: message.id
-                            })
-    end
-    conversation.update!(last_message_at: message.created_at)
-    notify_later(message)
+    result = ClientPortal::CreateChangeRequest.call(
+      listing:, deliverable:, actor: current_user, body:, body_html:, assets:, selected_ids:
+    )
+    raise result.failure.original_error || result.failure if result.failure?
+
+    message = result.fetch(:message)
+    conversation = result.fetch(:conversation)
     render json: { change_request: { message_id: message.id, conversation_id: conversation.id,
-                                     deliverable: serialize_portal_deliverable(deliverable.reload) } }, status: :created
+                                     deliverable: serialize_portal_deliverable(result.fetch(:deliverable)) } }, status: :created
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
   end
@@ -242,9 +225,10 @@ class Api::V1::PortalController < Api::V1::BaseController
   def portal_payload
     {
       client_accounts: current_user.client_accounts.order(:name).map { |account| serialize_portal_account(account) },
-      listings: portal_listings.map { |listing| serialize_listing(listing) },
+      listings: portal_listings.map { |listing| serialize_listing(listing, include_account: true) },
       conversations: policy_scope(Conversation).includes(
         :listing,
+        :client_account,
         messages: [ :author, :listing, :order_deliverable, :media_review, :conversation_attachments,
                     { message_media_references: :media_asset } ]
       )
@@ -257,6 +241,7 @@ class Api::V1::PortalController < Api::V1::BaseController
     @portal_listings ||= policy_scope(Listing)
       .includes(
         :property_site,
+        :client_account,
         :invoices,
         { workflow_tasks: { workflow_task_placements: [ :workflow_column, { board: :workflow_columns } ] } },
         :media_assets,
@@ -294,7 +279,7 @@ class Api::V1::PortalController < Api::V1::BaseController
     )
   end
 
-  def serialize_listing(listing, include_details: false)
+  def serialize_listing(listing, include_details: false, include_account: false)
     mark_first_delivery_view(listing)
     feedback = listing.listing_feedbacks
                       .where(client_account_id: current_user.client_account_ids)
@@ -314,6 +299,7 @@ class Api::V1::PortalController < Api::V1::BaseController
       property_site: serialize_property_site(listing.property_site),
       feedback: feedback && serialize_feedback(feedback)
     )
+    data[:client_account] = listing.client_account.slice(:id, :name, :kind) if include_account
     return data unless include_details
 
     data.merge(
@@ -453,12 +439,6 @@ class Api::V1::PortalController < Api::V1::BaseController
     params.require(:change_request).permit(:body, :body_html, media_asset_ids: [])
   end
 
-  def notify_later(message)
-    Conversations::NotifyJob.perform_later(message.id)
-  rescue StandardError => error
-    Rails.logger.error("Could not queue portal conversation notification for message #{message.id}: #{error.class}: #{error.message}")
-  end
-
   def parse_reschedule_time(value)
     return if value.blank?
 
@@ -477,6 +457,7 @@ class Api::V1::PortalController < Api::V1::BaseController
 
   def serialize_conversation(conversation)
     conversation.slice(:id, :listing_id, :subject, :last_message_at).merge(
+      client_account: conversation.client_account&.slice(:id, :name),
       listing_address: conversation.listing&.address,
       messages: conversation.messages.participants.includes(:author, :conversation_attachments, message_media_references: :media_asset).order(created_at: :desc).limit(20).reverse.map do |message|
         message.slice(:id, :body, :body_html, :message_kind, :listing_id, :order_deliverable_id, :created_at).merge(

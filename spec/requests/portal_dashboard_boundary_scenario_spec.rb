@@ -50,7 +50,27 @@ RSpec.describe "Portal dashboard boundary scenario", type: :request do
     expect(payload.fetch("conversations").pluck("id")).to contain_exactly(
       Conversation.account_thread_for(organization:, client_account:).id
     )
+    expect(payload.dig("conversations", 0, "client_account")).to include(
+      "id" => client_account.id, "name" => client_account.name
+    )
     expect(payload.dig("conversations", 0, "messages").pluck("body")).to include("Update for Own listing", "Update for Second own listing")
+  end
+
+  it "returns account identity so the portal can scope its active-account conversation view" do
+    second_account = ClientAccount.create!(organization:, name: "Second visible client", kind: :team)
+    ClientMembership.create!(client_account: second_account, user: client_user, role: :admin, status: :active)
+    second_conversation = Conversation.account_thread_for(organization:, client_account: second_account)
+    second_conversation.conversation_memberships.create!(user: client_user, role: :participant)
+    second_conversation.messages.create!(author: manager, body: "Second account update")
+
+    sign_in client_user
+    get "/api/v1/portal/dashboard"
+
+    expect(response).to have_http_status(:ok)
+    conversations = response.parsed_body.fetch("conversations")
+    expect(conversations.map { |conversation| conversation.dig("client_account", "id") }).to include(
+      client_account.id, second_account.id
+    )
   end
 
   it "keeps a customer from using a same-organization listing id outside its membership" do
