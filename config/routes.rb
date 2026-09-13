@@ -98,6 +98,7 @@ Rails.application.routes.draw do
         resource :invitation, only: :create, controller: "client_membership_invitations"
       end
       get "portal/memberships", to: "client_memberships#mine"
+      post "portal/team_joins", to: "portal_team_joins#create"
       resource :profile, only: %i[show update], controller: "profile"
       resources :staff, only: %i[index create update], controller: "staff"
       resources :customer_users, only: %i[index show update] do
