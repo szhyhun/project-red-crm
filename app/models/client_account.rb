@@ -15,12 +15,16 @@ class ClientAccount < ApplicationRecord
 
   VISIBILITY_BLOCKS = %w[billing pricing downloads marketing_templates].freeze
   VISIBILITIES = %w[hidden admins everyone].freeze
+  NOTIFICATION_EVENTS = %w[team_invitation order_confirmation listing_delivered payment_required payment_overdue
+                           payment_received feedback_requested appointment_scheduled appointment_reminder].freeze
+  NOTIFICATION_CHANNELS = %w[email sms push].freeze
 
   enum :kind, { agent: "agent", team: "team", brokerage: "brokerage" }, validate: true
 
   validates :name, presence: true
   validates :affiliate_id, uniqueness: { scope: :organization_id, case_sensitive: false }, allow_blank: true
   VISIBILITY_BLOCKS.each { |block| validates :"#{block}_visibility", inclusion: { in: VISIBILITIES } }
+  validate :notification_preferences_are_known
   validate :billing_user_is_an_active_admin, if: -> { billing_user_id.present? && will_save_change_to_billing_user_id? }
 
   scope :active, -> { where(archived_at: nil) }
@@ -43,6 +47,10 @@ class ClientAccount < ApplicationRecord
     return false if listing.blank?
 
     listing.orders.sum { |order| order.balance_due_cents.to_i }.positive?
+  end
+
+  def notify?(event, channel = "email")
+    notification_preferences.dig(event.to_s, channel.to_s) != false
   end
 
   # Whether a customer may read one of the team's settings blocks. The billing
@@ -70,6 +78,14 @@ class ClientAccount < ApplicationRecord
   end
 
   private
+
+  def notification_preferences_are_known
+    valid = notification_preferences.is_a?(Hash) && notification_preferences.all? do |event, channels|
+      event.in?(NOTIFICATION_EVENTS) && channels.is_a?(Hash) &&
+        channels.all? { |channel, enabled| channel.in?(NOTIFICATION_CHANNELS) && enabled.in?([ true, false ]) }
+    end
+    errors.add(:notification_preferences, "must switch known events and channels on or off") unless valid
+  end
 
   def billing_user_is_an_active_admin
     return if client_memberships.active.admin.exists?(user_id: billing_user_id)

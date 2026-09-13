@@ -1,5 +1,5 @@
 class ClientAccountPolicy < OrganizationRecordPolicy
-  CAPABILITIES = [ *ApplicationPolicy::CAPABILITIES, :configure_billing, :archive, :split ].freeze
+  CAPABILITIES = [ *ApplicationPolicy::CAPABILITIES, :configure_billing, :archive, :split, :configure_notifications ].freeze
 
   def index?
     true
@@ -21,6 +21,11 @@ class ClientAccountPolicy < OrganizationRecordPolicy
   # team, so the team's own admins cannot make them for themselves.
   def configure_billing?
     belongs_to_current_organization? && user.internal? && user.billing_access?
+  end
+
+  # A team's admins decide what their team is emailed about, as our staff can.
+  def configure_notifications?
+    belongs_to_current_organization? && (user.organization_admin? || user.manager? || account_admin?)
   end
 
   # Archiving or splitting a team changes where every member's work lands, so

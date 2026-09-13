@@ -12,7 +12,7 @@ class CustomerNotifications
 
     def listing_ready(listing)
       listing.customer_accounts.find_each do |client_account|
-        schedule_for_client_account(kind: "listing_ready", notifiable: listing, client_account:)
+        schedule_for_client_account(kind: "listing_ready", notifiable: listing, client_account:, delivery: true)
       end
     end
 
@@ -38,13 +38,26 @@ class CustomerNotifications
 
     private
 
+    TEAM_EVENTS = {
+      "invoice_ready" => "payment_required",
+      "listing_ready" => "listing_delivered",
+      "feedback_requested" => "feedback_requested",
+      "payment_received" => "payment_received"
+    }.freeze
+
     # Money goes to the team's billing member when it has one: the rest of the
-    # team is not the one being asked to pay.
-    def schedule_for_client_account(kind:, notifiable:, client_account:, required: false, billing: false)
+    # team is not the one being asked to pay. A team that switched an event off
+    # is not emailed about it, and a person who switched deliveries off is left
+    # out of those alone.
+    def schedule_for_client_account(kind:, notifiable:, client_account:, required: false, billing: false, delivery: false)
+      return [] unless client_account.notify?(TEAM_EVENTS.fetch(kind), "email")
+
       recipients = if billing && client_account.billing_user.present?
         [ client_account.billing_user.email ]
       else
-        [ client_account.email, *client_account.users.active.pluck(:email) ]
+        memberships = client_account.client_memberships.active.joins(:user).merge(User.active)
+        memberships = memberships.where(listing_delivery_notification_enabled: true) if delivery
+        [ client_account.email, *memberships.pluck("users.email") ]
       end.compact_blank.map(&:downcase).uniq
       raise MissingRecipient, "Add a client email address before sending this notification." if recipients.empty? && required
 
