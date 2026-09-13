@@ -3,6 +3,7 @@ class BoardWorkflowJob < ApplicationJob
 
   def perform(run_id)
     run = BoardWorkflowRun.find(run_id)
-    Workflows::Runner.new(run:).call
+    result = Workflows::ExecuteRun.call(run:)
+    raise result.failure.original_error || result.failure if result.failure?
   end
 end
