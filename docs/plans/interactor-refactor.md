@@ -1,10 +1,9 @@
 # Background-job business workflows and Interactors
 
-This is the refactoring plan for ProjectRed's background business workflows. It
-is intentionally separate from the Aryeo import correction and watchdog that
-are being implemented now. The first implementation step is to make the
-current jobs observable and terminal; the Interactor migration follows after
-that baseline is green.
+This is the refactoring plan for ProjectRed's background business workflows.
+The safety baseline and first extraction slices are now in the repository. The
+remaining phases continue from that working baseline rather than introducing a
+parallel compatibility path.
 
 The plan has four equal outcomes:
 
@@ -73,29 +72,32 @@ The first implementation slice is now in place:
 - Queue jobs are adapters: they load the durable record, call the Interactor,
   and preserve retry/error semantics.
 
-The remaining work is to apply the same boundary to the large Aryeo resource
-mapping internals, deliverable materialization, and conversation retention
-without adding wrappers that do not remove a competing path. Order approval
-itself now uses `Orders::ApproveOrder` plus `Orders::EnqueueWorkflow`.
+The remaining candidates are the large Aryeo resource mapping internals and
+any future multi-step deliverable reconciliation. `Conversations::PurgeExpired`
+is already the single retention action. Deliverable materialization remains a
+small service called inside the approval transaction until it has an
+independent caller or a real multi-step failure boundary; wrapping it only to
+rename the class would add complexity without removing a competing path.
+Order approval itself now uses `Orders::ApproveOrder` plus
+`Orders::EnqueueWorkflow`.
 
 | Current entry point | Proposed business action | Durable result |
 | --- | --- | --- |
-| `AryeoImportJob` | `Aryeo::RunImport` organizer | `IntegrationImportRun` is completed, completed with errors, or failed |
+| `AryeoImportJob` | `Aryeo::RunImport` | `IntegrationImportRun` is completed, completed with errors, or failed |
 | `AryeoMediaCopyJob` | `Aryeo::CopyMedia` | `MediaAsset` and `ExternalRecord` are copied or failed idempotently |
-| `Aryeo::ImportWatchdogJob` | `Aryeo::FailStaleImport` | An abandoned import is failed and its connection is released |
+| `Aryeo::ImportWatchdogJob` | `Aryeo::FailStaleImports` | Abandoned imports are failed and their connections are released |
 | `BoardWorkflowJob` | `Workflows::ExecuteRun` organizer | Workflow steps and task placements are synchronized |
-| `Orders::Approval` and the approval job boundary | `Orders::Approve` organizer | Order approval and deliverable/task materialization are idempotent |
+| approval controller boundary | `Orders::Approve` organizer | Order approval and deliverable/task materialization are idempotent |
 | `MediaAssets::VerifyUploadJob` | `MediaAssets::VerifyUpload` | Asset becomes ready or records a safe processing failure |
 | `Notifications::DeliverJob` | `Notifications::Deliver` | Delivery becomes delivered or failed with retry metadata |
-| `Conversations::NotifyJob` | `Conversations::PublishMessage` | Participants, unread state, and Action Cable notification are consistent |
+| `Conversations::NotifyJob` | `Conversations::Notifier` | Participants, unread state, and Action Cable notification are consistent |
 | `Conversations::RetentionJob` | `Conversations::PurgeExpired` | Expired messages and private attachments are removed by policy |
 
-The first three rows are implemented as the initial extraction because the
-Aryeo work has the clearest terminal-state and partial-failure requirements.
-Workflow execution and notification/media actions are now also decomposed.
-The next targets are deliverable materialization, the large Aryeo resource
-mapping internals, and conversation retention; each must remove a competing
-path rather than add a wrapper around an unchanged service.
+The terminal-state, media, notification, workflow, approval, import, and
+retention boundaries are implemented. Workflow execution and notification/media
+actions are decomposed into reusable steps. The next target is the large Aryeo
+resource mapping internals; each extraction must remove a competing path rather
+than add a wrapper around unchanged code.
 
 ## Observability and composition contract
 
@@ -189,8 +191,10 @@ characterization specs; then move one step at a time behind the same job.
 
 ### Phase 2 — Aryeo interactors
 
-- Add the `interactor-rails` dependency only after agreeing on the context API
-  and gem version in a separate change.
+- Keep the repository's small dependency-free `ApplicationInteractor` and
+  `ApplicationOrganizer` unless a concrete missing capability justifies a gem;
+  adding `interactor-rails` merely for naming would violate the simplification
+  goal.
 - Extract start/fail/complete first; these are small and remove duplicate state
   transitions before moving import mapping logic.
 - Extract catalog, customer/team, listing/media, order, appointment, and task
@@ -205,9 +209,10 @@ characterization specs; then move one step at a time behind the same job.
 
 ### Phase 3 — order and workflow automation
 
-- Extract `Orders::Approve`, `Orders::MaterializeDeliverables`, and
-  `Workflows::ExecuteRun` into organizers with one idempotency key per order or
-  workflow run.
+- Keep `Orders::Approve` and `Workflows::ExecuteRun` as organizers with one
+  idempotency key per order or workflow run. Extract deliverable materialization
+  only if it becomes a separately reused or multi-step workflow; otherwise the
+  existing small transactional service is the simpler boundary.
 - Give each action a result object/context containing created IDs and warnings;
   do not make later steps query loosely related titles.
 - Keep board authorization and placement synchronization in the workflow

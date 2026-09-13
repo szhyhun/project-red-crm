@@ -45,16 +45,18 @@ What each row rests on:
   parents, and self-inclusion; active square-foot ranges cannot overlap;
   component CRUD API.
 - **Orders and deliverables** — `orders.approved_at`; `order_deliverables` with a
-  unique `materialization_key`; `Orders::DeliverableMaterializer` and
-  `Orders::Approval`; `POST /orders/:id/approve`; target dates skip weekends.
+  unique `materialization_key`; the idempotent `Orders::Approve` organizer,
+  `Orders::ApproveOrder`, and `Orders::DeliverableMaterializer`; `POST
+  /orders/:id/approve`; target dates skip weekends.
   Approval enqueues workflows through `Workflows::Trigger`, which is idempotent.
 - **Boards, tasks, and placements** — parent tasks, task kinds, and group keys;
   `workflow_task_placements` with a partial unique index allowing one home
   placement per task; `workflow_task_deliverables`; the mover synchronizes
   shared placements and grouped deliverables.
-- **Board workflows and automations** — all six tables, `Workflows::Runner`,
-  `Workflows::Trigger`, `BoardWorkflowJob`, run history, retry endpoint, and
-  the Board → Workflows screen.
+- **Board workflows and automations** — all six tables,
+  `Workflows::ExecuteRun` and its action interactors, `Workflows::Trigger`,
+  `BoardWorkflowJob`, run history, retry endpoint, and the Board → Workflows
+  screen.
 - **Media and storage** — `media_assets.order_deliverable_id`, `version`, and
   `superseded_by_id`; upload, link, and reorder endpoints; separate delivery,
   board, and chat storage; `mediaAssetUrl` prefers `cdn_url`. Customer review
