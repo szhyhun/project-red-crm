@@ -33,6 +33,17 @@ RSpec.describe ClientMembership, type: :model do
     expect(chat.conversation_memberships.where(user: [ admin, member ]).count).to eq(2)
   end
 
+  it "adds a moved active admin to the destination team's existing chat" do
+    destination = ClientAccount.create!(organization:, name: "Destination Team", kind: :team)
+    destination_chat = organization.conversations.create!(kind: :client, client_account: destination, subject: "Destination")
+    admin = person("chat-moved-admin", :client_admin)
+    membership = ClientMembership.create!(client_account: account, user: admin, role: :admin, status: :active)
+
+    membership.update!(client_account: destination)
+
+    expect(destination_chat.users).to include(admin)
+  end
+
   it "creates no chat for a team that has none" do
     chat.destroy!
     admin = person("chat-no-room", :client_admin)

@@ -79,9 +79,10 @@ person in it who has an email becomes a customer `User` with a
 `ClientMembership` in that team: the role follows Aryeo's, a revoked, deleted
 or archived membership stays that way, and every other one arrives as
 `invited`. Nobody imported is emailed or given access; that begins when staff
-send our own invitation and the person accepts it. Teams recorded by earlier
-imports as the retired `CustomerTeam` were converted in place by the
-`RetireCustomerTeams` migration, pricing plans and external records included.
+send our own invitation and the person accepts it. Disposable development data
+created against the retired `CustomerTeam` model is not repaired in place;
+clear that imported organization and run a fresh import against the current
+schema.
 
 ## Import controls and conflicts
 
@@ -106,16 +107,13 @@ because external IDs and order-item IDs are upserted and the same source
 payload remains attached to its `ExternalRecord`. Overwrite refreshes
 Aryeo-owned service/add-on records; it does not create ProjectRed packages.
 
-Do not use `db:reset` or a broad production delete to repair an import. When a
-catalog shape changes, take a database snapshot, stop new imports, and delete
-only Aryeo-owned catalog records (`products`, their variants, and dependent
-Aryeo order-item references for the intended organization) through an approved
-scoped maintenance procedure. Native ProjectRed products/packages and
-unrelated organizations must remain untouched. Then run a fresh products
-import, review the terminal run status and endpoint coverage, and only then
-import dependent orders/listings if needed. The clean re-import is deliberate:
-it makes the old title-derived package rows disappear instead of hiding a data
-repair inside a normal incremental import.
+For the current disposable development/staging data, do not add or run a
+historical repair migration when the schema or catalog contract changes. Stop
+imports, clear the affected imported organization/database, and run a fresh
+products import before importing dependent orders/listings. This is deliberate:
+it removes incompatible experimental records instead of hiding a data repair
+inside a normal incremental import. A real customer-data deployment would need
+an explicitly reviewed, scoped migration rather than copying this reset rule.
 
 ## Media
 

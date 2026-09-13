@@ -29,11 +29,10 @@ class Api::V1::OrdersController < Api::V1::BaseController
     order = policy_scope(Order).find(params[:id])
     authorize order
 
-    # Older approved orders may predate approved_at and deliverable
-    # materialization. Keep PATCH approval on the same repairable path as the
-    # canonical endpoint instead of silently treating that legacy state as
-    # complete.
-    if update_params[:status].to_s == "approved" && approval_service_required?(order)
+    # A new approval through PATCH uses the same service as the canonical
+    # endpoint. Existing approved orders are ordinary updates; incompatible
+    # historical rows are cleared and re-created instead of repaired here.
+    if update_params[:status].to_s == "approved" && !order.approved?
       approve_order!(order)
       render json: { order: serialize(order.reload, include_details: true) }
       return
@@ -162,10 +161,6 @@ class Api::V1::OrdersController < Api::V1::BaseController
                             total_cents: order.total_cents,
                             payment_mode: order.payment_mode
                           })
-  end
-
-  def approval_service_required?(order)
-    !order.approved? || order.approved_at.blank? || order.order_deliverables.none?
   end
 
   def approve_order!(order)

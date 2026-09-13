@@ -103,7 +103,7 @@ class ClientMembership < ApplicationRecord
   end
 
   def became_an_active_admin?
-    active? && admin? && (saved_change_to_status? || saved_change_to_role?)
+    active? && admin? && (saved_change_to_status? || saved_change_to_role? || saved_change_to_client_account_id?)
   end
 
   # A team's chat is between its admins and our staff, the same rule the chat
