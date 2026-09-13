@@ -850,6 +850,33 @@ The older `CustomerTeam` record, which grouped client accounts, has been
 retired: a pricing plan belongs to a team (`ClientAccount`) or to one person,
 and Aryeo customer teams import as client accounts holding their people.
 
+Matching Aryeo's customer teams (September 2026) is built as follows:
+
+- **Memberships** carry `invited → active → revoked | archived`, a default
+  team per person, and a per-team delivery-email switch that team emails
+  honour. Pending invitations can be sent or resent, including to people an
+  import created. A customer can join a team with its affiliate code.
+- **A team** (`ClientAccount`) carries its identity, an internal note, the
+  download lock, price display and reminder settings, a page of totals and
+  activity, archive (no new listings or orders) and split.
+- **A person** carries phone, license, timezone, social profiles, an internal
+  note, blocked-from-ordering, a credit ledger (`CreditTransaction`), and may
+  own a pricing plan that beats their team's.
+- **Who pays**: a team may name a billing member, who is made and kept an
+  admin, receives invoice and payment emails, and is the only customer offered
+  online payment; `billing_pays_externally` offers it to nobody.
+- **Visibility**: billing, pricing, downloads and marketing templates are each
+  hidden, admins-only or everyone. Billing filters invoices today; the other
+  three are exposed in the portal payload for screens that do not exist yet.
+- **Notifications**: a per-team matrix of events against email, SMS and push.
+  Email honours it; SMS and push store the choice.
+- **Teams of one** show no team chrome, staff side or portal.
+
+Still open, because they belong inside `Orders::Create`: applying credit to an
+order, and not asking members of a team with a billing member to pay when
+ordering. Invited people are not yet added to the team's existing chats on
+acceptance.
+
 Build order:
 
 1. **Roles and per-account capabilities** — policies read the membership role;
