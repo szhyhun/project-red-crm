@@ -46,7 +46,10 @@ All application endpoints are under `/api/v1`.
 | `Tax` / `Coupon` / `TravelFee` | Organization pricing configuration; applying them to an order is a separate workflow. |
 | `PricingPlan` | Price overrides for a team (`ClientAccount`) or one person (`User`); a person's plan beats their team's. |
 | `Order` / `Invoice` / `Payment` | Commercial record; payment card data is never stored here. |
+| `ProductComponent` / `OrderDeliverable` | Package composition and production scope; deliverables do not add invoice lines. |
 | `MediaAsset` | A delivery media record pointing to a storage key. |
+| `MediaReview` / review threads | Customer file-by-file review snapshot and discussion, independent of deliverable lineage. |
+| `ClientMembership` | A person's role, status, and account membership within a customer account. |
 | `PropertySite` | Published listing landing-page configuration. |
 | `Conversation` / `Message` | Organization or listing communication with participant/staff visibility. |
 

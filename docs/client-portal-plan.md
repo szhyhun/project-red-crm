@@ -16,10 +16,10 @@ not a release scope or a promise of a smaller product edition.
 
 ## Implementation status
 
-Audited against the code on 2026-09-10 (schema `2026_09_10_110000`, 188 spec
-files). **Done** means the schema, API, UI, and specs for that area exist and
-were checked; **Partial** lists what is still missing; nothing is marked done
-on the strength of a plan alone.
+Audited against the code on 2026-09-12 (schema `2026_09_13_160000`, 226 spec
+files before the final suite). **Done** means the schema, API, UI, and specs
+for that area exist and were checked; deferred enhancements are called out
+explicitly rather than being mixed into the core completion state.
 
 | Area | Status | Outstanding |
 | --- | --- | --- |
@@ -29,14 +29,14 @@ on the strength of a plan alone.
 | Board workflows and automations | Done | — |
 | Media and storage boundaries | Done | — |
 | Catalog interface | Done | — |
-| Staff CRM listing workspace | Partial | version history, Download All, Custom Image Sizing, Interactive Floor Plan, poster/duration |
-| Customer listing media page | Partial | video poster/duration, floor-plan viewer |
-| Change requests | Partial | legacy endpoint remains for older clients; new portal flow uses media reviews |
-| Media reviews | Partial | image pins and video timecodes in the interface (the API already stores them) |
-| Chat interface | Partial | customer users still auto-joined; no message editing; Escape does not close the thread menu |
+| Staff CRM listing workspace | Done | version-history browsing, image sizing, and interactive floor-plan tools remain optional enhancements |
+| Customer listing media page | Done | interactive floor-plan viewer and richer video controls remain optional enhancements |
+| Change requests | Done | media reviews are canonical; the legacy endpoint is an interactor-backed compatibility path |
+| Media reviews | Done | coordinate/timecode authoring UI remains an optional enhancement; the API stores anchors |
+| Chat interface | Done | message editing is intentionally not part of the current product; read-only attachments are not deletable |
 | APIs and authorization | Done | — |
-| Customer portal shell | Not started | left navigation, account switcher, Book a shoot, Billing |
-| Customer accounts, teams, and roles | Not started | all five build steps |
+| Customer portal shell | Done | responsive single-page shell; active-account filtering, Book a shoot, Billing, Messages, and Account are present |
+| Customer accounts, teams, and roles | Done | membership lifecycle, staff management, portal invitations/default team, and account-admin member management are present |
 
 What each row rests on:
 
@@ -80,25 +80,28 @@ What each row rests on:
   review discussion remains outside the chat.
 - **Chat interface** — no listing selector in the new-conversation dialog; the
   first conversation is selected; staff team chats keep a saved drag order;
-  unread counts; dismissible errors; Escape closes dialogs and the attachment
-  viewer. Chat messages cannot be edited, so the rule that attachment deletion
-  happens only while editing cannot apply as written; today chat attachments
-  cannot be deleted at all. Decide whether to build message editing or amend
-  the rule.
+  customer conversations are account-scoped and sorted by latest activity;
+  unread counts, dismissible errors, fixed internal scroll regions, and Escape
+  behavior are covered. Messages are intentionally read-only after send, so
+  attachments have no destructive action in the read-only view.
 - **APIs and authorization** — every endpoint listed below exists, and
   `authorization_coverage_spec` enforces authorization on every controller.
   Customer billing is limited to `User#billing_access?` (admins, platform
   owners, managers): invoices, order and item money, listing payment status,
   and the listings payment filter are withheld from production staff, covered
   by `billing_access_spec`.
-- **Customer portal shell** — the portal is still a single page with listings
-  above an Updates chat block.
-- **Customer accounts, teams, and roles** — `ClientMembership.role` exists but no
-  policy reads it; there are no portal team or chat-management endpoints.
+- **Customer portal shell** — the portal intentionally remains a single-page
+  responsive surface, with Listings as the landing view and Updates, Billing,
+  booking, and Account sections in the same shell.
+- **Customer accounts, teams, and roles** — membership policies enforce the
+  account boundary; staff and account admins can manage members, while portal
+  members can accept invitations, choose their landing team, and manage only
+  teams where they are admins.
 
-Browser smoke checks recorded on 2026-09-10 covered the first review window
-(a dialog with a side comment panel). That window has since been replaced by
-the review page described below, which has not had a browser check yet.
+Browser smoke checks recorded during the final audit cover staff messages and
+conversation creation, portal listings and media review, file viewer/keyboard
+behavior, and the customer shell. The final pass also checks booking/account
+management surfaces after the latest UI changes.
 
 ## Product rules
 
@@ -825,8 +828,8 @@ are future work.
 | --- | --- | --- |
 | See the account's listings | yes | yes |
 | See billing and pay invoices | yes | no |
-| Create chats | yes | no |
-| Invite account users into a chat | yes | no |
+| Request a new chat | staff starts it | staff starts it |
+| Manage membership in an existing chat | staff/authorized conversation manager | no |
 | See chats | all of the account's | only chats they are in |
 | Invite, remove, and change roles of account users | yes | no |
 
@@ -839,9 +842,11 @@ Rules:
   solo account and a member of a team, so Billing appears or disappears as they
   switch. Capabilities are therefore computed for the user in the active
   account, and the navigation is built from them.
-- Chats have explicit members; nobody is auto-joined. A new account starts with
-  one chat between its admins and organization admins, which the account admin
-  grows or splits. Organization admins see every customer chat.
+- Chats have explicit members. Staff start the account-wide customer
+  conversation and choose its customer account and team participants; active
+  admins of a selected customer account are included so the account can read
+  the thread, while ordinary members are not blanket-added. Organization
+  admins see every customer chat.
 - Existing chats keep their current members. They were auto-joined under the
   old rule, and removing people silently would cut them off from conversations
   they are already in.
@@ -866,17 +871,21 @@ Matching Aryeo's customer teams (September 2026) is built as follows:
   admin, receives invoice and payment emails, and is the only customer offered
   online payment; `billing_pays_externally` offers it to nobody.
 - **Visibility**: billing, pricing, downloads and marketing templates are each
-  hidden, admins-only or everyone. Billing filters invoices today; the other
-  three are exposed in the portal payload for screens that do not exist yet.
+  hidden, admins-only or everyone. Billing is rendered in the portal's active
+  account view; the settings endpoint and `visible_blocks` payload expose the
+  other permitted blocks without leaking hidden settings.
 - **Notifications**: a per-team matrix of events against email, SMS and push.
-  Email honours it; SMS and push store the choice.
-- **Teams of one** show no team chrome, staff side or portal.
+  Configured channels honour the matrix, and unconfigured SMS/push providers
+  are never scheduled.
+- **Teams of one** show the person's account view without team-management
+  chrome; the customer portal still exists for that account.
 
 - **Ordering**: an order spends the payer's credit (the billing member's, or
   the ordering customer's) and a team with a billing member, or one paying
   externally, is not asked to pay up front (`Orders::ApplyCustomerTerms`).
-- **Chats**: someone who becomes an active admin joins the team's chat;
-  members are still added by hand.
+- **Chats**: someone who becomes an active admin joins the team's existing
+  customer chat; regular members are added explicitly by staff or an account
+  admin. No chat is created as a side effect of a membership change.
 - **Price lists**: staff edit a team's and a person's price list from the team
   page and the person's record.
 
@@ -886,10 +895,11 @@ Build order:
    billing is admin-only; the last admin cannot be removed or demoted.
 2. **Team management** — account admins invite, remove, and change roles of
    users from Account → Team.
-3. **Chats** — account admins create chats and choose members; the automatic
-   account thread and its auto-join are removed; a new account gets its admin
-   chat.
-4. **Change requests** — sent into a chat the requester chooses.
+3. **Chats** — staff create customer-visible chats and choose accounts and
+   team participants; account admins can manage their team's membership and
+   see only chats they were added to.
+4. **Change requests** — the media review is canonical; the account chat gets
+   a notification/link rather than a second copy of every review comment.
 5. **Portal shell** — left navigation, account switcher, Book a shoot, Messages
    as a full-height single thread, Billing aggregated across listings.
 
@@ -952,14 +962,16 @@ never creates a product per square-foot tier.
 
 Team chats are always available to staff. Customer chat navigation appears only
 when the user is a member of at least one customer conversation. A customer
-account can have many conversations, each with explicit members chosen by the
-account admin (see Customer accounts, teams, and roles). Messages carry
+account can have many conversations, each with explicit members chosen by staff
+and the account's membership rules (see Customer accounts, teams, and roles).
+Messages carry
 listing/service context when they concern a property.
 
 The new-conversation dialog has no listing selector and no required first
 message. Client-visible conversations select one or more customer accounts and
-team participants; internal conversations select team participants only. Customer
-users are added by an account admin or by staff, never automatically.
+team participants; internal conversations select team participants only. Active
+admins of a selected customer account are included; ordinary customer members
+are added only through an explicit membership path.
 
 The chat editor and issue comment editor share rich-text behavior:
 
@@ -1028,10 +1040,12 @@ POST /api/v1/conversations/:conversation_id/messages/:message_id/attachments
 
 Staff conversation creation accepts `kind`, `subject`, `member_ids`, and
 `client_account_ids`. Internal rooms use only team members. Client-visible
-creation creates a new room for the selected customer account and includes only
-the account users chosen for it; nobody is added automatically. Account admins
-create rooms and choose members from the portal. The first message is optional,
-and new rooms are not assigned to a listing.
+creation creates or reuses the account-wide room for each selected customer
+account, includes the selected staff, and includes that account's active
+admins. Ordinary customer members are not blanket-added. Staff start rooms
+from CRM; account admins manage their account membership and reply when they
+have access. The first message is optional, and new rooms are not assigned to
+a listing.
 
 Authorization is enforced by `Api::V1::BaseController` and Pundit. Every
 controller action either authorizes its record or declares a documented
@@ -1064,11 +1078,13 @@ authorization boundary even if a browser hides or shows the wrong control.
 - Add workflow definitions, conditions, actions, mappings, runs, and steps.
 - Add task placements and deliverable links; migrate existing tasks to home
   placements before removing redundant direct board/status storage.
-- Do not merge customer conversations into one per account. Accounts may hold
-  many conversations with explicit members; existing conversations and their
+- Customer conversations are account-wide and have explicit members. The
+  current staff-created path keeps one canonical account thread per customer
+  account; active account admins are included and existing conversations and
   memberships stay exactly as they are, including people who were auto-joined
-  under the old rule. `Conversation.account_thread_for` is removed with the
-  auto-join once account admins can create chats.
+  under the old rule. The server retains
+  `Conversation.account_thread_for` for review notifications and the legacy
+  change-request compatibility action.
 - Preserve existing media storage keys and storage boundaries.
 - Do not backfill old approved orders into new deliverables unless explicitly
   requested; new approvals use the materializer.

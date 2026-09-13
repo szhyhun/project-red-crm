@@ -104,6 +104,9 @@ The next application boundaries are also implemented:
   event.
 - `ClientPortal::RequestReschedule` owns appointment request, event, and
   listing activity persistence.
+- `ClientPortal::CreateChangeRequest` owns the legacy compatibility message,
+  selected-media references, deliverable transition, activity, and post-commit
+  notification.
 - `Orders::Create` owns catalog price resolution, order-item snapshots, order
   totals, and order-created activity.
 
@@ -203,9 +206,11 @@ Keep these as services unless their boundary changes:
   presenters are a small idempotent helper or read-side code; wrapping them
   would add indirection without a business transition.
 
-The portal change-request mutation still needs an explicit
-transactional notification/outbox boundary before extraction. Do not create
-micro-actions for individual order items, fields, or validation helpers.
+The portal change-request compatibility mutation is now an explicit action with
+one transaction and post-commit notification. The active portal review path
+remains `MediaReviews::Submit`; the compatibility action exists only for older
+clients. Do not create micro-actions for individual order items, fields, or
+validation helpers.
 
 ## Import organizer shape
 
@@ -226,7 +231,7 @@ Its steps should be explicit:
    and starts the heartbeat.
 2. `Integrations::Aryeo::Actions::ImportSelectedCollections` imports the selected collections and records
    endpoint coverage, source IDs, partial errors, and progress.
-3. `Aryeo::ReconcileImportedDelivery` links imported orders, services, media,
+3. `Integrations::Aryeo::Actions::ReconcileImportedDelivery` links imported orders, services, media,
    and deliverables without inventing Aryeo package relationships.
 4. `Integrations::Aryeo::Actions::CompleteImport` chooses `completed` versus
    `completed_with_errors`, stores final counts, and reconnects the integration.
@@ -235,10 +240,10 @@ Its steps should be explicit:
    exactly once.
 
 `Aryeo::ImportSession` and `Aryeo::ResourceImporter` keep provider mechanics
-outside the Organizer. The Organizer is only the chain; provider helpers stay
-grouped in services and are tested there. First preserve the existing payload
-and media contracts with characterization specs, then move one business step
-at a time behind the same job.
+outside the Organizer. `ImportSelectedCollections` owns its private resource
+import sequence; there is no nested resource Organizer. The Organizer is only
+the top-level chain, and provider helpers stay grouped in services and are
+tested there.
 
 ## Implementation sequence
 
@@ -328,9 +333,10 @@ The planned extraction pass is implemented. The application now has explicit
 Interactor/Organizer boundaries for import lifecycle and delivery
 reconciliation, order creation and approval, workflow execution and movement,
 conversation publication and retention, media review submission, membership
-invitation, payment webhooks, and portal booking/reschedule mutations.
+invitation, payment webhooks, and portal booking/reschedule/change-request
+mutations.
 
 The remaining service objects are intentional boundaries: provider/storage
 adapters, read-side presenters and resolvers, invoice record creation, and the
-portal change-request mutation pending a transactional notification/outbox
-contract. Those are not hidden duplicate workflow paths.
+portal change-request compatibility action. Those are not hidden duplicate
+workflow paths.

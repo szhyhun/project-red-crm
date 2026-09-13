@@ -90,6 +90,18 @@ ProjectRed does not store card details. The payment form is hosted by the
 configured payment provider. If there is no **Pay now** button, the invoice is
 already paid, is not payable yet, or has not been issued by the agency.
 
+### Customer: request a new shoot
+
+1. Sign in to the customer portal and choose **Book a shoot**.
+2. Choose the customer account when you belong to more than one account.
+3. Enter the property address and optional details such as square footage.
+4. Select one or more available service variants and submit the request.
+
+ProjectRed creates a draft listing and a pay-later order for that account. The
+agency confirms pricing, scheduling, and production from the CRM. The customer
+does not provide card details in this request; payment happens later from an
+issued invoice when the account is allowed to pay online.
+
 ### Customer: review delivered media and ask for a change
 
 1. Open the listing in the customer portal and choose **View delivered media**.
@@ -145,7 +157,8 @@ To start one:
    account-wide rather than attached to a listing.
 3. Give the conversation a name, confirm that it is **Client-visible**, select
    one or more customer accounts, and select the internal team participants.
-   Customer portal users for the selected accounts are added automatically.
+   The selected account's active admins can read the thread; ordinary account
+   members are not blanket-added.
 4. Start the conversation. It may begin empty; send the first reply whenever
    there is an update to share. Listing, service, or selected-media context is
    added to individual messages when relevant.
@@ -254,8 +267,8 @@ outcome for the review. Photos, videos, floor plans, tours, and files that were
 imported or uploaded before they were linked to an order remain visible in
 separate media-category cards instead of being collapsed into one generic file
 list. Those unlinked files can be downloaded or discussed in the account
-conversation; the structured review workflow is available only on real ordered
-deliverables.
+conversation and reviewed in the same file-by-file workspace; an internal
+order deliverable is not required.
 
 Raw or failed production media remains internal. Customers see only media that
 the agency has marked ready and made customer-visible.

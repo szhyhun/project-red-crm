@@ -130,6 +130,10 @@ ClientPortal::CreateListing
 ClientPortal::RequestReschedule
   appointment request + appointment event + listing activity
 
+ClientPortal::CreateChangeRequest
+  legacy compatibility message + selected media references + deliverable
+  transition + activity + notification
+
 Orders::Create
   catalog pricing + order items + totals + order activity
 ```
@@ -237,14 +241,19 @@ The Aryeo boundary is organized under
 ```text
 StartImport
   → ImportSelectedCollections
-      → ImportResource
-          → Aryeo::ResourceImporter
+      → Aryeo::ResourceImporter (private action step)
   → imported delivery reconciliation
   → CompleteImport
 
-unexpected exception → FailImport
+job exception        → FailImport
 watchdog timeout     → FailStaleImports
 ```
+
+`ImportSelectedCollections` owns the private resource-import sequence:
+conflict lookup, provider mapping, external-record archival, and count/error
+recording. Those steps are not separate Interactors because they are not
+independently reused, observed, or retried. There is deliberately no nested
+`ImportResource` Organizer.
 
 Future automation composition belongs under `app/interactors/automations`:
 
@@ -402,17 +411,12 @@ The current audit intentionally leaves these as services:
   presenters are respectively an idempotent record helper, a read-side query,
   and read/formatting code. Wrapping them would add indirection without an
   observable workflow step.
-- The portal change-request mutation remains in the controller boundary for
-  now because its message, media references, deliverable transition, activity,
-  and notification need one explicit transaction/outbox design. Do not split
-  it into an action that calls `PublishMessage` and then queues before the
-  surrounding transaction commits.
-
-The next candidates, after these extractions, are order creation and the
-portal's reschedule/change-request mutations. They should be extracted only as
-one action per complete business intent, with the existing authorization and
-request specs moved to the new boundary; no `CreateOrderItem`,
-`ValidateRescheduleField`, or similar micro-actions should be introduced.
+- `ClientPortal::CreateChangeRequest` owns the legacy compatibility mutation:
+  it creates the account conversation inside the same transaction as the
+  message, media references, deliverable transition, and activity, then queues
+  notification only after the transaction commits. The current portal does not
+  use this path; it uses `MediaReviews::Submit`, but the compatibility endpoint
+  has the same explicit business boundary.
 
 ## Simplification rule
 

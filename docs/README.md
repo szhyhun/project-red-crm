@@ -20,8 +20,8 @@ The local API supports organization sign-up/sign-in, internal production work,
 client accounts, listings, task and appointment assignment, catalog orders,
 invoice drafting and sending, asynchronous local final-media uploads, property-site
 publishing, conversations with per-conversation retention, staff invitations,
-branded lifecycle emails, a restricted customer portal response, and a manual
-Aryeo import when configured.
+branded lifecycle emails, the customer portal shell and media-review workflow,
+and a manual Aryeo import when configured.
 
 Direct browser-to-S3 uploads, media transcoding, recurring Aryeo sync, Square
 payment support, and smart-order recommendations remain planned or deployment-
