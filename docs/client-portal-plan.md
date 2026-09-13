@@ -872,10 +872,13 @@ Matching Aryeo's customer teams (September 2026) is built as follows:
   Email honours it; SMS and push store the choice.
 - **Teams of one** show no team chrome, staff side or portal.
 
-Still open, because they belong inside `Orders::Create`: applying credit to an
-order, and not asking members of a team with a billing member to pay when
-ordering. Invited people are not yet added to the team's existing chats on
-acceptance.
+- **Ordering**: an order spends the payer's credit (the billing member's, or
+  the ordering customer's) and a team with a billing member, or one paying
+  externally, is not asked to pay up front (`Orders::ApplyCustomerTerms`).
+- **Chats**: someone who becomes an active admin joins the team's chat;
+  members are still added by hand.
+- **Price lists**: staff edit a team's and a person's price list from the team
+  page and the person's record.
 
 Build order:
 
