@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_12_160000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_12_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -394,6 +394,25 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_160000) do
     t.datetime "updated_at", null: false
     t.index ["organization_id", "code"], name: "index_coupons_on_organization_id_and_code", unique: true
     t.index ["organization_id"], name: "index_coupons_on_organization_id"
+  end
+
+  create_table "credit_transactions", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "actor_id"
+    t.bigint "order_id"
+    t.integer "amount_cents", null: false
+    t.integer "balance_after_cents", null: false
+    t.string "reason", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_credit_transactions_on_actor_id"
+    t.index ["order_id"], name: "index_credit_transactions_on_order_id"
+    t.index ["organization_id"], name: "index_credit_transactions_on_organization_id"
+    t.index ["user_id", "created_at"], name: "index_credit_transactions_on_user_id_and_created_at"
+    t.index ["user_id"], name: "index_credit_transactions_on_user_id"
+    t.check_constraint "amount_cents <> 0", name: "credit_transactions_amount_not_zero"
+    t.check_constraint "balance_after_cents >= 0", name: "credit_transactions_balance_not_negative"
   end
 
   create_table "customer_team_memberships", force: :cascade do |t|
@@ -1269,6 +1288,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_160000) do
     t.index ["organization_id"], name: "index_users_on_organization_id"
     t.index ["origin"], name: "index_users_on_origin"
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
+    t.check_constraint "credit_balance_cents >= 0", name: "users_credit_balance_not_negative"
   end
 
   create_table "workflow_columns", force: :cascade do |t|
@@ -1407,6 +1427,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_160000) do
   add_foreign_key "conversations", "listings"
   add_foreign_key "conversations", "organizations"
   add_foreign_key "coupons", "organizations"
+  add_foreign_key "credit_transactions", "orders", on_delete: :nullify
+  add_foreign_key "credit_transactions", "organizations"
+  add_foreign_key "credit_transactions", "users"
+  add_foreign_key "credit_transactions", "users", column: "actor_id", on_delete: :nullify
   add_foreign_key "customer_team_memberships", "client_accounts"
   add_foreign_key "customer_team_memberships", "customer_teams"
   add_foreign_key "customer_teams", "organizations"

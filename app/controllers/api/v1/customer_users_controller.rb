@@ -40,7 +40,7 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
   def update_params
     params.require(:customer_user).permit(
       :name, :phone, :license_number, :avatar_url, :timezone, :internal_note,
-      :blocked_from_ordering, :credit_balance_cents, social_profiles: SOCIAL_PROFILE_KEYS
+      :blocked_from_ordering, social_profiles: SOCIAL_PROFILE_KEYS
     )
   end
 

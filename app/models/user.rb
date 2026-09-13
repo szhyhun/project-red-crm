@@ -4,6 +4,7 @@ class User < ApplicationRecord
 
   belongs_to :organization
   has_many :client_memberships, dependent: :destroy
+  has_many :credit_transactions, dependent: :destroy
   has_many :active_client_memberships, -> { where(status: :active) }, class_name: "ClientMembership", inverse_of: :user, dependent: nil
   # Access follows an accepted membership. An invitation grants nothing until it
   # is accepted, and a revoked one grants nothing after, so every policy that

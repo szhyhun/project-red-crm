@@ -62,13 +62,13 @@ RSpec.describe "Customer users", type: :request do
     patch "/api/v1/customer_users/#{customer.id}", params: {
       customer_user: {
         phone: "250-858-8697", license_number: "BC-1234", internal_note: "Prefers morning shoots",
-        blocked_from_ordering: true, credit_balance_cents: 5_000, social_profiles: { instagram: "@hambley" }
+        blocked_from_ordering: true, social_profiles: { instagram: "@hambley" }
       }
     }
 
     expect(response).to have_http_status(:ok)
     expect(customer.reload).to have_attributes(
-      phone: "250-858-8697", license_number: "BC-1234", blocked_from_ordering: true, credit_balance_cents: 5_000
+      phone: "250-858-8697", license_number: "BC-1234", blocked_from_ordering: true
     )
     expect(customer.social_profiles).to eq("instagram" => "@hambley")
     expect(ActivityEvent.where(subject: customer, event_type: "customer_user.updated")).to exist
