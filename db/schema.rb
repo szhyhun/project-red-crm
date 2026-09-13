@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_13_100000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_13_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -295,7 +295,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_100000) do
     t.string "downloads_visibility", default: "hidden", null: false
     t.string "marketing_templates_visibility", default: "hidden", null: false
     t.jsonb "notification_preferences", default: {}, null: false
+    t.bigint "order_form_id"
     t.index ["billing_user_id"], name: "index_client_accounts_on_billing_user_id"
+    t.index ["order_form_id"], name: "index_client_accounts_on_order_form_id"
     t.index ["organization_id", "affiliate_id"], name: "index_client_accounts_on_organization_and_affiliate", unique: true, where: "(affiliate_id IS NOT NULL)"
     t.index ["organization_id", "archived_at"], name: "index_client_accounts_on_organization_and_archived"
     t.index ["organization_id", "name"], name: "index_client_accounts_on_organization_id_and_name"
@@ -903,6 +905,28 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_100000) do
     t.index ["service_product_id"], name: "index_order_deliverables_on_service_product_id"
   end
 
+  create_table "order_form_products", force: :cascade do |t|
+    t.bigint "order_form_id", null: false
+    t.bigint "product_id", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["order_form_id", "product_id"], name: "index_order_form_products_on_order_form_id_and_product_id", unique: true
+    t.index ["order_form_id"], name: "index_order_form_products_on_order_form_id"
+    t.index ["product_id"], name: "index_order_form_products_on_product_id"
+  end
+
+  create_table "order_forms", force: :cascade do |t|
+    t.bigint "organization_id", null: false
+    t.string "name", null: false
+    t.text "description"
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["organization_id", "name"], name: "index_order_forms_on_organization_id_and_name", unique: true
+    t.index ["organization_id"], name: "index_order_forms_on_organization_id"
+  end
+
   create_table "order_items", force: :cascade do |t|
     t.bigint "order_id", null: false
     t.bigint "product_id"
@@ -1388,6 +1412,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_100000) do
   add_foreign_key "boards", "organizations"
   add_foreign_key "boards", "users", column: "created_by_id"
   add_foreign_key "catalog_sync_runs", "organizations"
+  add_foreign_key "client_accounts", "order_forms", on_delete: :nullify
   add_foreign_key "client_accounts", "organizations"
   add_foreign_key "client_accounts", "users", column: "billing_user_id", on_delete: :nullify
   add_foreign_key "client_memberships", "client_accounts"
@@ -1476,6 +1501,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_100000) do
   add_foreign_key "order_deliverables", "organizations"
   add_foreign_key "order_deliverables", "product_components"
   add_foreign_key "order_deliverables", "products", column: "service_product_id"
+  add_foreign_key "order_form_products", "order_forms", on_delete: :cascade
+  add_foreign_key "order_form_products", "products", on_delete: :cascade
+  add_foreign_key "order_forms", "organizations"
   add_foreign_key "order_items", "orders"
   add_foreign_key "order_items", "product_variants"
   add_foreign_key "order_items", "products"

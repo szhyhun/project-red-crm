@@ -3,6 +3,7 @@ class ClientAccount < ApplicationRecord
   has_many :customer_listings, through: :listing_customers, source: :listing
   belongs_to :organization
   belongs_to :billing_user, class_name: "User", optional: true
+  belongs_to :order_form, optional: true
   has_many :client_memberships, dependent: :destroy
   has_many :pricing_plans, dependent: :destroy
   has_many :users, through: :client_memberships
@@ -25,6 +26,7 @@ class ClientAccount < ApplicationRecord
   validates :affiliate_id, uniqueness: { scope: :organization_id, case_sensitive: false }, allow_blank: true
   VISIBILITY_BLOCKS.each { |block| validates :"#{block}_visibility", inclusion: { in: VISIBILITIES } }
   validate :notification_preferences_are_known
+  validate :order_form_belongs_to_organization
   validate :billing_user_is_an_active_admin, if: -> { billing_user_id.present? && will_save_change_to_billing_user_id? }
 
   scope :active, -> { where(archived_at: nil) }
@@ -34,6 +36,13 @@ class ClientAccount < ApplicationRecord
 
   def archived?
     archived_at.present?
+  end
+
+  # What this team's customers may book: its own form's services, or the whole
+  # active catalog when it has none.
+  def bookable_products
+    products = organization.products.where(active: true)
+    order_form&.active? ? products.where(id: order_form.product_ids) : products
   end
 
   def active_admins
@@ -78,6 +87,10 @@ class ClientAccount < ApplicationRecord
   end
 
   private
+
+  def order_form_belongs_to_organization
+    errors.add(:order_form, "must belong to the same organization") if order_form && order_form.organization_id != organization_id
+  end
 
   def notification_preferences_are_known
     valid = notification_preferences.is_a?(Hash) && notification_preferences.all? do |event, channels|

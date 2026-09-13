@@ -58,18 +58,39 @@ class Api::V1::PortalController < Api::V1::BaseController
     account = portal_booking_account(portal_listing_params[:client_account_id])
     return render json: { error: "client_account_required" }, status: :unprocessable_entity if account.blank?
 
-    result = ClientPortal::CreateListing.call(
+    result = ClientPortal::BookShoot.call(
       organization: Current.organization,
       client_account: account,
       actor: current_user,
-      attributes: portal_listing_params.except(:client_account_id)
+      attributes: portal_listing_params.except(:client_account_id),
+      items: params.fetch(:items, []).map { |item| item.permit(:product_variant_id, :quantity) }
     )
-    raise result.failure.original_error || result.failure if result.failure?
-    listing = result.fetch(:listing)
+    if result.failure?
+      return render_validation_errors(result.failure.original_error.record) if result.failure.original_error.is_a?(ActiveRecord::RecordInvalid)
 
-    render json: { listing: serialize_listing(listing) }, status: :created
-  rescue ActiveRecord::RecordInvalid => error
-    render_validation_errors(error.record)
+      return render json: { error: result.failure.code, details: { base: [ result.failure.message ] } }, status: :unprocessable_content
+    end
+
+    render json: { listing: serialize_listing(result.fetch(:listing)), order_id: result[:order]&.id }, status: :created
+  end
+
+  # The services this customer may book for one of their teams, at the price
+  # they would pay, beside the list price when the team shows it.
+  def order_form
+    authorize :client_portal, :view?
+    account = portal_booking_account(params[:client_account_id])
+    return render json: { error: "client_account_required" }, status: :unprocessable_entity if account.blank?
+
+    products = account.bookable_products.includes(:product_variants).order(:title)
+    form = account.order_form if account.order_form&.active?
+    render json: {
+      order_form: {
+        client_account_id: account.id,
+        name: form&.name || "Book a shoot",
+        description: form&.description,
+        products: products.map { |product| serialize_bookable_product(product, account) }.reject { |product| product[:variants].empty? }
+      }
+    }
   end
 
   def request_reschedule
@@ -209,6 +230,18 @@ class Api::V1::PortalController < Api::V1::BaseController
         appointments: :appointment_events
       )
       .order(created_at: :desc)
+  end
+
+  def serialize_bookable_product(product, account)
+    product.slice(:id, :title, :description, :kind).merge(
+      variants: product.product_variants.select(&:active?).sort_by(&:price_cents).map do |variant|
+        price = PricingPlans::Resolver.new(client_account: account, product_variant: variant, user: current_user).price_cents
+        variant.slice(:id, :title).merge(
+          price_cents: price,
+          list_price_cents: account.display_original_price? && price != variant.price_cents ? variant.price_cents : nil
+        )
+      end
+    )
   end
 
   # A booking lands in the team the customer chose, or else the team they land

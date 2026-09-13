@@ -27,6 +27,7 @@ Rails.application.routes.draw do
       resources :coupons, only: %i[index create update destroy]
       resources :travel_fees, only: %i[index create update destroy]
       resources :pricing_plans, only: %i[index create update destroy]
+      resources :order_forms, only: %i[index create update destroy]
       resource :aryeo_integration, only: %i[show create destroy] do
         post :validate
         post :import
@@ -99,6 +100,7 @@ Rails.application.routes.draw do
       end
       get "portal/memberships", to: "client_memberships#mine"
       post "portal/team_joins", to: "portal_team_joins#create"
+      get "portal/order_form", to: "portal#order_form"
       resource :profile, only: %i[show update], controller: "profile"
       resources :staff, only: %i[index create update], controller: "staff"
       resources :customer_users, only: %i[index show update] do
