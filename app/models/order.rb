@@ -29,7 +29,7 @@ class Order < ApplicationRecord
   def recalculate_totals!
     self.subtotal_cents = order_items.to_a.reject(&:cancelled?).sum(&:total_cents)
     self.discount_cents = percentage? ? (subtotal_cents * discount_rate_basis_points / 10_000.0).round : discount_cents
-    self.total_cents = [ subtotal_cents - discount_cents + tax_cents + fee_cents, 0 ].max
+    self.total_cents = [ subtotal_cents - discount_cents + tax_cents + fee_cents - credit_applied_cents, 0 ].max
   end
 
   def payment_status

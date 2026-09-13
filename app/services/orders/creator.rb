@@ -43,12 +43,22 @@ module Orders
 
         order.recalculate_totals!
         order.save!
+        order = apply_customer_terms(order)
         record_activity(order, "order.created")
         order
       end
     end
 
     private
+
+    # Whose credit the order spends and whether anyone pays up front are the
+    # team's terms, settled before the order is announced.
+    def apply_customer_terms(order)
+      result = Orders::ApplyCustomerTerms.call(order:, ordered_by: @ordered_by)
+      raise result.failure.original_error || result.failure if result.failure?
+
+      result.fetch(:order)
+    end
 
     # Blocking someone from ordering has to refuse the order, not colour a row.
     def refuse_blocked_customer!(client_account)

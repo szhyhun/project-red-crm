@@ -82,7 +82,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
   # A specialist needs an order's items and deliverables to do the work, not
   # what the customer paid for it. Customers see their own order's money.
   ORDER_MONEY_KEYS = %i[payment_mode currency subtotal_cents discount_type discount_cents discount_rate_basis_points
-                        tax_cents fee_cents fee_label total_cents payment_status balance_due_cents].freeze
+                        tax_cents fee_cents fee_label credit_applied_cents total_cents payment_status balance_due_cents].freeze
 
   def billing_visible?
     !current_user.internal? || current_user.billing_access?
@@ -90,7 +90,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
 
   def serialize(order, include_details: false)
     data = order.slice(:id, :status, :fulfillment_status, :payment_mode, :currency, :subtotal_cents, :discount_type,
-                       :discount_cents, :discount_rate_basis_points, :tax_cents, :fee_cents, :fee_label, :total_cents,
+                       :discount_cents, :discount_rate_basis_points, :tax_cents, :fee_cents, :fee_label, :credit_applied_cents, :total_cents,
                        :tags, :approved_at, :created_at).merge(
       client_account: order.client_account.slice(:id, :name),
       listing: order.listing && { id: order.listing.id, address: order.listing.address },

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_12_190000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_12_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -944,6 +944,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_190000) do
     t.string "fee_label", default: "Service fee", null: false
     t.string "origin", default: "native", null: false
     t.datetime "approved_at"
+    t.integer "credit_applied_cents", default: 0, null: false
     t.index ["approved_at"], name: "index_orders_on_approved_at"
     t.index ["client_account_id"], name: "index_orders_on_client_account_id"
     t.index ["listing_id"], name: "index_orders_on_listing_id"
@@ -952,6 +953,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_190000) do
     t.index ["organization_id"], name: "index_orders_on_organization_id"
     t.index ["origin"], name: "index_orders_on_origin"
     t.index ["tags"], name: "index_orders_on_tags", using: :gin
+    t.check_constraint "credit_applied_cents >= 0", name: "orders_credit_applied_not_negative"
   end
 
   create_table "organizations", force: :cascade do |t|
