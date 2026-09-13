@@ -51,6 +51,7 @@ class Api::V1::CustomerUsersController < Api::V1::BaseController
       invitation_pending: person.invitation_sent_at.present? && person.invitation_accepted_at.blank?,
       team_count: memberships.count(&:active?),
       pricing_plan_id:,
+      capabilities: CustomerUserPolicy.new(current_user, person).capabilities,
       teams: memberships.map do |membership|
         membership.slice(:id, :role, :status, :is_default, :invitation_accepted_at).merge(
           client_account: membership.client_account.slice(:id, :name, :kind)

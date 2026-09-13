@@ -56,6 +56,7 @@ RSpec.describe "Customer users", type: :request do
     get "/api/v1/customer_users"
     listed = response.parsed_body.fetch("customer_users").sole
     expect(listed).to include("email" => "aaron@example.test", "team_count" => 1)
+    expect(listed.fetch("capabilities")).to include("update")
     expect(listed.dig("teams", 0, "client_account", "name")).to eq("People Team")
 
     patch "/api/v1/customer_users/#{customer.id}", params: {
