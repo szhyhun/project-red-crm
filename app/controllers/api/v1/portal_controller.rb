@@ -74,6 +74,41 @@ class Api::V1::PortalController < Api::V1::BaseController
     render json: { listing: serialize_listing(result.fetch(:listing)), order_id: result[:order]&.id }, status: :created
   end
 
+  # The settings blocks of one of this customer's teams that the team lets them
+  # read. A block the team keeps from them is left out, not sent empty.
+  def team_settings
+    authorize :client_portal, :view?
+    account = current_user.client_accounts.where(organization: Current.organization).find(params[:client_account_id])
+
+    blocks = {}
+    if account.visible_to?(:billing, current_user)
+      blocks[:billing] = {
+        billing_member: account.billing_user&.slice(:name, :email),
+        pays_externally: account.billing_pays_externally,
+        payment_reminders: !account.suppress_payment_reminders
+      }
+    end
+    if account.visible_to?(:pricing, current_user)
+      blocks[:pricing] = {
+        shows_original_price: account.display_original_price,
+        products: account.bookable_products.includes(:product_variants).order(:title)
+                         .map { |product| serialize_bookable_product(product, account) }.reject { |product| product[:variants].empty? }
+      }
+    end
+    if account.visible_to?(:downloads, current_user)
+      blocks[:downloads] = { locked_until_paid: account.lock_downloads_before_payment }
+    end
+    if account.visible_to?(:marketing_templates, current_user)
+      blocks[:marketing_templates] = {
+        materials: MarketingMaterial.ready.where(customer_visible: true, listing: CustomerListingAccess.new(current_user).listings(account.listings))
+                                    .includes(:listing).order(created_at: :desc).limit(100)
+                                    .map { |material| material.slice(:id, :title, :material_type, :listing_id).merge(listing_address: material.listing.address) }
+      }
+    end
+
+    render json: { team_settings: { client_account_id: account.id, name: account.name, blocks: } }
+  end
+
   # The services this customer may book for one of their teams, at the price
   # they would pay, beside the list price when the team shows it.
   def order_form

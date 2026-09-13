@@ -106,6 +106,7 @@ Rails.application.routes.draw do
       get "portal/memberships", to: "client_memberships#mine"
       post "portal/team_joins", to: "portal_team_joins#create"
       get "portal/order_form", to: "portal#order_form"
+      get "portal/team_settings", to: "portal#team_settings"
       resource :profile, only: %i[show update], controller: "profile"
       resources :staff, only: %i[index create update], controller: "staff"
       resources :customer_users, only: %i[index show update] do
