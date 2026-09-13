@@ -3,7 +3,8 @@ class ClientMembership < ApplicationRecord
 
   belongs_to :client_account
   belongs_to :user
-  has_many :activity_events, as: :subject, dependent: :destroy
+  # A deleted membership keeps its history: the deletion is itself an event.
+  has_many :activity_events, as: :subject, dependent: nil
   has_many :listing_memberships, dependent: :destroy
 
   enum :role, { admin: "admin", member: "member" }, validate: true
@@ -18,6 +19,8 @@ class ClientMembership < ApplicationRecord
   before_save :clear_other_defaults, if: -> { is_default? && will_save_change_to_is_default? }
   after_update :hand_default_on, if: :saved_change_to_status?
   after_save :join_account_chat, if: :became_an_active_admin?
+  after_update :record_lifecycle_events
+  after_destroy :record_deletion
 
   def accept!(at: Time.current)
     transaction do
@@ -28,6 +31,12 @@ class ClientMembership < ApplicationRecord
 
   def revoke!
     update!(status: :revoked)
+  end
+
+  # Someone who had accepted before comes straight back; someone who never did
+  # returns to a pending invitation.
+  def reactivate!
+    update!(status: invitation_accepted_at.present? ? :active : :invited)
   end
 
   def archive!
@@ -68,6 +77,31 @@ class ClientMembership < ApplicationRecord
     errors.add(:base, "Choose another billing member before changing this person's access")
   end
 
+  # The events Aryeo emits for a membership, from whichever path changed it:
+  # staff, the person, an invitation, an affiliate code or an import.
+  def record_lifecycle_events
+    if saved_change_to_status?
+      before, after = saved_change_to_status
+      event = if after == "active" && before == "invited" then "accepted"
+      elsif after.in?(%w[active invited]) && before.in?(%w[revoked archived]) then "reactivated"
+      elsif after.in?(%w[revoked archived]) then after
+      end
+      record_event(event) if event
+    end
+    record_event("role_changed", role: role) if saved_change_to_role?
+    record_event(is_default? ? "default_added" : "default_removed") if saved_change_to_is_default?
+  end
+
+  def record_deletion
+    ActivityEvent.create!(organization_id: client_account.organization_id, actor: Current.user, subject: client_account,
+                          event_type: "client_membership.deleted", payload: { client_account_id:, user_id: })
+  end
+
+  def record_event(name, extra = {})
+    ActivityEvent.create!(organization_id: client_account.organization_id, actor: Current.user, subject: self,
+                          event_type: "client_membership.#{name}", payload: extra.merge(client_account_id:, user_id:))
+  end
+
   def became_an_active_admin?
     active? && admin? && (saved_change_to_status? || saved_change_to_role?)
   end
@@ -81,7 +115,10 @@ class ClientMembership < ApplicationRecord
   end
 
   def clear_other_defaults
-    user.client_memberships.where(is_default: true).where.not(id: id).update_all(is_default: false, updated_at: Time.current)
+    user.client_memberships.where(is_default: true).where.not(id: id).find_each do |previous|
+      previous.update_columns(is_default: false, updated_at: Time.current)
+      previous.send(:record_event, "default_removed")
+    end
   end
 
   # Losing access should not leave someone with no team to land in.
@@ -91,6 +128,10 @@ class ClientMembership < ApplicationRecord
 
     successor = user.client_memberships.active.where.not(id: id).order(:created_at, :id).first
     update_columns(is_default: false, updated_at: Time.current)
-    successor&.update_columns(is_default: true, updated_at: Time.current)
+    record_event("default_removed")
+    return if successor.blank?
+
+    successor.update_columns(is_default: true, updated_at: Time.current)
+    successor.send(:record_event, "default_added")
   end
 end

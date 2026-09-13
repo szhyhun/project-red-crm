@@ -101,6 +101,9 @@ Rails.application.routes.draw do
       end
       resources :client_memberships, only: %i[update destroy] do
         post :accept, on: :member
+        post :archive, on: :member
+        post :reactivate, on: :member
+        delete :purge, on: :member
         resource :invitation, only: :create, controller: "client_membership_invitations"
       end
       get "portal/memberships", to: "client_memberships#mine"

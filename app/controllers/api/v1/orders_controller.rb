@@ -42,6 +42,7 @@ class Api::V1::OrdersController < Api::V1::BaseController
     if order.update(update_params)
       order.recalculate_totals!
       order.save! if order.changed?
+      rebalance_credit!(order)
       ActivityEvent.create!(organization: Current.organization, actor: current_user, subject: order, event_type: "order.updated", payload: order.previous_changes)
       record_listing_activity(order, "order.updated")
       render json: { order: serialize(order, include_details: true) }
@@ -69,6 +70,11 @@ class Api::V1::OrdersController < Api::V1::BaseController
   end
 
   private
+
+  def rebalance_credit!(order)
+    result = Orders::RebalanceCredit.call(order:, actor: current_user)
+    raise result.failure.original_error || result.failure if result.failure?
+  end
 
   def create_params
     params.require(:order).permit(:client_account_id, :listing_id, :payment_mode, :currency, :discount_type,

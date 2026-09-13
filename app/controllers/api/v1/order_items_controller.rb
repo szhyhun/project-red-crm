@@ -76,6 +76,8 @@ class Api::V1::OrderItemsController < Api::V1::BaseController
   def finish(event_type, item)
     @order.recalculate_totals!
     @order.save!
+    result = Orders::RebalanceCredit.call(order: @order, actor: current_user)
+    raise result.failure.original_error || result.failure if result.failure?
     payload = {
       order_id: @order.id,
       order_item_id: item.id,

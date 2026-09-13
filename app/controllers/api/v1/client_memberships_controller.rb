@@ -40,7 +40,6 @@ class Api::V1::ClientMembershipsController < Api::V1::BaseController
     raise Pundit::NotAuthorizedError if attributes.key?(:is_default) && membership.user_id != current_user.id
 
     membership.update!(attributes)
-    record(membership, "client_membership.updated", attributes.slice(:role, :is_default).to_h)
     render json: { client_membership: serialize(membership.reload) }
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
@@ -52,7 +51,6 @@ class Api::V1::ClientMembershipsController < Api::V1::BaseController
     raise Pundit::NotAuthorizedError unless membership.user_id == current_user.id
 
     membership.accept!
-    record(membership, "client_membership.accepted")
     render json: { client_membership: serialize(membership.reload) }
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
@@ -62,11 +60,41 @@ class Api::V1::ClientMembershipsController < Api::V1::BaseController
     membership = visible_membership
     authorize membership, :destroy?
     membership.revoke!
-    record(membership, "client_membership.revoked")
 
     render json: { client_membership: serialize(membership.reload) }
   rescue ActiveRecord::RecordInvalid => error
     render_validation_errors(error.record)
+  end
+
+  def archive
+    membership = visible_membership
+    authorize membership, :manage?
+    membership.archive!
+    render json: { client_membership: serialize(membership.reload) }
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_errors(error.record)
+  end
+
+  def reactivate
+    membership = visible_membership
+    authorize membership, :manage?
+    return render json: { error: "membership_not_ended", details: { base: [ "Only a revoked or archived membership can be reactivated" ] } }, status: :unprocessable_content unless membership.revoked? || membership.archived?
+
+    membership.reactivate!
+    render json: { client_membership: serialize(membership.reload) }
+  rescue ActiveRecord::RecordInvalid => error
+    render_validation_errors(error.record)
+  end
+
+  # Deleting removes the row for good; only a membership that has already
+  # ended can go, so nobody loses access in the same step.
+  def purge
+    membership = visible_membership
+    authorize membership, :manage?
+    return render json: { error: "membership_not_ended", details: { base: [ "Revoke or archive this membership before deleting it" ] } }, status: :unprocessable_content unless membership.revoked? || membership.archived?
+
+    membership.destroy!
+    head :no_content
   end
 
   private
@@ -83,16 +111,6 @@ class Api::V1::ClientMembershipsController < Api::V1::BaseController
     params.require(:client_membership)
       .permit(:role, :is_default, :listing_delivery_notification_enabled)
       .to_h.symbolize_keys
-  end
-
-  def record(membership, event_type, payload = {})
-    ActivityEvent.create!(
-      organization: membership.client_account.organization,
-      actor: current_user,
-      subject: membership,
-      event_type:,
-      payload: payload.merge(client_account_id: membership.client_account_id)
-    )
   end
 
   def serialize(membership)

@@ -75,4 +75,35 @@ RSpec.describe Orders::ApplyCustomerTerms, type: :interactor do
 
     expect(order.reload.credit_applied_cents).to eq(0)
   end
+
+  describe Orders::RebalanceCredit do
+    it "returns credit when the order shrinks below it, and all of it when the order is cancelled" do
+      grant(agent, 30_000)
+      order = order_for(30_000)
+      Orders::ApplyCustomerTerms.call(order:, ordered_by: agent)
+      expect(order.reload).to have_attributes(credit_applied_cents: 30_000, total_cents: 0)
+
+      order.update!(discount_cents: 10_000)
+      order.recalculate_totals!
+      order.save!
+      Orders::RebalanceCredit.call(order:, actor: manager)
+      expect(order.reload).to have_attributes(credit_applied_cents: 20_000, total_cents: 0)
+      expect(agent.reload.credit_balance_cents).to eq(10_000)
+
+      order.update!(status: :cancelled)
+      Orders::RebalanceCredit.call(order:, actor: manager)
+      expect(order.reload.credit_applied_cents).to eq(0)
+      expect(agent.reload.credit_balance_cents).to eq(30_000)
+      expect(CreditTransaction.where(user: agent).order(:id).pluck(:amount_cents)).to eq([ 30_000, -30_000, 10_000, 20_000 ])
+    end
+
+    it "leaves an order alone that still costs at least its credit" do
+      grant(agent, 10_000)
+      order = order_for(30_000)
+      Orders::ApplyCustomerTerms.call(order:, ordered_by: agent)
+
+      expect(Orders::RebalanceCredit.call(order:, actor: manager)[:refunded_cents]).to be_nil
+      expect(agent.reload.credit_balance_cents).to eq(0)
+    end
+  end
 end
