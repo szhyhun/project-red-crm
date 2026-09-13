@@ -61,7 +61,7 @@ module Aryeo
       # response. Materialize the production graph here instead of waiting for
       # the local approval endpoint; otherwise imported files have nowhere to
       # belong and the portal has to collapse them into one generic card.
-      Orders::DeliverableMaterializer.new(order:).call
+      ::Orders::DeliverableMaterializer.new(order:).call
     end
 
     def link_media_assets(deliverables_by_order)
@@ -134,7 +134,7 @@ module Aryeo
       deliverables_by_order.each_key do |order|
         next unless workflow_eligible?(order)
 
-        Workflows::Trigger.new(order: order.reload).enqueue!
+        ::Workflows::Trigger.new(order: order.reload).enqueue!
       end
     end
 

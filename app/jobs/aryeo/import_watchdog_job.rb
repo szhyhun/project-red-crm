@@ -9,7 +9,7 @@ module Aryeo
     end
 
     def perform(at = Time.current)
-      Aryeo::FailStaleImports.call(at:)
+      Integrations::Aryeo::Actions::FailStaleImports.call(at:)
     end
   end
 end

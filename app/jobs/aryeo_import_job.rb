@@ -3,7 +3,7 @@ class AryeoImportJob < ApplicationJob
 
   def perform(import_run_id)
     run = IntegrationImportRun.find(import_run_id)
-    result = Aryeo::RunImport.call(run:)
+    result = Integrations::Aryeo::Organizers::ImportOrganizer.call(run:)
     return if result.success?
 
     Rails.logger.error("Aryeo import #{import_run_id} failed: #{result.failure.class}: #{result.failure.message}")

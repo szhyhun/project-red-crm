@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_12_130000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_12_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -364,7 +364,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_130000) do
     t.index ["organization_id", "kind", "last_message_at"], name: "idx_on_organization_id_kind_last_message_at_fcb0d57e64"
     t.index ["organization_id"], name: "index_conversations_on_organization_id"
     t.index ["retention_period"], name: "index_conversations_on_retention_period"
-    t.check_constraint "retention_period::text = ANY (ARRAY['two_months'::character varying, 'six_months'::character varying, 'one_year'::character varying, 'forever'::character varying]::text[])", name: "conversations_retention_period_values"
+    t.check_constraint "retention_period::text = ANY (ARRAY['two_months'::character varying::text, 'six_months'::character varying::text, 'one_year'::character varying::text, 'forever'::character varying::text])", name: "conversations_retention_period_values"
   end
 
   create_table "coupons", force: :cascade do |t|
@@ -471,6 +471,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_12_130000) do
     t.string "conflict_resolution", default: "skip", null: false
     t.date "import_end_date"
     t.datetime "heartbeat_at"
+    t.string "error_code"
+    t.index ["error_code"], name: "index_integration_import_runs_on_error_code"
     t.index ["integration_connection_id"], name: "index_integration_import_runs_on_integration_connection_id"
     t.index ["organization_id", "provider", "created_at"], name: "idx_on_organization_id_provider_created_at_7ddb91d344"
     t.index ["organization_id"], name: "index_integration_import_runs_on_organization_id"

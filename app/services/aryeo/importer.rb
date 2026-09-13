@@ -90,10 +90,44 @@ module Aryeo
       @records_since_heartbeat = 0
     end
 
-    def call
-      @run.update!(status: :running, phase: "starting", started_at: Time.current, heartbeat_at: Time.current)
-      @connection.update!(status: :importing)
+    def state
+      {
+        counts: @counts,
+        conflict_counts: @conflict_counts,
+        filtered_counts: @filtered_counts,
+        filtered_after_counts: @filtered_after_counts,
+        date_unavailable_counts: @date_unavailable_counts,
+        dependency_counts: @dependency_counts,
+        dependency_conflict_counts: @dependency_conflict_counts,
+        media_counts: @media_counts,
+        deferred_skipped_resources: @deferred_skipped_resources,
+        coverage: @coverage,
+        errors: @errors
+      }
+    end
 
+    def call
+      result = ::Integrations::Aryeo::Organizers::ImportOrganizer.call(
+        run: @run,
+        importer: self,
+        client: @client,
+        resources: @resources.to_a,
+        import_start_date: @import_start_date,
+        import_end_date: @import_end_date,
+        conflict_resolution: @conflict_resolution,
+        listing_limit: @listing_limit,
+        skip_resources: @resources.to_a.empty? ? [] : nil
+      )
+      raise result.failure.original_error || result.failure if result.failure?
+
+      result[:run]
+    end
+
+    def reconcile_imported_delivery!
+      reconcile_imported_delivery_graph!
+    end
+
+    def import_collections!
       ENDPOINTS.each do |name, endpoint|
         unless @resources.include?(name)
           @deferred_skipped_resources << name
@@ -104,13 +138,343 @@ module Aryeo
       end
 
       heartbeat!(force: true)
-      reconcile_imported_delivery_graph!
-      heartbeat!(force: true)
-      finish!
-    rescue StandardError => error
-      @run.mark_failed!(error.message, counts: @counts, coverage: @coverage, error_details: @errors)
-      @connection.update!(status: :invalid) if error.is_a?(Client::Error)
-      raise
+    end
+
+    # These narrow methods are the resource-mapper boundary. Resource
+    # Interactors can reuse the importer session's organization and parsing
+    # rules without reaching into its mutable state or duplicating them.
+    attr_reader :organization
+
+    def catalog_record_for(resource_type, external)
+      record_for(resource_type, external)
+    end
+
+    def catalog_external_id(payload)
+      external_id(payload)
+    end
+
+    def catalog_value(payload, *keys)
+      value(payload, *keys)
+    end
+
+    def catalog_integer_value(payload, *keys)
+      integer_value(payload, *keys)
+    end
+
+    def catalog_active?(payload)
+      active?(payload)
+    end
+
+    def catalog_product_kind(payload)
+      product_kind(payload)
+    end
+
+    def catalog_product_deliverable_type(payload)
+      product_deliverable_type(payload)
+    end
+
+    def catalog_unique_product_slug(title, external)
+      unique_product_slug(title, external)
+    end
+
+    def catalog_sqft_range(payload)
+      sqft_range(payload)
+    end
+
+    def catalog_cents(payload, *keys)
+      cents(payload, *keys)
+    end
+
+    def catalog_stringify(payload)
+      stringify(payload)
+    end
+
+    def customer_record_for(resource_type, external)
+      record_for(resource_type, external)
+    end
+
+    def customer_external_id(payload)
+      external_id(payload)
+    end
+
+    def customer_value(payload, *keys)
+      value(payload, *keys)
+    end
+
+    def customer_person_name(payload, *fallback_keys)
+      person_name(payload, *fallback_keys)
+    end
+
+    def customer_kind(payload)
+      client_kind(payload)
+    end
+
+    def customer_boolean_value(payload, *keys)
+      boolean_value(payload, *keys)
+    end
+
+    def customer_payloads(payload)
+      customer_payloads_for(payload)
+    end
+
+    def customer_payload_has_profile?(payload)
+      customer_payload_has_profile(payload)
+    end
+
+    def customer_import_dependency(resource_type, payload)
+      import_dependency(resource_type, payload)
+    end
+
+    def import_dependency(resource_type, payload)
+      import_resource(resource_type, payload, dependency: true)
+    end
+
+    def staff_value(payload, *keys)
+      value(payload, *keys)
+    end
+
+    def staff_person_name(payload)
+      person_name(payload)
+    end
+
+    def appointment_external_id(payload)
+      external_id(payload)
+    end
+
+    def appointment_listing_for(payload)
+      listing_for(payload)
+    end
+
+    def appointment_record_for(external)
+      record_for("appointments", external)&.record || @organization.appointments.find_by("notes LIKE ?", "%[aryeo:#{external}]%")
+    end
+
+    def appointment_time_value(payload, *keys)
+      time_value(payload, *keys)
+    end
+
+    def appointment_order_for(payload)
+      order_for(payload)
+    end
+
+    def appointment_staff_for(payload)
+      staff_for(payload)
+    end
+
+    def appointment_status(payload)
+      appointment_status_for(payload)
+    end
+
+    def appointment_value(payload, *keys)
+      value(payload, *keys)
+    end
+
+    def task_external_id(payload)
+      external_id(payload)
+    end
+
+    def task_listing_for(payload)
+      listing_for(payload)
+    end
+
+    def task_record_for(external)
+      record_for("tasks", external)&.record || @organization.workflow_tasks.find_by("metadata ->> 'aryeo_id' = ?", external)
+    end
+
+    def task_value(payload, *keys)
+      value(payload, *keys)
+    end
+
+    def task_staff_for(payload)
+      staff_for(payload)
+    end
+
+    def task_workflow_status(payload)
+      workflow_status(payload)
+    end
+
+    def task_priority(payload)
+      task_priority_for(payload)
+    end
+
+    def task_time_value(payload, *keys)
+      time_value(payload, *keys)
+    end
+
+    def listing_external_id(payload)
+      external_id(payload)
+    end
+
+    def listing_record_for(external)
+      record_for("listings", external)&.record || @organization.listings.find_by("metadata ->> 'aryeo_id' = ?", external)
+    end
+
+    def listing_clients(payload)
+      import_listing_clients(payload)
+    end
+
+    def listing_client_for(payload)
+      client_for(payload)
+    end
+
+    def listing_imported_client
+      imported_client
+    end
+
+    def listing_stringify(payload)
+      stringify(payload)
+    end
+
+    def listing_value(payload, *keys)
+      value(payload, *keys)
+    end
+
+    def listing_integer_value(payload, *keys)
+      integer_value(payload, *keys)
+    end
+
+    def listing_decimal_value(payload, *keys)
+      decimal_value(payload, *keys)
+    end
+
+    def listing_status(payload)
+      listing_status_for(payload)
+    end
+
+    def listing_delivery_status(payload)
+      delivery_status(payload)
+    end
+
+    def listing_time_value(payload, *keys)
+      time_value(payload, *keys)
+    end
+
+    def listing_import_media(listing, payload)
+      import_media_assets(listing, payload)
+    end
+
+    def listing_import_relations(listing, payload)
+      import_listing_relations(listing, payload)
+    end
+
+    def listing_import_property_site(listing, payload)
+      import_property_site(listing, payload)
+    end
+
+    def order_external_id(payload)
+      external_id(payload)
+    end
+
+    def order_listing_for(payload)
+      listing_for(payload)
+    end
+
+    def order_import_dependency(resource_type, payload)
+      import_dependency(resource_type, payload)
+    end
+
+    def order_client_for(payload)
+      client_for(payload)
+    end
+
+    def order_import_client(payload)
+      import_order_client(payload)
+    end
+
+    def order_imported_client
+      imported_client
+    end
+
+    def order_record_for(external)
+      record_for("orders", external)&.record || @organization.orders.find_by("metadata ->> 'aryeo_id' = ?", external)
+    end
+
+    def order_stringify(payload)
+      stringify(payload)
+    end
+
+    def order_value(payload, *keys)
+      value(payload, *keys)
+    end
+
+    def order_status(payload)
+      order_status_for(payload)
+    end
+
+    def order_currency(payload)
+      currency(payload)
+    end
+
+    def order_cents(payload, *keys)
+      cents(payload, *keys)
+    end
+
+    def order_fulfillment_status(payload)
+      fulfillment_status(payload)
+    end
+
+    def order_records(payload, *keys)
+      records(payload, *keys)
+    end
+
+    def order_import_item(order, payload)
+      import_order_item(order, payload)
+    end
+
+    def order_import_payment(order, payload)
+      import_payment_metadata(order, payload)
+    end
+
+    def order_import_appointments(order, payload)
+      import_order_appointments(order, payload)
+    end
+
+    def order_appointments_selected?
+      @resources.include?(:appointments)
+    end
+
+    def media_record_for(external)
+      record_for("media_assets", external)
+    end
+
+    def media_external_id(payload)
+      external_id(payload)
+    end
+
+    def media_value(payload, *keys)
+      value(payload, *keys)
+    end
+
+    def media_integer_value(payload, *keys)
+      integer_value(payload, *keys)
+    end
+
+    def media_records(payload, key)
+      records(payload, key)
+    end
+
+    def media_filename(payload, external, source_url)
+      media_filename_for(payload, external, source_url)
+    end
+
+    def media_content_type_for(category, payload, source_url)
+      content_type_for(category, payload, source_url)
+    end
+
+    def media_category_for(category, content_type)
+      media_category_for_type(category, content_type)
+    end
+
+    def media_archive(resource_type, payload, **attributes)
+      archive!(resource_type, payload, **attributes)
+    end
+
+    def media_increment(key)
+      @media_counts[key] += 1
+    end
+
+    def media_record_error(message)
+      @errors << message
     end
 
     private
@@ -199,14 +563,14 @@ module Aryeo
       end
 
       record = case name
-      when :staff then import_staff(payload)
-      when :clients then import_client(payload)
+      when :staff then import_staff_user(payload)
+      when :clients then import_customer(payload)
       when :customer_teams then import_customer_team(payload)
-      when :products then import_product(payload)
-      when :listings then import_listing(payload)
-      when :orders then import_order(payload)
-      when :appointments then import_appointment(payload)
-      when :tasks then import_task(payload)
+      when :products then import_catalog_product(payload)
+      when :listings then import_listing_record(payload)
+      when :orders then import_order_record(payload)
+      when :appointments then import_appointment_record(payload)
+      when :tasks then import_task_record(payload)
       end
 
       archive!(name, payload, record: record)
@@ -219,170 +583,39 @@ module Aryeo
       Rails.logger.warn("Aryeo import #{@run.id} record skipped: #{message}")
     end
 
-    def import_staff(payload)
-      email = value(payload, "email", "email_address").to_s.downcase
-      return if email.blank?
+    def import_staff_user(payload)
+      result = ::Integrations::Aryeo::Actions::Staff::ImportUser.call(importer: self, payload:)
+      raise result.failure.original_error || result.failure if result.failure?
 
-      user = @organization.users.find_by(email: email) || User.find_by(email: email)
-      return user if user&.organization_id == @organization.id
-      return if user.present?
-
-      password = SecureRandom.urlsafe_base64(32)
-      @organization.users.create!(
-        name: person_name(payload).presence || email.split("@").first,
-        email: email,
-        role: :production_staff,
-        status: :suspended,
-        password: password,
-        password_confirmation: password,
-        origin: :aryeo
-      )
+      result[:user]
     end
 
-    def import_client(payload)
-      external = external_id(payload)
-      return if external.blank?
+    def import_customer(payload)
+      result = ::Integrations::Aryeo::Actions::Customers::ImportClient.call(importer: self, payload:)
+      raise result.failure.original_error || result.failure if result.failure?
 
-      client = record_for("clients", external)&.record || @organization.client_accounts.find_by("metadata ->> 'aryeo_id' = ?", external)
-      client ||= @organization.client_accounts.build(metadata: { "aryeo_id" => external })
-      client.assign_attributes(
-        name: person_name(payload, "company_name").presence || "Aryeo client #{external}",
-        email: value(payload, "email", "email_address"),
-        phone: value(payload, "phone", "phone_number"),
-        brokerage_name: value(payload, "brokerage_name", "company"),
-        kind: client_kind(payload),
-        origin: :aryeo,
-        metadata: client.metadata.merge("aryeo_id" => external)
-      )
-      client.save!
-      client
+      result[:client]
     end
 
     def import_customer_team(payload)
-      external = external_id(payload)
-      return if external.blank?
+      result = ::Integrations::Aryeo::Actions::Customers::ImportTeam.call(importer: self, payload:)
+      raise result.failure.original_error || result.failure if result.failure?
 
-      team = record_for("customer_teams", external)&.record
-      name = value(payload, "name", "brokerage_name").presence || "Aryeo customer team #{external}"
-      team ||= @organization.customer_teams.find_by("lower(name) = ?", name.downcase)
-      team ||= @organization.customer_teams.build
-      team.assign_attributes(
-        name: name,
-        brokerage_name: value(payload, "brokerage_name"),
-        brokerage_website: value(payload, "brokerage_website"),
-        website: value(payload, "website"),
-        logo_url: value(payload, "logo_url"),
-        description: value(payload, "description"),
-        archived: boolean_value(payload, "is_archived"),
-        origin: :aryeo
-      )
-      team.save!
-
-      customer_payloads(payload).each do |customer_payload|
-        customer_id = external_id(customer_payload)
-        account = record_for("clients", customer_id)&.record
-        if customer_id.present? && account.blank? && customer_payload_has_profile?(customer_payload)
-          account = import_resource(:clients, customer_payload, dependency: true)
-        end
-        team.customer_team_memberships.find_or_create_by!(client_account: account) if account
-      end
-      team
+      result[:team]
     end
 
-    # Only the fields the CRM acts on get their own column; the rest of the Aryeo
-    # payload is kept verbatim in `source_payload` (sanitized), on both the
-    # product and each variant. Nothing is dropped, so a field can be promoted to
-    # a real column later by backfilling from `source_payload` -- no re-import.
-    #
-    # Retained but unmapped today, as of the live Aryeo catalog:
-    #   product: tags, is_twilight, always_display_addons, type
-    #   variant: base_price_amount, base_is_hidden, display_original_price
-    # `price_amount` and `base_price_amount` duplicate `price`; all three are
-    # cents. See `cents` below for why that matters.
-    def import_product(payload)
-      external = external_id(payload)
-      return if external.blank?
+    def import_catalog_product(payload)
+      result = ::Integrations::Aryeo::Actions::Catalog::ImportProduct.call(importer: self, payload:)
+      raise result.failure.original_error || result.failure if result.failure?
 
-      product = record_for("products", external)&.record || @organization.products.find_by(external_source: "aryeo", external_id: external)
-      attributes = {
-        title: value(payload, "title", "name").presence || "Aryeo product #{external}",
-        description: value(payload, "description"),
-        kind: product_kind(payload),
-        deliverable_type: product_deliverable_type(payload),
-        sla_days: integer_value(payload, "sla_days", "turnaround_days", "delivery_days") || 0,
-        active: active?(payload),
-        categories: Array(payload["categories"] || payload["category_names"] || payload.dig("category", "name")).compact,
-        source_payload: PayloadSanitizer.call(payload),
-        origin: :aryeo
-      }
-      product ||= @organization.products.build(external_source: "aryeo", external_id: external,
-                                                slug: unique_product_slug(attributes[:title], external))
-      product.assign_attributes(attributes)
-      product.save!
-
-      Array(payload["variants"] || payload["product_variants"] || payload["prices"]).each do |variant_payload|
-        import_variant(product, stringify(variant_payload))
-      end
-      product
+      result[:product]
     end
 
-    def import_variant(product, payload)
-      external = external_id(payload)
-      return if external.blank?
+    def import_listing_record(payload)
+      result = ::Integrations::Aryeo::Actions::Listings::ImportListing.call(importer: self, payload:)
+      raise result.failure.original_error || result.failure if result.failure?
 
-      variant = product.product_variants.find_or_initialize_by(external_id: external)
-      sqft_min, sqft_max = sqft_range(payload)
-      variant.assign_attributes(
-        title: value(payload, "title", "name").presence || product.title,
-        price_cents: cents(payload, "price_cents", "price_amount", "unit_price_amount", "base_price_amount", "price", "amount"),
-        duration_minutes: integer_value(payload, "duration_minutes", "duration"),
-        sqft_min: sqft_min,
-        sqft_max: sqft_max,
-        quantity_label: value(payload, "quantity_label", "quantity_label_text", "label", "subtitle", "sub_title"),
-        active: active?(payload),
-        source_payload: PayloadSanitizer.call(payload)
-      )
-      variant.save!
-    end
-
-    def import_listing(payload)
-      external = external_id(payload)
-      return if external.blank?
-
-      listing = record_for("listings", external)&.record || @organization.listings.find_by("metadata ->> 'aryeo_id' = ?", external)
-      related_clients = import_listing_clients(payload)
-      client = related_clients.first || client_for(payload) || imported_client
-      address = stringify(payload["address"] || payload["property_address"] || {})
-      listing ||= @organization.listings.build(client_account: client, metadata: { "aryeo_id" => external })
-      listing.assign_attributes(
-        client_account: client,
-        address_line_1: value(address, "address_line_1", "line1", "street_address", "address").presence || value(payload, "address_line_1", "address").presence || "Aryeo listing #{external}",
-        address_line_2: value(address, "address_line_2", "line2", "unit"),
-        city: value(address, "city").presence || value(payload, "city"),
-        province: value(address, "state", "province", "region").presence || value(payload, "province", "state"),
-        postal_code: value(address, "postal_code", "zip", "zip_code").presence || value(payload, "postal_code"),
-        country: value(address, "country", "country_code").presence || "CA",
-        square_feet: integer_value(payload, "square_feet", "sqft", "square_footage"),
-        bedrooms: integer_value(payload, "bedrooms"),
-        bathrooms: decimal_value(payload, "bathrooms"),
-        mls_number: value(payload, "mls_number", "mls_id"),
-        status: listing_status(payload),
-        delivery_status: delivery_status(payload),
-        scheduled_at: time_value(payload, "scheduled_at", "appointment_at"),
-        delivered_at: time_value(payload, "delivered_at"),
-        public_slug: value(payload, "public_slug", "slug").presence || "aryeo-#{external}",
-        tags: Array(payload["tags"]).filter_map { |tag| tag.is_a?(Hash) ? tag["name"] : tag },
-        origin: :aryeo,
-        metadata: listing.metadata.merge("aryeo_id" => external, "aryeo_status" => value(payload, "status"))
-      )
-      listing.save!
-      related_clients.drop(1).each do |related_client|
-        listing.listing_customers.find_or_create_by!(client_account: related_client)
-      end
-      import_listing_media(listing, payload)
-      import_listing_relations(listing, payload)
-      import_property_site(listing, payload)
-      listing
+      result[:listing]
     end
 
     def import_listing_clients(payload)
@@ -426,32 +659,11 @@ module Aryeo
       team&.customer_team_memberships&.find_or_create_by!(client_account: client)
     end
 
-    def import_order(payload)
-      external = external_id(payload)
-      return if external.blank?
+    def import_order_record(payload)
+      result = ::Integrations::Aryeo::Actions::Orders::ImportOrder.call(importer: self, payload:)
+      raise result.failure.original_error || result.failure if result.failure?
 
-      listing = listing_for(payload)
-      listing ||= import_resource(:listings, stringify(payload["listing"]), dependency: true) if listing.blank? && payload["listing"].is_a?(Hash)
-      client = client_for(payload)
-      client ||= import_order_client(payload)
-      client ||= listing&.client_account || imported_client
-      order = record_for("orders", external)&.record || @organization.orders.find_by("metadata ->> 'aryeo_id' = ?", external)
-      order ||= @organization.orders.build(client_account: client, listing: listing, metadata: { "aryeo_id" => external })
-      order.assign_attributes(
-        client_account: client, listing: listing, source: "aryeo", origin: :aryeo,
-        status: order_status(payload), payment_mode: :pay_later, currency: currency(payload),
-        subtotal_cents: cents(payload, "subtotal_cents", "subtotal_amount", "subtotal", "sub_total"),
-        tax_cents: cents(payload, "tax_cents", "tax_amount", "tax"), fee_cents: cents(payload, "fee_cents", "fee_amount", "fees"),
-        total_cents: cents(payload, "total_cents", "total_amount", "total", "amount"),
-        fulfillment_status: fulfillment_status(payload),
-        tags: Array(payload["tags"]).filter_map { |tag| tag.is_a?(Hash) ? tag["name"] : tag },
-        metadata: order.metadata.merge("aryeo_id" => external, "aryeo_status" => value(payload, "status"))
-      )
-      order.save!
-      records(payload, "items", "order_items", "product_items").each { |item| import_order_item(order, item) }
-      import_payment_metadata(order, payload)
-      import_order_appointments(order, payload) unless @resources.include?(:appointments)
-      order
+      result[:order]
     end
 
     def import_order_appointments(order, payload)
@@ -561,85 +773,25 @@ module Aryeo
       payment.save!
     end
 
-    def import_appointment(payload)
-      external = external_id(payload)
-      listing = listing_for(payload)
-      return if external.blank? || listing.blank?
+    def import_appointment_record(payload)
+      result = ::Integrations::Aryeo::Actions::Appointments::ImportAppointment.call(importer: self, payload:)
+      raise result.failure.original_error || result.failure if result.failure?
 
-      appointment = record_for("appointments", external)&.record || @organization.appointments.find_by("notes LIKE ?", "%[aryeo:#{external}]%")
-      starts_at = time_value(payload, "starts_at", "start_at", "scheduled_at", "start_time", "created_at", "updated_at")
-      return if starts_at.blank?
-
-      appointment ||= @organization.appointments.build(listing: listing)
-      appointment.assign_attributes(listing: listing, order: order_for(payload), assigned_user: staff_for(payload),
-                                    status: appointment_status(payload), starts_at: starts_at,
-                                    ends_at: time_value(payload, "ends_at", "end_at", "end_time") || starts_at + 1.hour,
-                                    notes: [ value(payload, "notes", "description"), "[aryeo:#{external}]" ].compact.join("\n"),
-                                    origin: :aryeo)
-      appointment.save!
-      appointment
+      result[:appointment]
     end
 
-    def import_task(payload)
-      external = external_id(payload)
-      listing = listing_for(payload)
-      return if external.blank? || listing.blank?
+    def import_task_record(payload)
+      result = ::Integrations::Aryeo::Actions::Tasks::ImportTask.call(importer: self, payload:)
+      raise result.failure.original_error || result.failure if result.failure?
 
-      task = record_for("tasks", external)&.record || @organization.workflow_tasks.find_by("metadata ->> 'aryeo_id' = ?", external)
-      task ||= @organization.workflow_tasks.build(listing: listing, metadata: { "aryeo_id" => external })
-      task.assign_attributes(listing: listing, title: value(payload, "title", "name").presence || "Aryeo task #{external}",
-                             description: value(payload, "description", "notes"), assignee: staff_for(payload),
-                             status: workflow_status(payload),
-                             priority: task_priority(payload), customer_visible: false,
-                             due_at: time_value(payload, "due_at", "due_date"), completed_at: time_value(payload, "completed_at"),
-                             origin: :aryeo, metadata: task.metadata.merge("aryeo_id" => external))
-      task.save!
-      task
+      result[:task]
     end
 
-    def import_listing_media(listing, payload)
-      LISTING_MEDIA.each do |key, category|
-        records(payload, key).each do |media|
-          import_media_asset(listing, media, category)
-        rescue ActiveRecord::RecordInvalid => error
-          @media_counts["failed"] += 1
-          @errors << "media_assets #{external_id(media) || "unknown"}: #{error.record.errors.full_messages.to_sentence}"
-        end
-      end
-    end
+    def import_media_assets(listing, payload)
+      result = ::Integrations::Aryeo::Actions::Media::ImportListing.call(importer: self, listing:, payload:)
+      raise result.failure.original_error || result.failure if result.failure?
 
-    def import_media_asset(listing, payload, category)
-      external = external_id(payload)
-      return if external.blank?
-
-      source_url = value(payload, *MEDIA_SOURCE_KEYS.fetch(category, MEDIA_SOURCE_KEYS["files"])).to_s.presence
-      asset = record_for("media_assets", external)&.record
-      asset ||= @organization.media_assets.build(listing: listing, metadata: { "aryeo_id" => external })
-      filename = media_filename(payload, external, source_url)
-      metadata = asset.metadata.merge("aryeo_id" => external)
-      if source_url.present?
-        metadata["aryeo_source_url"] = source_url
-        metadata.delete("processing_error")
-      else
-        metadata["processing_error"] = "missing_media_url"
-        @errors << "media_assets #{external}: Aryeo #{category} record has no downloadable URL"
-      end
-      content_type = content_type_for(category, payload, source_url)
-      asset.assign_attributes(listing: listing, filename:,
-                              content_type:,
-                              byte_size: integer_value(payload, "byte_size", "filesize", "size"), width: integer_value(payload, "width"),
-                              height: integer_value(payload, "height"), duration_seconds: integer_value(payload, "duration_seconds", "duration"),
-                              category: media_category_for(category, content_type),
-                              position: integer_value(payload, "index", "order_index", "position") || 0,
-                              status: source_url.present? ? :pending : :failed,
-                              storage_key: asset.storage_key.presence || DeliveryStorage.key_for(organization: @organization, listing: listing, filename:),
-                              source_url: nil, customer_visible: true, origin: :aryeo, metadata:)
-      asset.save!
-      @media_counts[source_url.present? ? "queued" : "failed"] += 1
-      external_record = archive!("media_assets", payload, record: asset,
-                                 metadata: { "media_url" => source_url }, sync_status: source_url.present? ? :pending_media_copy : :failed)
-      AryeoMediaCopyJob.perform_later(external_record.id) if source_url.present? && !asset.ready?
-      asset
+      result[:listing]
     end
 
     def import_property_site(listing, payload)
@@ -667,28 +819,6 @@ module Aryeo
                                         source_updated_at: time_value(payload, "updated_at"), last_imported_at: Time.current)
       external_record.save!
       external_record
-    end
-
-    def finish!
-      @deferred_skipped_resources.each do |name|
-        @coverage[name] ||= { status: "skipped", detail: "Not selected for this import run" }
-      end
-      @dependency_counts.keys.union(@dependency_conflict_counts.keys).each do |name|
-        count = @dependency_counts[name]
-        skipped_conflicts = @dependency_conflict_counts[name]
-        next if count.zero? && skipped_conflicts.zero?
-
-        @coverage[name] = {
-          status: "imported_as_dependency",
-          count: count,
-          skipped_conflicts: skipped_conflicts
-        }.compact
-      end
-      status = @errors.empty? ? :completed : :completed_with_errors
-      Rails.logger.warn("Aryeo import #{@run.id} completed with errors: #{@errors.join("; ")}") if @errors.present?
-      @run.update!(status:, phase: "completed", completed_at: Time.current, heartbeat_at: Time.current,
-                   counts: @counts, coverage: @coverage, error_details: @errors)
-      @connection.update!(status: :connected, last_imported_at: Time.current, endpoint_coverage: @coverage)
     end
 
     def reconcile_imported_delivery_graph!
@@ -870,7 +1000,7 @@ module Aryeo
       value(payload, "type", "kind").to_s.match?(/team|brokerage/i) ? :team : :agent
     end
 
-    def listing_status(payload)
+    def listing_status_for(payload)
       value = value(payload, "status").to_s.downcase
       return value if Listing.statuses.key?(value)
       return :delivered if value.match?(/deliver|complete/)
@@ -883,7 +1013,7 @@ module Aryeo
       value(payload, "delivery_status", "status").to_s.match?(/deliver|complete/i) ? :delivered : :undelivered
     end
 
-    def order_status(payload)
+    def order_status_for(payload)
       value = value(payload, "status").to_s.downcase
       return value if Order.statuses.key?(value)
       return :paid if value.match?(/paid/)
@@ -897,7 +1027,7 @@ module Aryeo
       value(payload, "fulfillment_status", "status").to_s.match?(/fulfill|deliver|complete/i) ? :fulfilled : :unfulfilled
     end
 
-    def appointment_status(payload)
+    def appointment_status_for(payload)
       value = value(payload, "status").to_s.downcase
       return value if Appointment.statuses.key?(value)
       return :completed if value.match?(/complete/)
@@ -914,7 +1044,7 @@ module Aryeo
       @organization.workflow_columns.ordered.first&.key || "todo"
     end
 
-    def task_priority(payload)
+    def task_priority_for(payload)
       value = value(payload, "priority").to_s.downcase
       WorkflowTask.priorities.key?(value) ? value : :normal
     end
@@ -959,7 +1089,7 @@ module Aryeo
       customer_payloads(payload).filter_map { |customer| external_id(customer) }
     end
 
-    def customer_payload_has_profile?(payload)
+    def customer_payload_has_profile(payload)
       person_name(payload).present? || value(payload, "email", "email_address", "phone", "phone_number").present?
     end
 
@@ -967,7 +1097,7 @@ module Aryeo
       raw_records(payload, *keys).filter_map { |item| item.is_a?(Hash) ? stringify(item) : nil }
     end
 
-    def customer_payloads(payload)
+    def customer_payloads_for(payload)
       raw_records(payload, "customers", "clients", "customer_ids", "client_ids").filter_map do |item|
         item.is_a?(Hash) ? stringify(item) : { "id" => item.to_s }
       end.reject { |customer| external_id(customer).blank? }
@@ -1021,7 +1151,7 @@ module Aryeo
       end
     end
 
-    def media_filename(payload, external, source_url)
+    def media_filename_for(payload, external, source_url)
       filename = value(payload, "filename", "file_name", "name", "title").to_s.strip
       source_name = source_filename(source_url)
       return filename if filename.present? && (File.extname(filename).present? || source_name.blank?)
@@ -1030,7 +1160,7 @@ module Aryeo
       filename.presence || source_name.presence || "Aryeo media #{external}"
     end
 
-    def media_category_for(category, content_type)
+    def media_category_for_type(category, content_type)
       return "images" if category == "files" && content_type.start_with?("image/")
       return "videos" if category == "files" && content_type.start_with?("video/")
 

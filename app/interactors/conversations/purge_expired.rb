@@ -1,27 +1,17 @@
 require "set"
 
 module Conversations
-  class PurgeExpired
+  class PurgeExpired < ApplicationInteractor
     BATCH_SIZE = 100
 
-    Result = Data.define(:messages_deleted, :attachments_deleted, :failures)
-
-    class << self
-      def call(now: Time.current, batch_size: BATCH_SIZE)
-        new(now:, batch_size:).call
-      end
-    end
-
-    def initialize(now:, batch_size:)
-      @now = now
-      @batch_size = batch_size
+    def call
+      @now = context.fetch(:now, Time.current)
+      @batch_size = context.fetch(:batch_size, BATCH_SIZE)
       @messages_deleted = 0
       @attachments_deleted = 0
       @failures = 0
       @conversation_ids = Set.new
-    end
 
-    def call
       expiring_conversations.find_each do |conversation|
         cutoff = conversation.retention_cutoff(@now)
         conversation.messages.where("messages.created_at < ?", cutoff).find_each(batch_size: @batch_size) do |message|
@@ -30,7 +20,9 @@ module Conversations
       end
 
       refresh_conversation_timestamps
-      result
+      context.set(:messages_deleted, @messages_deleted)
+             .set(:attachments_deleted, @attachments_deleted)
+             .set(:failures, @failures)
     end
 
     private
@@ -72,14 +64,6 @@ module Conversations
       Conversation.where(id: @conversation_ids.to_a).find_each do |conversation|
         conversation.update_columns(last_message_at: conversation.messages.maximum(:created_at))
       end
-    end
-
-    def result
-      Result.new(
-        messages_deleted: @messages_deleted,
-        attachments_deleted: @attachments_deleted,
-        failures: @failures
-      )
     end
   end
 end

@@ -36,9 +36,9 @@ RSpec.describe Conversations::PurgeExpired do
 
     result = described_class.call(now:)
 
-    expect(result.messages_deleted).to eq(1)
-    expect(result.attachments_deleted).to eq(1)
-    expect(result.failures).to eq(0)
+    expect(result.fetch(:messages_deleted)).to eq(1)
+    expect(result.fetch(:attachments_deleted)).to eq(1)
+    expect(result.fetch(:failures)).to eq(0)
     expect(ConversationStorage).to have_received(:delete).with(old_attachment.storage_key)
     expect(Message.exists?(old_message.id)).to be(false)
     expect(ConversationAttachment.exists?(old_attachment.id)).to be(false)
@@ -58,9 +58,9 @@ RSpec.describe Conversations::PurgeExpired do
 
     result = described_class.call(now:)
 
-    expect(result.messages_deleted).to eq(1)
-    expect(result.attachments_deleted).to eq(1)
-    expect(result.failures).to eq(1)
+    expect(result.fetch(:messages_deleted)).to eq(1)
+    expect(result.fetch(:attachments_deleted)).to eq(1)
+    expect(result.fetch(:failures)).to eq(1)
     expect(Message.exists?(failed_message.id)).to be(true)
     expect(ConversationAttachment.exists?(failed_attachment.id)).to be(true)
     expect(Message.exists?(deleted_message.id)).to be(false)
@@ -72,7 +72,7 @@ RSpec.describe Conversations::PurgeExpired do
 
     result = described_class.call(now:)
 
-    expect(result.messages_deleted).to eq(0)
+    expect(result.fetch(:messages_deleted)).to eq(0)
     expect(Message.exists?(message.id)).to be(true)
   end
 end

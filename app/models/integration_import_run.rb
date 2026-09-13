@@ -29,7 +29,7 @@ class IntegrationImportRun < ApplicationRecord
     last_activity_at.blank? || last_activity_at < at - STALE_AFTER
   end
 
-  def mark_failed!(message, counts: nil, coverage: nil, error_details: nil, at: Time.current)
+  def mark_failed!(message, counts: nil, coverage: nil, error_details: nil, error_code: nil, at: Time.current)
     with_lock do
       return self if terminal?
 
@@ -44,6 +44,7 @@ class IntegrationImportRun < ApplicationRecord
       }
       attributes[:counts] = counts if counts
       attributes[:coverage] = coverage if coverage
+      attributes[:error_code] = error_code if error_code.present?
       update!(attributes)
     end
     self

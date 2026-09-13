@@ -11,9 +11,10 @@ module Conversations
 
     def perform
       result = Conversations::PurgeExpired.call
+      raise result.failure.original_error || result.failure if result.failure?
       Rails.logger.info(
-        "Conversation retention completed: #{result.messages_deleted} messages, " \
-        "#{result.attachments_deleted} attachments deleted, #{result.failures} failures"
+        "Conversation retention completed: #{result.fetch(:messages_deleted)} messages, " \
+        "#{result.fetch(:attachments_deleted)} attachments deleted, #{result.fetch(:failures)} failures"
       )
     end
   end

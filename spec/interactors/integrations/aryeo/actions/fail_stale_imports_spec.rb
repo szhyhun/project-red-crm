@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Aryeo::FailStaleImports do
+RSpec.describe Integrations::Aryeo::Actions::FailStaleImports do
   let!(:organization) { Organization.create!(name: "Stale Import Agency", slug: "stale-import-agency") }
   let!(:connection) do
     IntegrationConnection.create!(organization:, provider: :aryeo, api_key: "aryeo-key", status: :importing)
@@ -17,6 +17,7 @@ RSpec.describe Aryeo::FailStaleImports do
     expect(result).to be_success
     expect(result[:failed_run_ids]).to eq([ run.id ])
     expect(run.reload).to be_failed
+    expect(run.error_code).to eq("stale_worker")
     expect(connection.reload).to be_status_connected
   end
 end

@@ -1,4 +1,4 @@
-module Aryeo
+module Integrations::Aryeo::Actions
   class FailStaleImports < ApplicationInteractor
     def call
       at = context.fetch(:at, Time.current)
@@ -8,7 +8,7 @@ module Aryeo
         next unless run.stale?(at:)
 
         message = "Aryeo import worker heartbeat expired at #{at.iso8601}"
-        run.mark_failed!(message, at:)
+        run.mark_failed!(message, error_code: "stale_worker", at:)
         reconnect_connection_if_idle(run.integration_connection)
         Rails.logger.error("Aryeo import #{run.id} marked failed: #{message}")
         failed_run_ids << run.id
