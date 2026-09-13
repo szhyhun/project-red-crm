@@ -58,6 +58,7 @@ RSpec.describe "Client account billing and visibility", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig("client_account", "billing_user", "email")).to eq("team-member@example.test")
+    expect(response.parsed_body.dig("client_account", "capabilities")).to include("configure_billing")
     membership = account.client_memberships.find_by!(user: team_member)
     expect(membership).to be_admin
     expect(ActivityEvent.where(subject: account, event_type: "client_account.billing_configured")).to exist

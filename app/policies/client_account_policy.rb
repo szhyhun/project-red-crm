@@ -1,4 +1,6 @@
 class ClientAccountPolicy < OrganizationRecordPolicy
+  CAPABILITIES = [ *ApplicationPolicy::CAPABILITIES, :configure_billing ].freeze
+
   def index?
     true
   end
