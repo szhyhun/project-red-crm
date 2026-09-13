@@ -5,7 +5,8 @@ module ClientAccounts
   class Split < ApplicationInteractor
     COPIED_SETTINGS = %i[brokerage_name brokerage_website website logo_url lock_downloads_before_payment
                          display_original_price suppress_payment_reminders billing_pays_externally
-                         billing_visibility pricing_visibility downloads_visibility marketing_templates_visibility].freeze
+                         billing_visibility pricing_visibility downloads_visibility marketing_templates_visibility
+                         notification_preferences order_form_id].freeze
 
     def call
       source = context.fetch(:account)
@@ -13,6 +14,8 @@ module ClientAccounts
       name = context.fetch(:name).to_s.strip
       moving = source.client_memberships.where(id: Array(context.fetch(:membership_ids))).to_a
 
+      refuse("Only a team can be split; an agent's or brokerage's own account cannot") unless source.team?
+      refuse("An archived team cannot be split") if source.archived?
       refuse("Choose at least one person to move") if moving.empty?
       staying = source.client_memberships.where.not(id: moving.map(&:id))
       refuse("The new team needs an active admin among the people moving") unless moving.any? { |membership| membership.active? && membership.admin? }

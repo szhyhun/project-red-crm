@@ -22,6 +22,20 @@ class Conversation < ApplicationRecord
     organization.conversations.create!(kind: :client, client_account:, subject:)
   end
 
+  # Who is in a team's chat without being named: its active admins. Every path
+  # that opens or posts into a team chat uses this, so the rule lives once.
+  def team_admin_user_ids
+    return [] unless client? && client_account
+
+    client_account.active_admins.joins(:user).merge(User.active).pluck(:user_id)
+  end
+
+  def join_team_admins!
+    team_admin_user_ids.each do |user_id|
+      conversation_memberships.find_or_create_by!(user_id:) { |membership| membership.role = :participant }
+    end
+  end
+
   enum :kind, { internal: "internal", client: "client" }, validate: true
   enum :retention_period, {
     two_months: "two_months",

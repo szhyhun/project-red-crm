@@ -48,8 +48,22 @@ RSpec.describe "Client account team page", type: :request do
     expect(ClientAccount.count).to eq(1)
   end
 
+  it "refuses to split an agent's own account or an archived team" do
+    sign_in manager
+    account.update!(kind: :agent)
+    post "/api/v1/client_accounts/#{account.id}/split", params: { split: { name: "Nope", membership_ids: [ membership(partner).id ] } }
+    expect(response.parsed_body.dig("details", "base").sole).to include("Only a team can be split")
+
+    account.update!(kind: :team, archived_at: Time.current)
+    post "/api/v1/client_accounts/#{account.id}/split", params: { split: { name: "Nope", membership_ids: [ membership(partner).id ] } }
+    expect(response.parsed_body.dig("details", "base").sole).to include("archived team cannot be split")
+    expect(ClientAccount.count).to eq(1)
+  end
+
   it "moves chosen people, and the bill if its member moves, into a new team with the same settings" do
-    account.update!(billing_user: partner, lock_downloads_before_payment: true)
+    form = OrderForm.create!(organization:, name: "Coastal form")
+    account.update!(billing_user: partner, lock_downloads_before_payment: true, order_form: form,
+                    notification_preferences: { "listing_delivered" => { "email" => false } })
     listing = Listing.create!(organization:, client_account: account, address_line_1: "Stays Here Street")
     sign_in manager
 
@@ -59,7 +73,8 @@ RSpec.describe "Client account team page", type: :request do
     expect(response).to have_http_status(:created)
     team = ClientAccount.find(response.parsed_body.dig("client_account", "id"))
     expect(team).to have_attributes(name: "Partner Group", kind: "team", website: "https://coastal.example.test",
-                                    lock_downloads_before_payment: true, billing_user_id: partner.id)
+                                    lock_downloads_before_payment: true, billing_user_id: partner.id, order_form_id: form.id)
+    expect(team.notify?("listing_delivered")).to be(false)
     expect(team.client_memberships.map(&:user)).to contain_exactly(partner, assistant)
     expect(account.reload).to have_attributes(billing_user_id: nil)
     expect(account.client_memberships.map(&:user)).to contain_exactly(lead)

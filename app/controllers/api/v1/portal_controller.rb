@@ -176,9 +176,7 @@ class Api::V1::PortalController < Api::V1::BaseController
     conversation.conversation_memberships.find_or_create_by!(user: current_user) do |membership|
       membership.role = :participant
     end
-    listing.client_account.users.active.find_each do |member|
-      conversation.conversation_memberships.find_or_create_by!(user: member) { |membership| membership.role = :participant }
-    end
+    conversation.join_team_admins!
     message = nil
     OrderDeliverable.transaction do
       message = conversation.messages.create!(author: current_user, body:, body_html: body_html,

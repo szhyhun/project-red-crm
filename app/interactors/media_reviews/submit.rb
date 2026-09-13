@@ -83,9 +83,7 @@ module MediaReviews
         subject: "Media review ##{@review.number}"
       )
       conversation.conversation_memberships.find_or_create_by!(user: @submitted_by) { |membership| membership.role = :participant }
-      @review.client_account.users.active.find_each do |member|
-        conversation.conversation_memberships.find_or_create_by!(user: member) { |membership| membership.role = :participant }
-      end
+      conversation.join_team_admins!
 
       result = Conversations::PublishMessage.call(
         conversation:,

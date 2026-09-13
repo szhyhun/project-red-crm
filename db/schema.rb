@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_09_13_110000) do
+ActiveRecord::Schema[8.0].define(version: 2026_09_13_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -296,9 +296,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_09_13_110000) do
     t.string "marketing_templates_visibility", default: "hidden", null: false
     t.jsonb "notification_preferences", default: {}, null: false
     t.bigint "order_form_id"
+    t.index "organization_id, lower((affiliate_id)::text)", name: "index_client_accounts_on_organization_and_affiliate", unique: true, where: "(affiliate_id IS NOT NULL)"
     t.index ["billing_user_id"], name: "index_client_accounts_on_billing_user_id"
     t.index ["order_form_id"], name: "index_client_accounts_on_order_form_id"
-    t.index ["organization_id", "affiliate_id"], name: "index_client_accounts_on_organization_and_affiliate", unique: true, where: "(affiliate_id IS NOT NULL)"
     t.index ["organization_id", "archived_at"], name: "index_client_accounts_on_organization_and_archived"
     t.index ["organization_id", "name"], name: "index_client_accounts_on_organization_id_and_name"
     t.index ["organization_id"], name: "index_client_accounts_on_organization_id"

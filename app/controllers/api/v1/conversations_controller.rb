@@ -175,13 +175,22 @@ class Api::V1::ConversationsController < Api::V1::BaseController
     listing.client_account_id == client_account.id || listing.listing_customers.exists?(client_account_id: client_account.id)
   end
 
+  # One rule for who is in a team's chat, shared with ClientMembership: the
+  # team's active admins are in it, and anyone else is added by name. A
+  # customer can only be added to their own team's chat.
   def add_conversation_memberships!(conversation)
-    member_ids = [ current_user.id, *Array(create_params[:member_ids]).map(&:to_i) ]
-    member_ids.concat(conversation.client_account.users.active.ids) if conversation.client? && conversation.client_account.present?
+    member_ids = [ current_user.id, *Array(create_params[:member_ids]).compact_blank.map(&:to_i) ]
+    team = conversation.client_account if conversation.client?
+    member_ids.concat(conversation.team_admin_user_ids)
     member_ids.uniq!
     users = Current.organization.users.active.where(id: member_ids)
     unless users.size == member_ids.size
       conversation.errors.add(:member_ids, "contains an unavailable organization member")
+      raise ActiveRecord::RecordInvalid.new(conversation)
+    end
+    team_member_ids = team ? team.client_memberships.active.pluck(:user_id) : []
+    if conversation.client? && users.any? { |user| !user.internal? && team_member_ids.exclude?(user.id) }
+      conversation.errors.add(:member_ids, "can include only customers active in this team")
       raise ActiveRecord::RecordInvalid.new(conversation)
     end
     if conversation.internal? && users.any? { |user| !user.internal? }

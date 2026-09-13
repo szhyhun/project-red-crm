@@ -71,12 +71,12 @@ class ClientMembership < ApplicationRecord
     active? && admin? && (saved_change_to_status? || saved_change_to_role?)
   end
 
-  # A team's chat is between its admins and our staff. Someone who becomes an
-  # admin joins it; members are added by hand, and a chat is never created here.
+  # A team's chat is between its admins and our staff, the same rule the chat
+  # uses when it is created. Someone who becomes an admin joins it; members are
+  # added by hand, and a chat is never created here.
   def join_account_chat
     Conversation.client.where(organization_id: client_account.organization_id, client_account:, listing_id: nil)
-                .order(:created_at, :id).first
-                &.conversation_memberships&.find_or_create_by!(user:) { |membership| membership.role = :participant }
+                .order(:created_at, :id).first&.join_team_admins!
   end
 
   def clear_other_defaults
