@@ -11,7 +11,7 @@ module MediaReviews
     # grouped by kind, the way the portal media page shows them.
     def self.group_key(asset)
       category = asset&.category.to_s
-      Api::V1::PortalController::PORTAL_ASSET_GROUPS.key?(category) ? category : "files"
+      MediaAsset::CATEGORY_DEFINITIONS.key?(category) ? category : "files"
     end
 
     def self.group_order(category)
@@ -19,7 +19,7 @@ module MediaReviews
     end
 
     def self.group_definition(category)
-      Api::V1::PortalController::PORTAL_ASSET_GROUPS.fetch(category).slice(:title, :description, :deliverable_type)
+      MediaAsset::CATEGORY_DEFINITIONS.fetch(category).slice(:title, :description, :deliverable_type)
     end
 
     def self.serialize_asset(asset, visible: true)
@@ -64,11 +64,15 @@ module MediaReviews
     attr_reader :listing, :user, :reviews, :deliverables
 
     def customer?
-      !user.internal? && user.client_account_ids.include?(listing.client_account_id)
+      !user.internal? && customer_account_ids.include?(listing.client_account_id)
     end
 
     def member?(review)
-      !user.internal? && user.client_account_ids.include?(review.client_account_id)
+      !user.internal? && customer_account_ids.include?(review.client_account_id)
+    end
+
+    def customer_account_ids
+      @customer_account_ids ||= user.client_account_ids
     end
 
     # Staff never see a draft, or a draft retired by a new delivery: until a
@@ -171,7 +175,17 @@ module MediaReviews
     end
 
     def deliverable_assets
-      @deliverable_assets ||= deliverables.to_h { |deliverable| [ deliverable.id, deliverable.customer_visible_assets.to_a ] }
+      @deliverable_assets ||= begin
+        assets = if deliverables.empty?
+          []
+        else
+          MediaAsset.where(listing_id: listing.id, order_deliverable_id: deliverables.map(&:id))
+            .current_version.final.ready.where(customer_visible: true, hidden: false)
+            .order(:position, :created_at, :id).to_a
+        end
+        assets_by_deliverable = assets.group_by(&:order_deliverable_id)
+        deliverables.to_h { |deliverable| [ deliverable.id, assets_by_deliverable.fetch(deliverable.id, []) ] }
+      end
     end
 
     def unassigned_assets

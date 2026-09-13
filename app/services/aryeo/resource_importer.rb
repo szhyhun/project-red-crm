@@ -107,7 +107,7 @@ module Aryeo
         end
         session.import_team_member(team, customer_payload)
       end
-      session.membership_payloads_for(payload).each do |membership_payload|
+      session.records(payload, "customer_team_memberships", "memberships").each do |membership_payload|
         person = session.records(membership_payload, "customer_user", "customer", "user").first
         next if person.blank?
 

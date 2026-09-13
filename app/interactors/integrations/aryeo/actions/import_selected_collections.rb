@@ -72,15 +72,15 @@ module Integrations::Aryeo::Actions
     end
 
     def import_resource(session, name, payload, dependency:)
-      existing_record = session.existing_external_record(name, payload)
+      existing_record = session.record_for(name.to_s, session.external_id(payload))
       if existing_record&.record.present? && session.conflict_resolution == "skip"
-        session.archive_imported_record(name, payload, record: existing_record.record, sync_status: :skipped)
+        session.archive!(name, payload, record: existing_record.record, sync_status: :skipped)
         session.record_conflict!(name, dependency:)
         return existing_record.record
       end
 
       record = ::Aryeo::ResourceImporter.call(session:, name:, payload:)
-      session.archive_imported_record(name, payload, record:, sync_status: :imported)
+      session.archive!(name, payload, record:, sync_status: :imported)
       session.record_imported!(name, dependency:)
       record
     rescue ActiveRecord::RecordInvalid => error
@@ -90,8 +90,8 @@ module Integrations::Aryeo::Actions
 
     def fetch_payloads(session, name, endpoint)
       payloads = []
-      session.paginate_resource(name, endpoint) do |payload|
-        payloads << session.normalize_payload(payload)
+      session.paginate_collection(name, endpoint) do |payload|
+        payloads << session.stringify(payload)
         session.heartbeat!
       end
       payloads
@@ -99,12 +99,12 @@ module Integrations::Aryeo::Actions
 
     def filter_payloads(session, name, payloads, limit)
       payloads = payloads.filter_map do |payload|
-        filter_reason = session.filter_reason_for(name, payload)
+        filter_reason = session.date_filter_reason(name.to_sym, payload)
         if filter_reason == :unavailable
           session.record_date_unavailable!(name)
           payload
         elsif filter_reason
-          session.record_filtered!(name, filter_reason)
+          session.increment_filtered_count(name.to_sym, filter_reason)
           nil
         else
           payload

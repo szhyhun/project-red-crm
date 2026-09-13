@@ -17,6 +17,33 @@ class MediaAsset < ApplicationRecord
   scope :current_version, -> { where(superseded_by_id: nil) }
 
   CATEGORIES = %w[images videos floor_plans tours files].freeze
+  CATEGORY_DEFINITIONS = {
+    "images" => {
+      title: "Property photos",
+      deliverable_type: "photography",
+      description: "Photos ready for this listing."
+    },
+    "videos" => {
+      title: "Videos",
+      deliverable_type: "video",
+      description: "Videos ready for this listing."
+    },
+    "floor_plans" => {
+      title: "Floor plans",
+      deliverable_type: "floor_plan",
+      description: "Floor plans ready for this listing."
+    },
+    "tours" => {
+      title: "Tours",
+      deliverable_type: "tour",
+      description: "Interactive and virtual tours ready for this listing."
+    },
+    "files" => {
+      title: "Files",
+      deliverable_type: "files",
+      description: "Documents and other files ready for this listing."
+    }
+  }.transform_values(&:freeze).freeze
   STORAGE_CONTENT_TYPES = %r{
     \A(?:
       image/(?!svg\+xml(?:;|$))[^\s;]+|

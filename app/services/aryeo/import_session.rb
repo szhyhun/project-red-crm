@@ -133,24 +133,8 @@ module Aryeo
       heartbeat!(force: true)
     end
 
-    def paginate_resource(name, endpoint, &block)
-      paginate_collection(name, endpoint, &block)
-    end
-
-    def normalize_payload(payload)
-      stringify(payload)
-    end
-
-    def filter_reason_for(name, payload)
-      date_filter_reason(name.to_sym, payload)
-    end
-
     def record_date_unavailable!(name)
       @date_unavailable_counts[name.to_sym] += 1
-    end
-
-    def record_filtered!(name, reason)
-      increment_filtered_count(name.to_sym, reason)
     end
 
     def sort_key_for(payload)
@@ -187,14 +171,6 @@ module Aryeo
 
     def persist_progress!
       @run.update!(counts: @counts, coverage: @coverage, error_details: @errors, heartbeat_at: Time.current)
-    end
-
-    def existing_external_record(resource_type, payload)
-      record_for(resource_type.to_s, external_id(payload))
-    end
-
-    def archive_imported_record(resource_type, payload, **attributes)
-      archive!(resource_type, payload, **attributes)
     end
 
     def record_imported!(name, dependency: false)
@@ -355,10 +331,6 @@ module Aryeo
     rescue ActiveRecord::RecordInvalid => error
       Rails.logger.warn("Aryeo membership #{membership.id} kept local state: #{error.record.errors.full_messages.to_sentence}")
       membership.reload
-    end
-
-    def membership_payloads_for(payload)
-      records(payload, "customer_team_memberships", "memberships")
     end
 
     def import_order_appointments(order, payload)
