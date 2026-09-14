@@ -21,7 +21,7 @@ gem "devise_invitable"
 gem "pundit"
 
 # Local and production background work
-gem "resque", "~> 2.7", require: "resque/server"
+gem "resque", "~> 3.0", require: "resque/server"
 # Resque Scheduler 5 requires Resque 3; stay on the latest compatible line
 # until the existing Rails/Redis Resque integration is upgraded together.
 gem "resque-scheduler", "~> 4.11"
