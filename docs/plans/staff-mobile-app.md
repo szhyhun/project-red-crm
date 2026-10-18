@@ -47,10 +47,10 @@ is already on the order."
 The phone is the only thing that is actually at the property, so it is the only
 honest place to record what getting there cost:
 
-- **Distance per trip**, captured per appointment: the drive out, between two
-  shoots in a day, and home again. Either odometer readings the photographer
-  types or a distance the phone measured, with the typed number winning,
-  because a reading someone stands behind beats a track that lost signal.
+- **Distance per trip**, worked out from the day's assignments rather than
+  claimed: home base to the first shoot, shoot to shoot, last shoot home. The
+  photographer corrects it when the day did not go that way; the correction is
+  the exception, so it is the only thing anyone has to approve.
 - **A rate per kilometre** per organization, so distance becomes money without
   anyone doing arithmetic at the kerb.
 - **Other trip costs with a photo of the receipt**: fuel, parking, a ferry, a
@@ -121,36 +121,43 @@ Roughly in the order each pays for itself:
 - **Deterministic recommendations** are already named in the staged roadmap
   (phase 4 of `docs/plan.md`); this is where they would be used first.
 
-## What has to be decided before building it
+## Decided
 
-- **Whose phone, and what it may keep.** A personal phone holding lockbox
-  codes, customer addresses and photos needs a rule for what is cached, for
-  how long, and what happens when someone leaves.
-- **What counts as proof of a trip.** A typed odometer reading, a measured
-  track, or either; and whether a claim needs an approval before it becomes
-  pay.
-- **Who may discount, and by how much.** A photographer offering a price is a
-  pricing decision made outside the office. It needs a ceiling per role, an
-  audit line for every offer, and a rule for whether the customer's team
-  pricing plan already accounts for it.
-- **Whether the customer confirms.** An add-on the photographer taps through
-  changes what the customer owes. Either the customer approves it in the portal
-  (slower, safer) or the photographer records their verbal yes (faster, and
-  disputable).
-- **Where the suggestions come from.** A hand-written table of
-  "package → suggested add-ons" per organization is honest and predictable.
-  Anything learned from history needs enough orders to be worth trusting.
+- **The discount arrives in the prompt. The photographer never sets one.** The
+  CRM works out the offer and sends it; the app shows a price to say out loud,
+  not a field to type a price into. That keeps pricing authority in the office
+  and makes every offer auditable, because the CRM issued it.
+- **The customer's yes is verbal, and the photographer records it.** Fast
+  enough to close at the door. Worth storing who recorded it, when, and the
+  exact offer they accepted, so a later dispute has something to read.
+- **Suggestions come from the CRM's own upsell engine**, the same logic the
+  order form will use to suggest add-ons. The app renders a prompt from it;
+  it does not hold rules of its own. Build it once, in the CRM, and let the
+  order form and the phone both ask it.
+- **A personal phone.** So caching is a privacy decision, not a convenience
+  one: cache the day's appointments and their ordered scope, keep lockbox and
+  access notes only for the appointment in hand, drop them after delivery, and
+  make sign-out and revoked access clear the lot.
+- **A trip is derived, not claimed.** Being assigned to a listing is the trip.
+  The distance follows from the day's schedule — home base to the first shoot,
+  shoot to shoot, last shoot home — so the ordinary case needs no typing at
+  all. The app's job is to show the figure and let someone correct it, which
+  means a correction is the exception that needs an approval, not every claim.
+
+## Still open
+
 - **Native or web.** The portal is already a responsive web app. Push, camera
   and offline notes are the arguments for native; nothing else here is.
-- **Offline.** Properties have poor signal. Reading the order offline matters
-  more than writing, so the order and its scope should be cached per
-  appointment.
+- **How much a corrected trip can differ before someone has to approve it**,
+  and who approves it.
+- **Receipts that are not mileage** — fuel, parking, a ferry — still arrive by
+  hand, so they keep the submit-and-approve path that mileage avoids.
 
 ## Why it is not next
 
-It depends on work that is either unfinished or unproven: recommendations exist
-only as a roadmap line, and discount authority has no model yet. It is worth
-keeping in view, because the data it needs is being built anyway.
+It waits on the CRM's upsell engine, which is a roadmap line today. The phone
+is a second reader of that engine, so building the engine first costs nothing
+extra and the order form gets it too.
 
 The cheapest first slice, if it is picked up: the schedule, the ordered scope
 for the listing, and mileage with a receipt photo. That is useful on its own,
