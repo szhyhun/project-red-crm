@@ -12,6 +12,7 @@ local vertical slice for a production-ready external integration.
 - [Local development](local-development.md): PostgreSQL, Redis, Resque, Rails, and portal startup.
 - [Product plan](plan.md): the staged roadmap, including smart ordering and external integrations.
 - [Media workflow and portal UI](client-portal-plan.md): the canonical catalog, deliverable, workflow, media, staff workspace, customer portal, API, authorization, migration, and verification model derived from the supplied briefs and screenshots.
+- [Staff mobile app](plans/staff-mobile-app.md): idea only. A phone app for the people who go to the property: their schedule, the ordered scope on arrival, an on-site upsell prompt, and mileage and trip costs.
 - [Marketing module](marketing/plan.md): planned only. Turning delivered media into social posts, schedules, and paid campaigns.
 
 ## Current status
